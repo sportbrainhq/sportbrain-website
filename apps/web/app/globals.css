@@ -1,0 +1,191 @@
+@import 'tailwindcss';
+
+/**
+ * SportBrainHQ website design tokens.
+ *
+ * The values are carried over from the SportBrainHQ UI library so the two
+ * surfaces render identically, including its two accessibility corrections:
+ * --color-muted-foreground was lifted from #737373 (4.35:1, under AA) and
+ * --color-destructive from #ef4444 (3.53:1), both to clear 4.5:1 on white.
+ *
+ * Tokens are copied rather than imported because the UI library is not
+ * currently packaged for installation. See docs/architecture.md. Tokens are
+ * values, not code, so this is not a fork of the component library.
+ *
+ * Two Tailwind v4 constraints that the library documented and this file
+ * respects:
+ *
+ *   1. Declaring any key in a namespace replaces that whole namespace. The
+ *      radius and shadow scales below are therefore complete, not partial.
+ *   2. `--breakpoint-*` is deliberately not declared: defining one key would
+ *      drop every other responsive variant. Tailwind's defaults stand.
+ */
+
+@theme {
+  /* Neutral */
+  --color-background: #ffffff;
+  --color-foreground: #0a0a0a;
+  --color-muted: #f5f5f5;
+  --color-muted-foreground: #666666;
+  --color-border: #e5e5e5;
+  --color-input: #e5e5e5;
+  --color-ring: #0a0a0a;
+
+  /* Primary */
+  --color-primary: #0a0a0a;
+  --color-primary-foreground: #fafafa;
+
+  /* Secondary */
+  --color-secondary: #f5f5f5;
+  --color-secondary-foreground: #0a0a0a;
+
+  /* Accent */
+  --color-accent: #f5f5f5;
+  --color-accent-foreground: #0a0a0a;
+
+  /* Feedback */
+  --color-destructive: #d11f1f;
+  --color-destructive-foreground: #fafafa;
+  --color-success: #15803d;
+  --color-success-foreground: #fafafa;
+
+  /* Surfaces */
+  --color-card: #ffffff;
+  --color-card-foreground: #0a0a0a;
+
+  /* Typography */
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
+
+  --text-2xs: 0.625rem;
+  --text-2xs--line-height: 0.875rem;
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 1rem;
+  --text-base--line-height: 1.5rem;
+  --text-lg: 1.125rem;
+  --text-lg--line-height: 1.75rem;
+  --text-xl: 1.25rem;
+  --text-xl--line-height: 1.75rem;
+  --text-2xl: 1.5rem;
+  --text-2xl--line-height: 2rem;
+  --text-3xl: 1.875rem;
+  --text-3xl--line-height: 2.25rem;
+  --text-4xl: 2.25rem;
+  --text-4xl--line-height: 2.5rem;
+  --text-5xl: 3rem;
+  --text-5xl--line-height: 1.1;
+  --text-6xl: 3.75rem;
+  --text-6xl--line-height: 1.05;
+
+  /* Radii: complete scale, see note 1 above */
+  --radius-xs: 0.125rem;
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-2xl: 1.5rem;
+  --radius-3xl: 2rem;
+  --radius-full: 9999px;
+
+  /* Elevation */
+  --shadow-elevation-1: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-elevation-2: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --shadow-elevation-3: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-card: var(--shadow-elevation-2);
+  --shadow-focus: 0 0 0 2px var(--color-background), 0 0 0 4px var(--color-ring);
+
+  /* Motion */
+  --duration-fast: 120ms;
+  --duration-normal: 200ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/**
+ * Dark theme.
+ *
+ * Class-based (`.dark` on <html>) rather than media-query-only, so a future
+ * theme toggle can override the system preference. No toggle exists yet.
+ */
+@layer base {
+  .dark {
+    --color-background: #0a0a0a;
+    --color-foreground: #fafafa;
+    --color-muted: #171717;
+    --color-muted-foreground: #a3a3a3;
+    --color-border: #262626;
+    --color-input: #262626;
+    --color-ring: #d4d4d4;
+
+    --color-primary: #fafafa;
+    --color-primary-foreground: #0a0a0a;
+    --color-secondary: #171717;
+    --color-secondary-foreground: #fafafa;
+    --color-accent: #171717;
+    --color-accent-foreground: #fafafa;
+
+    --color-destructive: #f87171;
+    --color-success: #4ade80;
+
+    --color-card: #0a0a0a;
+    --color-card-foreground: #fafafa;
+  }
+
+  * {
+    border-color: var(--color-border);
+  }
+
+  html {
+    /* Anchor links land below the sticky header rather than under it. */
+    scroll-padding-top: 5rem;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* A visible focus ring is the difference between a keyboard-usable site and
+     an unusable one. Never remove it without providing a replacement. */
+  :focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  /* Skip link: visually hidden until focused, then pinned to the top left.
+     Required for keyboard users to bypass the navigation. */
+  .skip-link {
+    position: absolute;
+    left: -9999px;
+    z-index: 999;
+  }
+
+  .skip-link:focus {
+    left: 1rem;
+    top: 1rem;
+    padding: 0.75rem 1rem;
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-elevation-3);
+  }
+}

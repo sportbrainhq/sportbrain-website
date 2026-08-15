@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "display": "SportBrainHQ library",
+  "docs": [
+    "Shared packages emit CommonJS. The API is a CommonJS NestJS app that requires them at runtime, and Node's ESM resolver demands explicit .js extensions on relative imports, which TypeScript does not add when emitting ESM from extensionless source.",
+    "Next.js bundles either format, so CommonJS costs the web app nothing.",
+    "composite is deliberately not set: it enables incremental build info that can leave a dist directory holding .d.ts.map files without the .d.ts files themselves after a partial clean, which fails consumers with an implicit-any error."
+  ],
+  "extends": "./base.json",
+  "compilerOptions": {
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "rootDir": "./src",
+    "outDir": "./dist"
+  }
+}

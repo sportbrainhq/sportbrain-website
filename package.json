@@ -1,0 +1,42 @@
+{
+  "name": "sportbrain-website",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SportBrainHQ public web platform: Next.js site and NestJS API.",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22",
+    "pnpm": ">=10"
+  },
+  "packageManager": "pnpm@11.5.1",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "lint:fix": "turbo run lint:fix",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,css,yml,yaml}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,css,yml,yaml}\"",
+    "verify": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm test",
+    "clean": "turbo run clean && rm -rf node_modules",
+    "db:generate": "pnpm --filter @sportbrain/api db:generate",
+    "db:migrate": "pnpm --filter @sportbrain/api db:migrate",
+    "db:studio": "pnpm --filter @sportbrain/api db:studio",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.4.3",
+    "prettier": "^3.4.2",
+    "turbo": "^2.5.8",
+    "typescript": "^5.7.3"
+  },
+  "lint-staged": {
+    "//": "Prettier only. Bare `eslint` resolves to whatever is on PATH, which can be an older global install unable to read flat configs, and running the workspace binary per changed file across three packages with different configs is slower than the commit is worth. Linting is enforced by `pnpm verify` and by CI.",
+    "*.{ts,tsx,json,css,md,yml,yaml}": [
+      "prettier --write"
+    ]
+  }
+}

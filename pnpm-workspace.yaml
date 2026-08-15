@@ -1,0 +1,24 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+
+# Native and binary dependencies whose install scripts must run. pnpm blocks
+# postinstall scripts by default, which is a good default: it stops an arbitrary
+# transitive dependency executing code at install time. Each entry below is an
+# explicit decision.
+allowBuilds:
+  # Native binaries that do not work without their postinstall step.
+  '@swc/core': true # decorator-preserving transform for the API's tests
+  esbuild: true # bundler used by Vite and Vitest
+  sharp: true # image optimisation for next/image
+  unrs-resolver: true # module resolution used by ESLint
+  # Analytics ping only. Nothing depends on it running.
+  '@scarf/scarf': false
+
+# Dependency versions that must stay identical across every workspace package.
+# Two copies of React or Zod in one monorepo produce runtime errors that are
+# painful to diagnose, so they are pinned here rather than per-package.
+catalog:
+  react: ^19.0.0
+  react-dom: ^19.0.0
+  zod: ^3.24.1

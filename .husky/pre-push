@@ -1,0 +1,21 @@
+#!/usr/bin/env sh
+# Guard: this repository may only be pushed to the sportbrainhq account.
+# Prevents personal-project commits landing under a work identity, and the
+# reverse. Same guard as the other SportBrainHQ repositories.
+
+remote_url="$2"
+
+case "$remote_url" in
+  *sportbrainhq/*) ;;
+  *)
+    echo "pre-push blocked: '$remote_url' is not a sportbrainhq remote." >&2
+    echo "This repository must only be pushed to github.com/sportbrainhq." >&2
+    exit 1
+    ;;
+esac
+
+email="$(git config user.email)"
+if [ "$email" != "sportbrainhq@gmail.com" ]; then
+  echo "pre-push blocked: git user.email is '$email', expected sportbrainhq@gmail.com." >&2
+  exit 1
+fi
