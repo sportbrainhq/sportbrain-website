@@ -1,11 +1,24 @@
 # Domain modules
 
-Empty by design. This is where business domains go, and none exist yet.
+No real domains yet, by design.
 
 The platform foundation deliberately ships without sports, players, teams,
 stories, records, rankings, timelines or statistics. Creating placeholder
 modules for them would mean inventing their shape before the domain model is
 agreed, which is the expensive kind of wrong.
+
+`_example/` is the exception: a structural reference showing where a controller,
+service and repository go and how they connect. It is not imported by
+`app.module.ts`, so it serves no routes, and it defines no tables. Copy it to
+start a domain, delete it once a real one exists. See
+[\_example/README.md](_example/README.md).
+
+## Where routes come from
+
+There is no `routes/` folder, and there should not be one. Nest builds the route
+table at start-up from the decorators on a controller: `@Controller('sports')`
+plus `@Get(':slug')` registers `GET /v1/sports/:slug`, with the `/v1` prefix
+applied globally in `main.ts`.
 
 ## Adding a domain
 
