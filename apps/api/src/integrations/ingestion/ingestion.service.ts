@@ -1,7 +1,15 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
-import { ingestionRun, person, sport, team } from '../../database/schema';
+import {
+  competition,
+  honour,
+  ingestionRun,
+  person,
+  sport,
+  team,
+  venue,
+} from '../../database/schema';
 import { ProviderError, type SportsDataProvider } from '../providers/provider.types';
 import { EntityResolutionService } from './entity-resolution.service';
 
@@ -177,6 +185,348 @@ export class IngestionService {
     return summary;
   }
 
+  /**
+   * Ingests competitions for one sport.
+   *
+   * Simpler than teams or people: competitions are few, their names are
+   * distinctive, and there is little duplicate risk, so the resolution step is
+   * a mapping lookup and an insert rather than a similarity search.
+   */
+  async ingestCompetitions(
+    provider: SportsDataProvider,
+    sportSlug: string,
+    options: { maxPages?: number } = {},
+  ): Promise<IngestionSummary> {
+    if (!provider.capabilities.competitions || !provider.fetchCompetitions) {
+      return this.skipped(
+        provider.key,
+        `competitions:${sportSlug}`,
+        'provider does not supply competitions',
+      );
+    }
+
+    const sportId = await this.sportIdBySlug(sportSlug);
+    if (!sportId) {
+      return this.skipped(
+        provider.key,
+        `competitions:${sportSlug}`,
+        `unknown sport "${sportSlug}"`,
+      );
+    }
+
+    const run = await this.startRun(provider.key, `competitions:${sportSlug}`);
+    const summary = this.newSummary(run.id);
+    let cursor: string | undefined;
+    let page = 0;
+    const maxPages = options.maxPages ?? Number.POSITIVE_INFINITY;
+
+    try {
+      do {
+        const result = await provider.fetchCompetitions(sportSlug, cursor);
+        summary.requestsUsed += result.requestsUsed;
+        summary.read += result.items.length;
+
+        for (const item of result.items) {
+          try {
+            const existing = await this.resolution.findExistingMapping(
+              provider.key,
+              'competition',
+              item.externalId,
+            );
+            if (existing) {
+              summary.written += 1;
+              continue;
+            }
+
+            const [created] = await this.database.db
+              .insert(competition)
+              .values({
+                sportId,
+                // Inferred from whether a country is present: a competition
+                // tied to one country is domestic, one that is not is
+                // international. Crude, and correct far more often than not.
+                kind: item.fields.country ? 'domestic' : 'international',
+                format: 'league',
+                slug: this.slugify(item.fields.name),
+                name: item.fields.name,
+                country: item.fields.country,
+                foundedYear: item.fields.foundedYear,
+                logoUrl: item.fields.logoUrl,
+                confidence: 'provisional',
+              })
+              .onConflictDoNothing({ target: [competition.sportId, competition.slug] })
+              .returning({ id: competition.id });
+
+            if (!created) {
+              summary.queued += 1;
+              continue;
+            }
+
+            await this.resolution.recordMapping({
+              provider: provider.key,
+              entityType: 'competition',
+              externalId: item.externalId,
+              entityId: created.id,
+              matchMethod: 'deterministic',
+              matchConfidence: 1,
+            });
+            summary.written += 1;
+          } catch (error) {
+            summary.failed += 1;
+            this.logger.warn(
+              `Failed to ingest competition "${item.name}": ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            );
+          }
+        }
+
+        cursor = result.cursor ?? undefined;
+        page += 1;
+        await this.updateRunProgress(run.id, summary, cursor);
+      } while (cursor && page < maxPages);
+    } catch (error) {
+      summary.status = 'failed';
+      await this.finishRun(run.id, summary, error instanceof Error ? error.message : String(error));
+      if (error instanceof ProviderError && !error.retryable) throw error;
+      return summary;
+    }
+
+    await this.finishRun(run.id, summary);
+    return summary;
+  }
+
+  /**
+   * Ingests venues.
+   *
+   * Venues are not scoped to a sport in the schema, because the same ground
+   * hosts football and cricket and duplicating it per sport would double-count
+   * its capacity and location. The sport is only used to decide which venues to
+   * ask the provider for.
+   */
+  async ingestVenues(
+    provider: SportsDataProvider,
+    sportSlug: string,
+    options: { maxPages?: number } = {},
+  ): Promise<IngestionSummary> {
+    if (!provider.capabilities.venues || !provider.fetchVenues) {
+      return this.skipped(provider.key, `venues:${sportSlug}`, 'provider does not supply venues');
+    }
+
+    const run = await this.startRun(provider.key, `venues:${sportSlug}`);
+    const summary = this.newSummary(run.id);
+    let cursor: string | undefined;
+    let page = 0;
+    const maxPages = options.maxPages ?? Number.POSITIVE_INFINITY;
+
+    try {
+      do {
+        const result = await provider.fetchVenues(sportSlug, cursor);
+        summary.requestsUsed += result.requestsUsed;
+        summary.read += result.items.length;
+
+        for (const item of result.items) {
+          try {
+            const existing = await this.resolution.findExistingMapping(
+              provider.key,
+              'venue',
+              item.externalId,
+            );
+            if (existing) {
+              summary.written += 1;
+              continue;
+            }
+
+            const [created] = await this.database.db
+              .insert(venue)
+              .values({
+                slug: this.slugify(item.fields.name),
+                name: item.fields.name,
+                city: item.fields.city,
+                country: item.fields.country,
+                capacity: item.fields.capacity,
+                openedYear: item.fields.openedYear,
+                confidence: 'provisional',
+              })
+              .onConflictDoNothing({ target: [venue.slug] })
+              .returning({ id: venue.id });
+
+            if (!created) {
+              // Already present, most likely ingested for another sport. That is
+              // the shared-venue case working as intended, not a failure.
+              summary.written += 1;
+              continue;
+            }
+
+            await this.resolution.recordMapping({
+              provider: provider.key,
+              entityType: 'venue',
+              externalId: item.externalId,
+              entityId: created.id,
+              matchMethod: 'deterministic',
+              matchConfidence: 1,
+            });
+            summary.written += 1;
+          } catch (error) {
+            summary.failed += 1;
+            this.logger.warn(
+              `Failed to ingest venue "${item.name}": ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            );
+          }
+        }
+
+        cursor = result.cursor ?? undefined;
+        page += 1;
+        await this.updateRunProgress(run.id, summary, cursor);
+      } while (cursor && page < maxPages);
+    } catch (error) {
+      summary.status = 'failed';
+      await this.finishRun(run.id, summary, error instanceof Error ? error.message : String(error));
+      if (error instanceof ProviderError && !error.retryable) throw error;
+      return summary;
+    }
+
+    await this.finishRun(run.id, summary);
+    return summary;
+  }
+
+  /**
+   * Fetches honours for people already ingested, in batches.
+   *
+   * Runs as a second pass rather than as part of person ingestion, because
+   * honours are one-to-many: joining them into the person query would multiply
+   * each person's row once per award, and the `SAMPLE` that keeps that query
+   * sane would then throw all but one away.
+   *
+   * Awards are filtered against a keyword list. Wikidata mixes sporting honours
+   * with civic ones (Cristiano Ronaldo holds the Order of Prince Henry), and a
+   * player page listing state decorations alongside the Ballon d'Or is noise.
+   * The filter is deliberately conservative: it keeps recognisably sporting
+   * awards and drops the rest, accepting that it will miss some obscure ones.
+   */
+  async ingestHonours(
+    provider: SportsDataProvider & {
+      fetchHonours?: (
+        qids: readonly string[],
+      ) => Promise<Map<string, { title: string; year?: number }[]>>;
+    },
+    sportSlug: string,
+    options: { batchSize?: number; maxBatches?: number } = {},
+  ): Promise<IngestionSummary> {
+    if (!provider.fetchHonours) {
+      return this.skipped(provider.key, `honours:${sportSlug}`, 'provider does not supply honours');
+    }
+
+    const sportId = await this.sportIdBySlug(sportSlug);
+    if (!sportId) {
+      return this.skipped(provider.key, `honours:${sportSlug}`, `unknown sport "${sportSlug}"`);
+    }
+
+    const run = await this.startRun(provider.key, `honours:${sportSlug}`);
+    const summary = this.newSummary(run.id);
+    const batchSize = options.batchSize ?? 50;
+    const maxBatches = options.maxBatches ?? Number.POSITIVE_INFINITY;
+
+    // Only people this provider mapped can be asked about, since the query is
+    // keyed by the provider's own identifiers.
+    const mapped = await this.database.db.execute<{ entity_id: string; external_id: string }>(sql`
+      SELECT em.entity_id, em.external_id
+      FROM external_mapping em
+      JOIN person p ON p.id = em.entity_id
+      WHERE em.provider = ${provider.key}
+        AND em.entity_type = 'person'
+        AND p.primary_sport_id = ${sportId}
+    `);
+
+    try {
+      for (
+        let index = 0, batch = 0;
+        index < mapped.length && batch < maxBatches;
+        index += batchSize, batch += 1
+      ) {
+        const slice = mapped.slice(index, index + batchSize);
+        const byQid = await provider.fetchHonours(slice.map((row) => row.external_id));
+        summary.requestsUsed += 1;
+
+        for (const row of slice) {
+          const awards = byQid.get(row.external_id) ?? [];
+          for (const award of awards) {
+            summary.read += 1;
+            if (!IngestionService.isSportingHonour(award.title)) continue;
+
+            try {
+              await this.database.db
+                .insert(honour)
+                .values({
+                  sportId,
+                  personId: row.entity_id,
+                  kind: 'award',
+                  title: award.title,
+                  year: award.year,
+                })
+                .onConflictDoNothing();
+              summary.written += 1;
+            } catch (error) {
+              summary.failed += 1;
+              this.logger.warn(
+                `Failed to ingest honour "${award.title}": ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+              );
+            }
+          }
+        }
+
+        await this.updateRunProgress(run.id, summary, String(index + batchSize));
+      }
+    } catch (error) {
+      summary.status = 'failed';
+      await this.finishRun(run.id, summary, error instanceof Error ? error.message : String(error));
+      if (error instanceof ProviderError && !error.retryable) throw error;
+      return summary;
+    }
+
+    await this.finishRun(run.id, summary);
+    return summary;
+  }
+
+  /**
+   * Whether an award looks like a sporting honour rather than a civic one.
+   *
+   * Keyword matching, which is inelegant and works. The alternative would be
+   * classifying every award item in Wikidata, which is a far larger job for a
+   * marginal gain on a list that a human will curate anyway.
+   */
+  private static isSportingHonour(title: string): boolean {
+    const lower = title.toLowerCase();
+
+    // Civic decorations dominate the false positives and are easy to name.
+    const excluded = ['order of', 'medal of merit', 'knight', 'officer of', 'commander of'];
+    if (excluded.some((term) => lower.includes(term))) return false;
+
+    const included = [
+      'ballon',
+      'player of the year',
+      'team of the year',
+      'golden',
+      'top scorer',
+      'mvp',
+      'most valuable',
+      'award',
+      'trophy',
+      'cup',
+      'championship',
+      'best ',
+      'hall of fame',
+      'sportsperson',
+      'footballer of the year',
+      'cricketer of the year',
+    ];
+    return included.some((term) => lower.includes(term));
+  }
+
   // ---------------------------------------------------------------------------
   // Upserts
   // ---------------------------------------------------------------------------
@@ -314,6 +664,9 @@ export class IngestionService {
           dateOfDeath: item.fields.dateOfDeath,
           nationality: item.fields.nationality,
           imageUrl: item.fields.imageUrl,
+          // Merged rather than replaced: a second provider contributing one
+          // attribute must not erase what the first supplied.
+          attributes: sql`${person.attributes} || ${JSON.stringify(item.fields.attributes ?? {})}::jsonb`,
           updatedAt: new Date(),
         })
         .where(eq(person.id, existingId));
@@ -373,6 +726,7 @@ export class IngestionService {
         dateOfDeath: item.fields.dateOfDeath,
         nationality: item.fields.nationality,
         imageUrl: item.fields.imageUrl,
+        attributes: item.fields.attributes ?? {},
         confidence: 'provisional',
       })
       .onConflictDoNothing({ target: [person.primarySportId, person.slug] })
@@ -480,6 +834,18 @@ export class IngestionService {
       queued: 0,
       requestsUsed: 0,
       status: 'skipped',
+    };
+  }
+
+  private newSummary(runId: string): IngestionSummary {
+    return {
+      runId,
+      read: 0,
+      written: 0,
+      failed: 0,
+      queued: 0,
+      requestsUsed: 0,
+      status: 'succeeded',
     };
   }
 

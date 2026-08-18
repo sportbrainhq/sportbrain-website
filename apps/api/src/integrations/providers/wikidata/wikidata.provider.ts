@@ -7,13 +7,16 @@ import {
   type ProviderPage,
   type ProviderPerson,
   type ProviderTeam,
+  type ProviderVenue,
   type SportsDataProvider,
 } from '../provider.types';
 import {
   competitionsQuery,
+  honoursQuery,
   peopleQuery,
   teamsByClassQuery,
   teamsByCompetitionQuery,
+  venuesQuery,
 } from './wikidata.queries';
 import { SPORT_SOURCES } from './wikidata.sources';
 
@@ -66,6 +69,18 @@ export class WikidataProvider implements SportsDataProvider {
    */
   private static readonly PAGE_SIZE = 200;
 
+  /**
+   * Smaller page size for the person query.
+   *
+   * That query carries nine OPTIONAL joins plus a sitelinks ordering, and at
+   * 200 rows it starts returning HTTP 504 from about the third page: the
+   * Query Service's 60-second budget is spent sorting a large intermediate
+   * result. 100 completes reliably. The cost is twice as many requests for the
+   * same number of people, which is a fair trade against a run that dies
+   * halfway and has to be resumed.
+   */
+  private static readonly PERSON_PAGE_SIZE = 100;
+
   /** Wikidata publishes no hard rate limit; this is self-imposed restraint on a free service. */
   private static readonly MIN_REQUEST_INTERVAL_MS = 1_000;
 
@@ -117,9 +132,11 @@ export class WikidataProvider implements SportsDataProvider {
     const rows = await this.runQuery(
       peopleQuery(
         source.sportQid,
-        source.competitionQids.length > 0 ? source.competitionQids : null,
-        WikidataProvider.PAGE_SIZE,
+        this.personCompetitions(source),
+        WikidataProvider.PERSON_PAGE_SIZE,
         offset,
+        source.requireParticipation ?? false,
+        source.personOccupationQid,
       ),
     );
 
@@ -143,11 +160,19 @@ export class WikidataProvider implements SportsDataProvider {
           dateOfDeath: this.date(row.deathDate),
           nationality: row.nationality,
           imageUrl: row.imageUrl,
+          // Sport-specific facts land in `person.attributes` rather than
+          // becoming columns: position means something different in every
+          // sport, and height is absent from most of them.
+          attributes: {
+            ...(row.position ? { position: row.position } : {}),
+            ...(row.currentClub ? { currentClub: row.currentClub } : {}),
+            ...(row.heightCm ? { heightCm: Number(row.heightCm) } : {}),
+          },
         },
       };
     });
 
-    return this.page(items, offset, rows.length);
+    return this.page(items, offset, rows.length, WikidataProvider.PERSON_PAGE_SIZE);
   }
 
   async fetchCompetitions(
@@ -157,8 +182,17 @@ export class WikidataProvider implements SportsDataProvider {
     const source = this.sourceFor(sportSlug);
     const offset = this.parseCursor(cursor);
 
+    if (!source.competitionClassQid) {
+      return { items: [], cursor: null, requestsUsed: 0 };
+    }
+
     const rows = await this.runQuery(
-      competitionsQuery(source.sportQid, WikidataProvider.PAGE_SIZE, offset),
+      competitionsQuery(
+        source.sportQid,
+        source.competitionClassQid,
+        WikidataProvider.PAGE_SIZE,
+        offset,
+      ),
     );
 
     const items = this.deduplicateByQid(rows).map<ProviderCompetition>((row) => ({
@@ -173,6 +207,67 @@ export class WikidataProvider implements SportsDataProvider {
     }));
 
     return this.page(items, offset, rows.length);
+  }
+
+  async fetchVenues(sportSlug: string, cursor?: string): Promise<ProviderPage<ProviderVenue>> {
+    const source = this.sourceFor(sportSlug);
+    const offset = this.parseCursor(cursor);
+
+    if (!source.venueClassQid) {
+      return { items: [], cursor: null, requestsUsed: 0 };
+    }
+
+    const rows = await this.runQuery(
+      venuesQuery(
+        source.sportQid,
+        source.venueClassQid,
+        WikidataProvider.PAGE_SIZE,
+        offset,
+        source.venueSkipSportFilter ?? false,
+      ),
+    );
+
+    const items = this.deduplicateByQid(rows).map<ProviderVenue>((row) => ({
+      externalId: this.qid(row.item),
+      name: row.itemLabel ?? '',
+      fields: {
+        name: row.itemLabel ?? '',
+        city: row.cityLabel,
+        country: row.countryLabel,
+        capacity: row.capacity ? Number.parseInt(row.capacity, 10) : undefined,
+        openedYear: this.year(row.opened),
+      },
+    }));
+
+    return this.page(items, offset, rows.length);
+  }
+
+  /**
+   * Honours for a batch of people.
+   *
+   * Batched rather than per-person because one request covering fifty people is
+   * fifty times kinder to a free public endpoint than fifty requests. The batch
+   * size is bounded by URL length rather than by any published limit.
+   */
+  async fetchHonours(
+    personQids: readonly string[],
+  ): Promise<Map<string, { title: string; year?: number }[]>> {
+    if (personQids.length === 0) return new Map();
+
+    const rows = await this.runQuery(honoursQuery(personQids));
+    const byPerson = new Map<string, { title: string; year?: number }[]>();
+
+    for (const row of rows) {
+      const qid = this.qid(row.item);
+      const title = row.awardLabel;
+      if (!qid || !title) continue;
+
+      const existing = byPerson.get(qid) ?? [];
+      existing.push({ title, year: this.year(row.when) });
+      byPerson.set(qid, existing);
+    }
+
+    return byPerson;
   }
 
   // ---------------------------------------------------------------------------
@@ -255,13 +350,27 @@ export class WikidataProvider implements SportsDataProvider {
   }
 
   /** Builds the page envelope, deciding whether more remains from the raw row count. */
-  private page<T>(items: T[], offset: number, rawRowCount: number): ProviderPage<T> {
-    const exhausted = rawRowCount < WikidataProvider.PAGE_SIZE;
+  private page<T>(
+    items: T[],
+    offset: number,
+    rawRowCount: number,
+    pageSize: number = WikidataProvider.PAGE_SIZE,
+  ): ProviderPage<T> {
+    const exhausted = rawRowCount < pageSize;
     return {
       items,
-      cursor: exhausted ? null : String(offset + WikidataProvider.PAGE_SIZE),
+      cursor: exhausted ? null : String(offset + pageSize),
       requestsUsed: 1,
     };
+  }
+
+  /** Person scoping, which may deliberately differ from team scoping on cost grounds. */
+  private personCompetitions(source: {
+    competitionQids: readonly string[];
+    personCompetitionQids?: readonly string[];
+  }): readonly string[] | null {
+    const qids = source.personCompetitionQids ?? source.competitionQids;
+    return qids.length > 0 ? qids : null;
   }
 
   private sourceFor(sportSlug: string) {

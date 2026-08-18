@@ -51,7 +51,9 @@ async function main(): Promise<void> {
   const [, , providerKey, entityType, sportSlug, ...flags] = process.argv;
 
   if (!providerKey || !entityType || !sportSlug) {
-    process.stderr.write('Usage: ingest <provider> <teams|people> <sport-slug> [--max-pages=N]\n');
+    process.stderr.write(
+      'Usage: ingest <provider> <all|teams|people|competitions|venues|honours> <sport-slug> [--max-pages=N]\n',
+    );
     process.stderr.write(`Supported sports: ${SUPPORTED_SPORT_SLUGS.join(', ')}\n`);
     process.exitCode = 1;
     return;
@@ -83,29 +85,45 @@ async function main(): Promise<void> {
     process.stdout.write(`Ingesting ${entityType} for ${sportSlug} from ${providerKey}\n`);
     const startedAt = Date.now();
 
-    const summary =
-      entityType === 'teams'
-        ? await ingestion.ingestTeams(provider, sportSlug, { maxPages })
-        : entityType === 'people'
-          ? await ingestion.ingestPeople(provider, sportSlug, { maxPages })
-          : (() => {
-              throw new Error(`Unknown entity type "${entityType}"`);
-            })();
+    // `all` runs the passes in dependency order: competitions and venues are
+    // referenced by events later, and honours need people to already exist.
+    const types =
+      entityType === 'all'
+        ? ['competitions', 'venues', 'teams', 'people', 'honours']
+        : [entityType];
 
-    const seconds = ((Date.now() - startedAt) / 1_000).toFixed(1);
-    process.stdout.write(
-      `${summary.status} in ${seconds}s: read ${summary.read}, written ${summary.written}, ` +
-        `queued for review ${summary.queued}, failed ${summary.failed}, ` +
-        `requests ${summary.requestsUsed}\n`,
-    );
+    let failed = false;
 
-    if (summary.queued > 0) {
+    for (const type of types) {
+      const typeStartedAt = Date.now();
+      const summary =
+        type === 'teams'
+          ? await ingestion.ingestTeams(provider, sportSlug, { maxPages })
+          : type === 'people'
+            ? await ingestion.ingestPeople(provider, sportSlug, { maxPages })
+            : type === 'competitions'
+              ? await ingestion.ingestCompetitions(provider, sportSlug, { maxPages })
+              : type === 'venues'
+                ? await ingestion.ingestVenues(provider, sportSlug, { maxPages })
+                : type === 'honours'
+                  ? await ingestion.ingestHonours(provider, sportSlug, { maxBatches: maxPages })
+                  : (() => {
+                      throw new Error(`Unknown entity type "${type}"`);
+                    })();
+
+      const seconds = ((Date.now() - typeStartedAt) / 1_000).toFixed(1);
       process.stdout.write(
-        `${summary.queued} record(s) need human review. See the resolution_candidate table.\n`,
+        `  ${type.padEnd(13)} ${summary.status.padEnd(9)} ${seconds}s  ` +
+          `read ${summary.read}, written ${summary.written}, ` +
+          `queued ${summary.queued}, failed ${summary.failed}, requests ${summary.requestsUsed}\n`,
       );
+
+      if (summary.status === 'failed') failed = true;
     }
 
-    process.exitCode = summary.status === 'failed' ? 1 : 0;
+    const total = ((Date.now() - startedAt) / 1_000).toFixed(1);
+    process.stdout.write(`Done in ${total}s\n`);
+    process.exitCode = failed ? 1 : 0;
   } catch (error) {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     process.exitCode = 1;

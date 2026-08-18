@@ -35,6 +35,30 @@
  *     querying will make it. Those arrive from a paid feed or not at all.
  */
 
+/**
+ * ## Ordering by notability
+ *
+ * Every paged query below orders by `wikibase:sitelinks` descending, and this
+ * is the single most consequential detail in the file.
+ *
+ * The obvious ordering, by QID, is effectively random: QIDs reflect the order
+ * somebody happened to create the item, not importance. Paging that way filled
+ * the first two hundred football players with lower-league German professionals
+ * and produced a database with no Beckham in it. Worse, those obscure entities
+ * carry almost no honours, positions or images, so the data looked thin when
+ * the problem was that we were reading the wrong end of the list.
+ *
+ * `wikibase:sitelinks` counts the Wikipedia language editions holding an
+ * article on the entity. It is an excellent notability proxy, because the
+ * players covered in a hundred languages are exactly the ones a visitor will
+ * search for. Ordering by it turns page one from anonymity into Beckham (137),
+ * Ibrahimovic (119), Suarez (113) and Lewandowski (106).
+ *
+ * The practical consequence: a partial ingestion is now a *useful* subset
+ * rather than an arbitrary one. Stopping after five pages gives the thousand
+ * most notable entities, which is the right thousand.
+ */
+
 /** Wikidata items used as class or value constants, named so the queries read as prose. */
 export const WD = {
   /** association football club */
@@ -126,9 +150,10 @@ SELECT ?item ?itemLabel ?inception ?countryLabel ?shortName ?logo WHERE {
   OPTIONAL { ?item wdt:P17 ?country }
   OPTIONAL { ?item wdt:P1813 ?shortName }
   OPTIONAL { ?item wdt:P154 ?logo }
+  ?item wikibase:sitelinks ?sitelinks .
   SERVICE wikibase:label { bd:serviceParam wikibase:language "en" }
 }
-ORDER BY ?item
+ORDER BY DESC(?sitelinks)
 LIMIT ${limit}
 OFFSET ${offset}`.trim();
 }
@@ -174,9 +199,10 @@ SELECT ?item ?itemLabel ?inception ?countryLabel ?shortName ?logo WHERE {
   OPTIONAL { ?item wdt:P17 ?country }
   OPTIONAL { ?item wdt:P1813 ?shortName }
   OPTIONAL { ?item wdt:P154 ?logo }
+  ?item wikibase:sitelinks ?sitelinks .
   SERVICE wikibase:label { bd:serviceParam wikibase:language "en" }
 }
-ORDER BY ?item
+ORDER BY DESC(?sitelinks)
 LIMIT ${limit}
 OFFSET ${offset}`.trim();
 }
@@ -208,18 +234,27 @@ export function peopleQuery(
   competitionQids: readonly string[] | null,
   limit: number,
   offset: number,
+  requireParticipation = false,
+  occupationQid?: string,
 ): string {
   const competitionClause =
     competitionQids && competitionQids.length > 0
       ? `VALUES ?league { ${competitionQids.map((qid) => `wd:${qid}`).join(' ')} }\n  ?item wdt:P118 ?league .`
       : '';
 
+  // For team sports, league membership is the notability filter. Sports without
+  // teams have no equivalent, so participation in a recorded event stands in.
+  const participationClause = requireParticipation ? '?item wdt:P1344 ?participatedIn .' : '';
+
   return `
-SELECT ?item ?itemLabel
+SELECT ?item ?itemLabel ?sitelinks
        (SAMPLE(?birth) AS ?birthDate)
        (SAMPLE(?death) AS ?deathDate)
-       (SAMPLE(?countryLabel) AS ?nationality)
+       (SAMPLE(?natLabel) AS ?nationality)
        (SAMPLE(?image) AS ?imageUrl)
+       (SAMPLE(?posLabel) AS ?position)
+       (SAMPLE(?clubLabel) AS ?currentClub)
+       (SAMPLE(?height) AS ?heightCm)
        (SAMPLE(?transfermarkt) AS ?transfermarktId)
        (SAMPLE(?fifa) AS ?fifaId)
        (SAMPLE(?espncricinfo) AS ?espncricinfoId)
@@ -227,54 +262,134 @@ SELECT ?item ?itemLabel
        (SAMPLE(?atp) AS ?atpId)
 WHERE {
   ${competitionClause}
+  ${participationClause}
   ?item wdt:P31 wd:${WD.HUMAN} .
-  ?item wdt:P641 wd:${sportQid} .
+  ${occupationQid ? `?item wdt:P106 wd:${occupationQid} .` : `?item wdt:P641 wd:${sportQid} .`}
   ?item rdfs:label ?itemLabel . FILTER(LANG(?itemLabel) = "en")
+  ?item wikibase:sitelinks ?sitelinks .
   OPTIONAL { ?item wdt:P569 ?birth }
   OPTIONAL { ?item wdt:P570 ?death }
-  OPTIONAL { ?item wdt:P27 ?countryItem . ?countryItem rdfs:label ?countryLabel . FILTER(LANG(?countryLabel) = "en") }
+  OPTIONAL { ?item wdt:P27 ?nationalityItem .
+             ?nationalityItem rdfs:label ?natLabel . FILTER(LANG(?natLabel) = "en") }
   OPTIONAL { ?item wdt:P18 ?image }
+  OPTIONAL { ?item wdt:P413 ?positionItem .
+             ?positionItem rdfs:label ?posLabel . FILTER(LANG(?posLabel) = "en") }
+  OPTIONAL { ?item wdt:P54 ?clubItem .
+             ?clubItem rdfs:label ?clubLabel . FILTER(LANG(?clubLabel) = "en") }
+  OPTIONAL { ?item wdt:P2048 ?height }
   OPTIONAL { ?item wdt:P2446 ?transfermarkt }
   OPTIONAL { ?item wdt:P1469 ?fifa }
   OPTIONAL { ?item wdt:P2697 ?espncricinfo }
   OPTIONAL { ?item wdt:P3647 ?nba }
   OPTIONAL { ?item wdt:P536 ?atp }
 }
-GROUP BY ?item ?itemLabel
-ORDER BY ?item
+GROUP BY ?item ?itemLabel ?sitelinks
+ORDER BY DESC(?sitelinks)
 LIMIT ${limit}
 OFFSET ${offset}`.trim();
 }
 
-/** Competitions for one sport, via the sport property on the competition itself. */
-export function competitionsQuery(sportQid: string, limit: number, offset: number): string {
+/**
+ * Honours and awards held by one batch of people.
+ *
+ * Fetched separately from the person query rather than joined into it, for a
+ * reason worth stating: a person with twenty awards would multiply their row
+ * twenty times, and `SAMPLE` would then discard nineteen of them. Honours are
+ * inherently one-to-many and need their own pass.
+ *
+ * The qualifier `pq:P585` (point in time) carries the year, which is what makes
+ * an honours list readable rather than an undated jumble.
+ *
+ * Verified against live data: Cristiano Ronaldo returns Ballon d'Or and PFA
+ * awards correctly, mixed in with state decorations such as the Order of Prince
+ * Henry. The caller filters those out; this query stays honest about what
+ * Wikidata holds.
+ */
+export function honoursQuery(personQids: readonly string[]): string {
+  const values = personQids.map((qid) => `wd:${qid}`).join(' ');
+  return `
+SELECT ?item ?awardLabel ?when WHERE {
+  VALUES ?item { ${values} }
+  ?item p:P166 ?statement .
+  ?statement ps:P166 ?award .
+  OPTIONAL { ?statement pq:P585 ?when }
+  ?award rdfs:label ?awardLabel . FILTER(LANG(?awardLabel) = "en")
+}
+ORDER BY ?item ?when`.trim();
+}
+
+/**
+ * Competitions for one sport.
+ *
+ * The class matters enormously here, and getting it wrong is not a subtle
+ * failure. The first attempt used `Q13406554` (sports competition), which
+ * returns **180,801** football results, because it matches every *season* of
+ * every league ever recorded: "2003-04 Premier League" is a sports competition.
+ * Ingesting that would have buried the six competitions anyone wants under a
+ * hundred thousand season rows.
+ *
+ * `Q15991303` (association football league) returns 2,009, which is the set of
+ * actual leagues. Seasons belong in the `season` table, reached from the
+ * competition, and are a separate ingestion concern.
+ *
+ * Ordered by inception so that long-established competitions arrive first: a
+ * proxy for importance, in the absence of any notability ranking in Wikidata.
+ */
+export function competitionsQuery(
+  sportQid: string,
+  competitionClassQid: string,
+  limit: number,
+  offset: number,
+): string {
   return `
 SELECT ?item ?itemLabel ?inception ?countryLabel ?logo WHERE {
+  ?item wdt:P31/wdt:P279* wd:${competitionClassQid} .
   ?item wdt:P641 wd:${sportQid} .
-  ?item wdt:P31/wdt:P279* wd:Q13406554 .
+  ?item rdfs:label ?itemLabel . FILTER(LANG(?itemLabel) = "en")
   OPTIONAL { ?item wdt:P571 ?inception }
-  OPTIONAL { ?item wdt:P17 ?country }
+  OPTIONAL { ?item wdt:P17 ?countryItem .
+             ?countryItem rdfs:label ?countryLabel . FILTER(LANG(?countryLabel) = "en") }
   OPTIONAL { ?item wdt:P154 ?logo }
-  SERVICE wikibase:label { bd:serviceParam wikibase:language "en" }
+  ?item wikibase:sitelinks ?sitelinks .
 }
-ORDER BY ?item
+ORDER BY DESC(?sitelinks)
 LIMIT ${limit}
 OFFSET ${offset}`.trim();
 }
 
-/** Venues that host one sport. */
-export function venuesQuery(sportQid: string, limit: number, offset: number): string {
+/**
+ * Venues hosting one sport.
+ *
+ * A capacity is required rather than optional, which is the same quality filter
+ * used for Formula 1 constructors and works for the same reason: a venue nobody
+ * has recorded a capacity for is almost always a minor ground, and requiring one
+ * sorts the notable from the obscure without needing a notability signal
+ * Wikidata does not provide.
+ *
+ * Ordered by capacity descending, so the first page is Camp Nou and the Estadio
+ * Azteca rather than a village recreation ground. Verified against live data.
+ */
+export function venuesQuery(
+  sportQid: string,
+  venueClassQid: string,
+  limit: number,
+  offset: number,
+  skipSportFilter = false,
+): string {
   return `
 SELECT ?item ?itemLabel ?capacity ?cityLabel ?countryLabel ?opened WHERE {
-  ?item wdt:P641 wd:${sportQid} .
-  ?item wdt:P31/wdt:P279* wd:Q1076486 .
-  OPTIONAL { ?item wdt:P1083 ?capacity }
-  OPTIONAL { ?item wdt:P131 ?city }
-  OPTIONAL { ?item wdt:P17 ?country }
+  ?item wdt:P31/wdt:P279* wd:${venueClassQid} .
+  ${skipSportFilter ? '' : `?item wdt:P641 wd:${sportQid} .`}
+  ?item rdfs:label ?itemLabel . FILTER(LANG(?itemLabel) = "en")
+  ${skipSportFilter ? 'OPTIONAL { ?item wdt:P1083 ?capacity }' : '?item wdt:P1083 ?capacity .'}
+  OPTIONAL { ?item wdt:P131 ?cityItem .
+             ?cityItem rdfs:label ?cityLabel . FILTER(LANG(?cityLabel) = "en") }
+  OPTIONAL { ?item wdt:P17 ?countryItem .
+             ?countryItem rdfs:label ?countryLabel . FILTER(LANG(?countryLabel) = "en") }
   OPTIONAL { ?item wdt:P1619 ?opened }
-  SERVICE wikibase:label { bd:serviceParam wikibase:language "en" }
+  ?item wikibase:sitelinks ?sitelinks .
 }
-ORDER BY ?item
+ORDER BY DESC(?sitelinks)
 LIMIT ${limit}
 OFFSET ${offset}`.trim();
 }
