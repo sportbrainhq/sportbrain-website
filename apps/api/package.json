@@ -18,6 +18,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/database/migrate.ts",
     "db:studio": "drizzle-kit studio",
+    "ingest": "tsx src/integrations/ingest.cli.ts",
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "dependencies": {

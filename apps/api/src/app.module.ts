@@ -6,6 +6,7 @@ import { AllExceptionsFilter, LoggingInterceptor, RequestIdMiddleware } from './
 import { ConfigModule, type AppConfig } from './config';
 import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './health/health.module';
+import { IntegrationsModule } from './integrations/integrations.module';
 import { CacheModule } from './infrastructure/cache/cache.module';
 import { JobsModule } from './jobs/jobs.module';
 
@@ -48,6 +49,9 @@ import { JobsModule } from './jobs/jobs.module';
 
     // Platform features.
     HealthModule,
+
+    // External data sources and the ingestion pipeline.
+    IntegrationsModule,
 
     // Domain modules go here. See src/modules/README.md.
   ],
