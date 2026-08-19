@@ -3,6 +3,9 @@ import { EnrichmentService } from './ingestion/enrichment.service';
 import { EntityResolutionService } from './ingestion/entity-resolution.service';
 import { IngestionService } from './ingestion/ingestion.service';
 import { WikidataProvider } from './providers/wikidata/wikidata.provider';
+import { WikipediaClient } from './providers/wikipedia/wikipedia.client';
+import { WikipediaProvider } from './providers/wikipedia/wikipedia.provider';
+import { WikipediaIngestionService } from './ingestion/wikipedia-ingestion.service';
 
 /**
  * External data sources and the pipeline that lands them in our schema.
@@ -23,7 +26,22 @@ import { WikidataProvider } from './providers/wikidata/wikidata.provider';
  * asking for data it cannot return.
  */
 @Module({
-  providers: [WikidataProvider, EntityResolutionService, IngestionService, EnrichmentService],
-  exports: [WikidataProvider, IngestionService, EntityResolutionService, EnrichmentService],
+  providers: [
+    WikidataProvider,
+    WikipediaClient,
+    WikipediaProvider,
+    WikipediaIngestionService,
+    EntityResolutionService,
+    IngestionService,
+    EnrichmentService,
+  ],
+  exports: [
+    WikidataProvider,
+    WikipediaProvider,
+    WikipediaIngestionService,
+    IngestionService,
+    EntityResolutionService,
+    EnrichmentService,
+  ],
 })
 export class IntegrationsModule {}

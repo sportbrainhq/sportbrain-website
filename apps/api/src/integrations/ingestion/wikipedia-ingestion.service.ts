@@ -1,0 +1,430 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { sql } from 'drizzle-orm';
+import { DatabaseService } from '../../database/database.service';
+import { discipline, entityFact, entityRanking, externalMapping } from '../../database/schema';
+import {
+  WikipediaProvider,
+  type WikiFact,
+  type WikiRanking,
+} from '../providers/wikipedia/wikipedia.provider';
+
+/**
+ * Lands Wikipedia content in the canonical schema.
+ *
+ * The entity layer already holds Wikidata QIDs, and every QID carries the title
+ * of its English Wikipedia article. That means no name matching is required
+ * here: the join is exact, and the duplicate-and-mismatch problems that dogged
+ * earlier ingestion simply do not arise.
+ *
+ * Facts land in `entity_fact`, leaderboards in `entity_ranking`, and cricket
+ * career records in `person_statistic`. Nothing here writes prose.
+ */
+@Injectable()
+export class WikipediaIngestionService {
+  private readonly logger = new Logger(WikipediaIngestionService.name);
+
+  constructor(
+    private readonly database: DatabaseService,
+    private readonly provider: WikipediaProvider,
+  ) {}
+
+  /**
+   * Resolves Wikipedia titles for entities we already hold, via their QIDs.
+   *
+   * One request covers fifty entities, because the Wikidata API accepts batched
+   * identifiers and returns sitelinks for all of them. Doing this per entity
+   * would be fifty times the traffic against a donated service for identical
+   * results.
+   */
+  async mapTitles(
+    entityType: 'team' | 'person' | 'competition' | 'sport',
+    sportSlug: string | null,
+    limit: number,
+  ): Promise<number> {
+    const table = entityType === 'person' ? 'person' : entityType;
+    const sportColumn = entityType === 'person' ? 'primary_sport_id' : 'sport_id';
+
+    const rows = await this.database.db.execute<{ entity_id: string; qid: string }>(sql`
+      SELECT em.entity_id, em.external_id AS qid
+      FROM external_mapping em
+      JOIN ${sql.raw(table)} e ON e.id = em.entity_id
+      ${sql.raw(entityType === 'sport' ? '' : `JOIN sport s ON s.id = e.${sportColumn}`)}
+      WHERE em.provider = 'wikidata'
+        AND em.entity_type = ${entityType}
+        ${sql.raw(sportSlug && entityType !== 'sport' ? `AND s.slug = '${sportSlug}'` : '')}
+        AND NOT EXISTS (
+          SELECT 1 FROM external_mapping w
+          WHERE w.provider = 'wikipedia'
+            AND w.entity_type = ${entityType}
+            AND w.entity_id = em.entity_id
+        )
+      LIMIT ${limit}
+    `);
+
+    let mapped = 0;
+
+    for (let index = 0; index < rows.length; index += 50) {
+      const batch = rows.slice(index, index + 50);
+      const qids = batch.map((row) => row.qid);
+
+      const url =
+        `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${qids.join('|')}` +
+        `&props=sitelinks&sitefilter=enwiki&format=json&formatversion=2`;
+
+      try {
+        const response = await fetch(url, {
+          headers: { 'User-Agent': 'SportBrainHQ/0.1 (tech@sportbrainhq.com)' },
+          signal: AbortSignal.timeout(45_000),
+        });
+        const body = (await response.json()) as {
+          entities?: Record<string, { sitelinks?: { enwiki?: { title?: string } } }>;
+        };
+
+        for (const row of batch) {
+          const title = body.entities?.[row.qid]?.sitelinks?.enwiki?.title;
+          // Plenty of entities have no English article. That is missing data,
+          // not an error, and the entity keeps its Wikidata facts.
+          if (!title) continue;
+
+          await this.database.db
+            .insert(externalMapping)
+            .values({
+              provider: 'wikipedia',
+              entityType,
+              externalId: title,
+              entityId: row.entity_id,
+              matchMethod: 'deterministic',
+              matchConfidence: '1.000',
+              lastSyncedAt: new Date(),
+            })
+            .onConflictDoNothing();
+          mapped += 1;
+        }
+      } catch (error) {
+        this.logger.warn(`Title mapping batch failed: ${this.message(error)}`);
+      }
+    }
+
+    return mapped;
+  }
+
+  /** Ingests facts for one entity type across a sport. */
+  async ingestFacts(
+    entityType: 'team' | 'person' | 'competition' | 'sport',
+    sportSlug: string | null,
+    limit: number,
+    slug?: string,
+  ): Promise<{ entities: number; facts: number }> {
+    const targets = await this.targets(entityType, sportSlug, limit, slug);
+    let facts = 0;
+    let entities = 0;
+
+    for (const [index, target] of targets.entries()) {
+      try {
+        const extracted =
+          entityType === 'sport'
+            ? await this.provider.fetchSportFacts(target.title)
+            : entityType === 'competition'
+              ? await this.provider.fetchCompetitionFacts(target.title)
+              : entityType === 'team'
+                ? await this.provider.fetchTeamFacts(target.title)
+                : await this.provider.fetchPlayerFacts(target.title);
+
+        if (extracted.length > 0) {
+          facts += await this.writeFacts(entityType, target.id, extracted);
+          entities += 1;
+        }
+      } catch (error) {
+        this.logger.warn(`Facts failed for ${target.title}: ${this.message(error)}`);
+      }
+
+      if ((index + 1) % 25 === 0) {
+        this.logger.log(`  ${index + 1}/${targets.length} ${entityType}`);
+      }
+    }
+
+    return { entities, facts };
+  }
+
+  /**
+   * Ingests club record tables.
+   *
+   * The records article is a separate page from the club's own, and its title
+   * has to be searched for rather than constructed: three of four guessed
+   * titles resolved and Liverpool's did not. Clubs without one are skipped.
+   */
+  async ingestTeamRankings(
+    sportSlug: string,
+    limit: number,
+  ): Promise<{ teams: number; rankings: number }> {
+    const targets = await this.targets('team', sportSlug, limit);
+    let teams = 0;
+    let rankings = 0;
+
+    for (const [index, target] of targets.entries()) {
+      try {
+        const recordsTitle = await this.provider.findRecordsArticle(target.name);
+        if (!recordsTitle) continue;
+
+        const extracted = await this.provider.fetchTeamRankings(recordsTitle);
+        if (extracted.length === 0) continue;
+
+        for (const ranking of extracted) {
+          await this.writeRanking('team', target.id, ranking);
+          rankings += 1;
+        }
+        teams += 1;
+      } catch (error) {
+        this.logger.warn(`Rankings failed for ${target.name}: ${this.message(error)}`);
+      }
+
+      if ((index + 1) % 10 === 0) {
+        this.logger.log(`  ${index + 1}/${targets.length} teams, ${rankings} tables`);
+      }
+    }
+
+    return { teams, rankings };
+  }
+
+  /**
+   * Ingests cricketers' per-format career records.
+   *
+   * The payoff for the whole exercise. Wikidata holds no cricket batting
+   * averages at all; a cricket infobox holds a player's complete Test, ODI and
+   * T20I records, which map directly onto the discipline model.
+   */
+  async ingestCricketStats(limit: number): Promise<{ players: number; blocks: number }> {
+    const targets = await this.targets('person', 'cricket', limit);
+
+    const disciplines = await this.database.db
+      .select({ id: discipline.id, key: discipline.key })
+      .from(discipline)
+      .innerJoin(sql`sport`, sql`sport.id = ${discipline.sportId} AND sport.slug = 'cricket'`);
+
+    const byKey = new Map(disciplines.map((row) => [row.key, row.id]));
+
+    const [sportRow] = await this.database.db.execute<{ id: string }>(
+      sql`SELECT id FROM sport WHERE slug = 'cricket' LIMIT 1`,
+    );
+    if (!sportRow) return { players: 0, blocks: 0 };
+
+    let players = 0;
+    let blocks = 0;
+
+    for (const [index, target] of targets.entries()) {
+      try {
+        const stats = await this.provider.fetchCricketStats(target.title);
+        if (stats.length === 0) continue;
+
+        for (const block of stats) {
+          const disciplineId = block.discipline ? byKey.get(block.discipline) : null;
+          if (!disciplineId) continue;
+
+          await this.database.db.execute(sql`
+            INSERT INTO person_statistic (
+              person_id, sport_id, discipline_id, scope, appearances, stats, computed_at
+            ) VALUES (
+              ${target.id}, ${sportRow.id}, ${disciplineId}, 'career',
+              ${block.appearances ?? 0}, ${JSON.stringify(block.stats)}::jsonb, now()
+            )
+            ON CONFLICT (
+              person_id, scope,
+              coalesce(competition_id, '00000000-0000-0000-0000-000000000000'::uuid),
+              coalesce(season_id, '00000000-0000-0000-0000-000000000000'::uuid),
+              coalesce(team_id, '00000000-0000-0000-0000-000000000000'::uuid),
+              coalesce(discipline_id, '00000000-0000-0000-0000-000000000000'::uuid)
+            ) DO UPDATE SET
+              appearances = EXCLUDED.appearances,
+              stats = person_statistic.stats || EXCLUDED.stats,
+              computed_at = now()
+          `);
+          blocks += 1;
+        }
+
+        players += 1;
+      } catch (error) {
+        this.logger.warn(`Cricket stats failed for ${target.title}: ${this.message(error)}`);
+      }
+
+      if ((index + 1) % 25 === 0) {
+        this.logger.log(`  ${index + 1}/${targets.length} players, ${blocks} stat blocks`);
+      }
+    }
+
+    return { players, blocks };
+  }
+
+  /**
+   * Ingests footballers' club careers into `person_team`.
+   *
+   * Club names are matched against teams we already hold, and spells at clubs
+   * outside the catalogue are skipped rather than creating placeholder teams.
+   */
+  async ingestFootballCareers(limit: number): Promise<{ players: number; spells: number }> {
+    const targets = await this.targets('person', 'football', limit);
+
+    const teams = await this.database.db.execute<{ id: string; name: string }>(sql`
+      SELECT t.id, t.name FROM team t
+      JOIN sport s ON s.id = t.sport_id AND s.slug = 'football'
+    `);
+
+    const normalise = (value: string) =>
+      value
+        .toLowerCase()
+        .replace(/\b(fc|cf|afc|f\.c\.|c\.f\.|club|de|futbol|football)\b/g, '')
+        .replace(/[^a-z0-9]/g, '');
+
+    const byName = new Map<string, string>();
+    for (const team of teams) byName.set(normalise(team.name), team.id);
+
+    let players = 0;
+    let spells = 0;
+
+    for (const [index, target] of targets.entries()) {
+      try {
+        const career = await this.provider.fetchFootballCareer(target.title);
+        if (career.length === 0) continue;
+
+        for (const entry of career) {
+          const teamId = byName.get(normalise(entry.team));
+          if (!teamId) continue;
+
+          const [startYear, endYear] = entry.years.split(/[–-]/);
+          const start = startYear?.trim().match(/^\d{4}$/) ? `${startYear.trim()}-01-01` : null;
+          const end = endYear?.trim().match(/^\d{4}$/) ? `${endYear.trim()}-12-31` : null;
+
+          await this.database.db.execute(sql`
+            INSERT INTO person_team (
+              person_id, team_id, role, start_date, end_date, attributes, confidence
+            ) VALUES (
+              ${target.id}, ${teamId}, 'player',
+              ${start}::date, ${end}::date,
+              ${JSON.stringify({
+                appearances: entry.apps,
+                goals: entry.goals,
+                years: entry.years,
+              })}::jsonb,
+              'verified'
+            )
+            ON CONFLICT DO NOTHING
+          `);
+          spells += 1;
+        }
+
+        players += 1;
+      } catch (error) {
+        this.logger.warn(`Career failed for ${target.title}: ${this.message(error)}`);
+      }
+
+      if ((index + 1) % 25 === 0) {
+        this.logger.log(`  ${index + 1}/${targets.length} players, ${spells} spells`);
+      }
+    }
+
+    return { players, spells };
+  }
+
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Entities with a Wikipedia title, most notable first.
+   *
+   * Ordered by honours held, which is the best proxy available for how likely
+   * anybody is to look an entity up. A partial run therefore improves the pages
+   * that matter rather than an arbitrary slice.
+   */
+  private async targets(
+    entityType: 'team' | 'person' | 'competition' | 'sport',
+    sportSlug: string | null,
+    limit: number,
+    slug?: string,
+  ): Promise<{ id: string; title: string; name: string }[]> {
+    const table = entityType === 'person' ? 'person' : entityType;
+    const nameColumn = entityType === 'person' ? 'full_name' : 'name';
+    const sportColumn = entityType === 'person' ? 'primary_sport_id' : 'sport_id';
+    const honourColumn =
+      entityType === 'person' ? 'person_id' : entityType === 'team' ? 'team_id' : 'competition_id';
+
+    return this.database.db.execute<{ id: string; title: string; name: string }>(sql`
+      SELECT e.id, em.external_id AS title, e.${sql.raw(nameColumn)} AS name
+      FROM external_mapping em
+      JOIN ${sql.raw(table)} e ON e.id = em.entity_id
+      ${sql.raw(entityType === 'sport' ? '' : `JOIN sport s ON s.id = e.${sportColumn}`)}
+      ${sql.raw(entityType === 'sport' ? '' : `LEFT JOIN honour h ON h.${honourColumn} = e.id`)}
+      WHERE em.provider = 'wikipedia'
+        AND em.entity_type = ${entityType}
+        ${sql.raw(sportSlug && entityType !== 'sport' ? `AND s.slug = '${sportSlug}'` : '')}
+        AND (${slug ?? null}::text IS NULL OR e.slug = ${slug ?? null})
+      GROUP BY e.id, em.external_id, e.${sql.raw(nameColumn)}
+      ${sql.raw(entityType === 'sport' ? '' : 'ORDER BY count(h.id) DESC')}
+      LIMIT ${limit}
+    `);
+  }
+
+  private async writeFacts(
+    entityType: string,
+    entityId: string,
+    facts: WikiFact[],
+  ): Promise<number> {
+    let written = 0;
+
+    for (const fact of facts) {
+      await this.database.db
+        .insert(entityFact)
+        .values({
+          entityType,
+          entityId,
+          key: fact.key,
+          label: fact.label,
+          value: fact.value,
+          category: fact.category,
+          displayOrder: fact.order,
+          source: 'wikipedia',
+        })
+        .onConflictDoUpdate({
+          target: [entityFact.entityType, entityFact.entityId, entityFact.key, entityFact.value],
+          set: {
+            label: fact.label,
+            category: fact.category,
+            source: 'wikipedia',
+            updatedAt: new Date(),
+          },
+        });
+      written += 1;
+    }
+
+    return written;
+  }
+
+  private async writeRanking(
+    entityType: string,
+    entityId: string,
+    ranking: WikiRanking,
+  ): Promise<void> {
+    await this.database.db
+      .insert(entityRanking)
+      .values({
+        entityType,
+        entityId,
+        kind: ranking.kind,
+        label: ranking.label,
+        entries: ranking.entries,
+        confidence: ranking.confidence,
+        note: ranking.note,
+      })
+      .onConflictDoUpdate({
+        target: [entityRanking.entityType, entityRanking.entityId, entityRanking.kind],
+        set: {
+          label: ranking.label,
+          entries: ranking.entries,
+          confidence: ranking.confidence,
+          note: ranking.note,
+          updatedAt: new Date(),
+        },
+      });
+  }
+
+  private message(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+  }
+}

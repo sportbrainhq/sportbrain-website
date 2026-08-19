@@ -34,6 +34,7 @@ import { entityRef, primaryId, timestamps } from './_shared';
  */
 export const providerEnum = pgEnum('provider', [
   'wikidata',
+  'wikipedia',
   'api_sports',
   'thesportsdb',
   'cricapi',
