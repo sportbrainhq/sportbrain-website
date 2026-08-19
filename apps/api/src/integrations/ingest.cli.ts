@@ -52,7 +52,7 @@ async function main(): Promise<void> {
 
   if (!providerKey || !entityType || !sportSlug) {
     process.stderr.write(
-      'Usage: ingest <provider> <all|teams|people|competitions|venues|honours|team-honours|memberships> <sport-slug> [--max-pages=N]\n',
+      'Usage: ingest <provider> <all|teams|national-teams|people|competitions|venues|honours|team-honours|memberships> <sport-slug> [--max-pages=N]\n',
     );
     process.stderr.write(`Supported sports: ${SUPPORTED_SPORT_SLUGS.join(', ')}\n`);
     process.exitCode = 1;
@@ -99,25 +99,30 @@ async function main(): Promise<void> {
       const summary =
         type === 'teams'
           ? await ingestion.ingestTeams(provider, sportSlug, { maxPages })
-          : type === 'people'
-            ? await ingestion.ingestPeople(provider, sportSlug, { maxPages })
-            : type === 'competitions'
-              ? await ingestion.ingestCompetitions(provider, sportSlug, { maxPages })
-              : type === 'venues'
-                ? await ingestion.ingestVenues(provider, sportSlug, { maxPages })
-                : type === 'honours'
-                  ? await ingestion.ingestHonours(provider, sportSlug, { maxBatches: maxPages })
-                  : type === 'team-honours'
-                    ? await ingestion.ingestTeamHonours(provider, sportSlug, {
-                        maxBatches: maxPages,
-                      })
-                    : type === 'memberships'
-                      ? await ingestion.ingestMemberships(provider, sportSlug, {
+          : type === 'national-teams'
+            ? await ingestion.ingestTeams(provider, sportSlug, {
+                maxPages,
+                variant: 'international',
+              })
+            : type === 'people'
+              ? await ingestion.ingestPeople(provider, sportSlug, { maxPages })
+              : type === 'competitions'
+                ? await ingestion.ingestCompetitions(provider, sportSlug, { maxPages })
+                : type === 'venues'
+                  ? await ingestion.ingestVenues(provider, sportSlug, { maxPages })
+                  : type === 'honours'
+                    ? await ingestion.ingestHonours(provider, sportSlug, { maxBatches: maxPages })
+                    : type === 'team-honours'
+                      ? await ingestion.ingestTeamHonours(provider, sportSlug, {
                           maxBatches: maxPages,
                         })
-                      : (() => {
-                          throw new Error(`Unknown entity type "${type}"`);
-                        })();
+                      : type === 'memberships'
+                        ? await ingestion.ingestMemberships(provider, sportSlug, {
+                            maxBatches: maxPages,
+                          })
+                        : (() => {
+                            throw new Error(`Unknown entity type "${type}"`);
+                          })();
 
       const seconds = ((Date.now() - typeStartedAt) / 1_000).toFixed(1);
       process.stdout.write(

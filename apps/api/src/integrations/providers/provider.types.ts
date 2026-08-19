@@ -147,7 +147,12 @@ export interface SportsDataProvider {
 
   readonly capabilities: ProviderCapabilities;
 
-  fetchTeams?(sportSlug: string, cursor?: string): Promise<ProviderPage<ProviderTeam>>;
+  /** `variant` distinguishes clubs from national sides, which are found differently. */
+  fetchTeams?(
+    sportSlug: string,
+    cursor?: string,
+    variant?: 'club' | 'international',
+  ): Promise<ProviderPage<ProviderTeam>>;
   fetchPeople?(sportSlug: string, cursor?: string): Promise<ProviderPage<ProviderPerson>>;
   fetchCompetitions?(
     sportSlug: string,

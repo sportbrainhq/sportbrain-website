@@ -105,26 +105,44 @@ export class WikidataProvider implements SportsDataProvider {
 
   private lastRequestAt = 0;
 
-  async fetchTeams(sportSlug: string, cursor?: string): Promise<ProviderPage<ProviderTeam>> {
+  /**
+   * Teams for one sport.
+   *
+   * `variant` selects between two genuinely different queries, and choosing
+   * between them automatically does not work. The previous version branched on
+   * whether the sport had competitions configured, which meant football and
+   * cricket always took the club path and the national-team path was
+   * unreachable: both sports ended up with exactly one international side in a
+   * catalogue of hundreds of clubs, and the Teams tab rendered an empty
+   * "International teams" section.
+   *
+   * Clubs are found through league membership; national sides are not in
+   * leagues and have to be found by class.
+   */
+  async fetchTeams(
+    sportSlug: string,
+    cursor?: string,
+    variant: 'club' | 'international' = 'club',
+  ): Promise<ProviderPage<ProviderTeam>> {
     const source = this.sourceFor(sportSlug);
     const offset = this.parseCursor(cursor);
 
-    // Clubs and national sides come from different queries: national teams are
-    // not league members, so a competition-scoped query cannot reach them.
-    const query =
-      source.teamClassQid && source.competitionQids.length > 0
-        ? teamsByCompetitionQuery(
-            source.competitionQids,
-            source.teamClassQid,
-            WikidataProvider.PAGE_SIZE,
-            offset,
-          )
-        : teamsByClassQuery(
-            source.nationalTeamClassQid ?? source.teamClassQid ?? '',
-            WikidataProvider.PAGE_SIZE,
-            offset,
-            source.requireTeamInception ?? false,
-          );
+    const useCompetitions =
+      variant === 'club' && source.teamClassQid && source.competitionQids.length > 0;
+
+    const query = useCompetitions
+      ? teamsByCompetitionQuery(
+          source.competitionQids,
+          source.teamClassQid!,
+          WikidataProvider.PAGE_SIZE,
+          offset,
+        )
+      : teamsByClassQuery(
+          (variant === 'international' ? source.nationalTeamClassQid : source.teamClassQid) ?? '',
+          WikidataProvider.PAGE_SIZE,
+          offset,
+          source.requireTeamInception ?? false,
+        );
 
     const rows = await this.runQuery(query);
 
@@ -137,7 +155,7 @@ export class WikidataProvider implements SportsDataProvider {
         country: row.countryLabel,
         foundedYear: this.year(row.inception),
         logoUrl: row.logo,
-        kind: source.defaultTeamKind,
+        kind: variant === 'international' ? 'international' : source.defaultTeamKind,
       },
     }));
 

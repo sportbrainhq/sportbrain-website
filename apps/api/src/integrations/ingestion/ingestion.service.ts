@@ -50,7 +50,7 @@ export class IngestionService {
   async ingestTeams(
     provider: SportsDataProvider,
     sportSlug: string,
-    options: { maxPages?: number } = {},
+    options: { maxPages?: number; variant?: 'club' | 'international' } = {},
   ): Promise<IngestionSummary> {
     if (!provider.capabilities.teams || !provider.fetchTeams) {
       // Declared capabilities, checked before spending a request. A provider
@@ -63,7 +63,8 @@ export class IngestionService {
       return this.skipped(provider.key, `teams:${sportSlug}`, `unknown sport "${sportSlug}"`);
     }
 
-    const run = await this.startRun(provider.key, `teams:${sportSlug}`);
+    const variant = options.variant ?? 'club';
+    const run = await this.startRun(provider.key, `teams:${sportSlug}:${variant}`);
     const summary: IngestionSummary = {
       runId: run.id,
       read: 0,
@@ -80,7 +81,7 @@ export class IngestionService {
 
     try {
       do {
-        const result = await provider.fetchTeams(sportSlug, cursor);
+        const result = await provider.fetchTeams(sportSlug, cursor, variant);
         summary.requestsUsed += result.requestsUsed;
         summary.read += result.items.length;
 

@@ -178,7 +178,11 @@ export const SPORT_SOURCES: Record<string, WikidataSportSource> = {
     sportQid: 'Q5375',
     // cricket team. NOT Q13393265, which is basketball.
     teamClassQid: 'Q17376093',
-    nationalTeamClassQid: 'Q17376093',
+    // A distinct class from the generic cricket team, and using the generic one
+    // for both returns the same franchises twice: cricket ended up with six
+    // international sides where football had 288. Verified against India, which
+    // is classed as a national cricket team rather than merely a cricket team.
+    nationalTeamClassQid: 'Q86255944',
     // Deliberately empty despite P118 existing for cricket. Measured coverage
     // is too thin to scope by: the County Championship and T20 Blast return
     // *zero* teams through P118, and the Caribbean Premier League returns one.

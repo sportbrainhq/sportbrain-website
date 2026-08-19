@@ -327,7 +327,17 @@ export class WikipediaIngestionService {
         const career = await this.provider.fetchFootballCareer(target.title);
         if (career.length === 0) continue;
 
+        // A club a player appears at twice, with the earlier spell carrying no
+        // appearances, is a youth-academy row rather than a second senior
+        // spell. Wikipedia lists those under "Youth career" and they read as
+        // duplicates on a timeline: Messi's page showed Barcelona twice, once
+        // for 2000-2004 with no figures and once for his senior career.
+        const senior = new Set(
+          career.filter((row) => row.apps !== null).map((row) => row.team.toLowerCase()),
+        );
+
         for (const entry of career) {
+          if (entry.apps === null && senior.has(entry.team.toLowerCase())) continue;
           const teamId = resolveTeam(entry.team);
           if (!teamId) continue;
 
