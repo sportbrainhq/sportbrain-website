@@ -3,6 +3,7 @@ import type { ContentDetail, ContentSummary, QuizDetail, QuizSummary } from '@sp
 import { AppException } from '../../common';
 import { CacheService } from '../../infrastructure/cache/cache.service';
 import { ContentRepository } from './content.repository';
+import { HighlightsRepository, type Highlight } from './highlights.repository';
 
 @Injectable()
 export class ContentService {
@@ -15,8 +16,24 @@ export class ContentService {
 
   constructor(
     private readonly repository: ContentRepository,
+    private readonly highlights: HighlightsRepository,
     private readonly cache: CacheService,
   ) {}
+
+  /**
+   * Generated headline cards.
+   *
+   * Cached briefly rather than not at all: the query randomises, so a long TTL
+   * would freeze one set of cards in place and defeat the point, while no cache
+   * at all runs three unions on every page view.
+   */
+  async headlines(limit = 12): Promise<Highlight[]> {
+    return this.cache.wrap(
+      `${ContentService.CACHE_PREFIX}headlines:${limit}`,
+      () => this.highlights.headlines(limit),
+      120,
+    );
+  }
 
   async listBySport(sportSlug: string, type: string): Promise<ContentSummary[]> {
     return this.cache.wrap(

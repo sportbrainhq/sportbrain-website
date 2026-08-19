@@ -321,6 +321,19 @@ export const entityListQuerySchema = z.object({
 });
 export type EntityListQuery = z.infer<typeof entityListQuerySchema>;
 
+/** A generated headline card for the discovery panels. */
+export const highlightSchema = z.object({
+  id: z.string(),
+  kind: z.enum(['record', 'honour', 'milestone', 'entity']),
+  sportSlug: z.string(),
+  sportName: z.string(),
+  title: z.string(),
+  subtitle: z.string().nullable(),
+  href: z.string(),
+  imageUrl: z.string().nullable(),
+});
+export type Highlight = z.infer<typeof highlightSchema>;
+
 // --- Editorial content ------------------------------------------------------
 
 /**

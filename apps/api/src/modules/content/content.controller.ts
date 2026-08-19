@@ -17,6 +17,12 @@ import { ContentService } from './content.service';
 export class ContentController {
   constructor(private readonly service: ContentService) {}
 
+  @Get('highlights')
+  @ApiOperation({ summary: 'Generated headline cards for the discovery panels' })
+  async highlights(): Promise<{ data: Awaited<ReturnType<ContentService['headlines']>> }> {
+    return { data: await this.service.headlines(12) };
+  }
+
   @Get('sports/:sportSlug/explainers')
   @ApiOperation({ summary: 'Explainers for a sport: rules, formats, tactics, concepts' })
   async explainers(@Param('sportSlug') sportSlug: string): Promise<{ data: ContentSummary[] }> {

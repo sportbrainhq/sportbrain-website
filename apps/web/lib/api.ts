@@ -3,6 +3,8 @@ import {
   competitionSummarySchema,
   contentDetailSchema,
   contentSummarySchema,
+  highlightSchema,
+  quizSummarySchema,
   errorResponseSchema,
   healthResponseSchema,
   paginated,
@@ -17,6 +19,8 @@ import {
   type ContentDetail,
   type ContentSummary,
   type HealthResponse,
+  type Highlight,
+  type QuizSummary,
   type Paginated,
   type PlayerDetail,
   type SearchResult,
@@ -268,6 +272,36 @@ export function fetchExplainer(slug: string): Promise<ContentDetail> {
   return apiGet(`/v1/explainers/${slug}`, contentDetailSchema, {
     revalidate: 3_600,
     tags: ['content'],
+  });
+}
+
+/**
+ * Generated headline cards for the discovery panels.
+ *
+ * Short revalidation because the endpoint randomises: a long window would
+ * freeze one set of cards in place, which is the opposite of what a discovery
+ * panel is for.
+ */
+export function fetchHighlights(): Promise<{ data: Highlight[] }> {
+  return apiGet('/v1/highlights', listEnvelope(highlightSchema), {
+    revalidate: 120,
+    tags: ['highlights'],
+  });
+}
+
+/** Social media stories for a sport. */
+export function fetchStories(sportSlug: string): Promise<{ data: ContentSummary[] }> {
+  return apiGet(`/v1/sports/${sportSlug}/stories`, listEnvelope(contentSummarySchema), {
+    revalidate: 3_600,
+    tags: ['content', `sport:${sportSlug}`],
+  });
+}
+
+/** Quizzes for a sport. */
+export function fetchQuizzes(sportSlug: string): Promise<{ data: QuizSummary[] }> {
+  return apiGet(`/v1/sports/${sportSlug}/quizzes`, listEnvelope(quizSummarySchema), {
+    revalidate: 3_600,
+    tags: ['content', `sport:${sportSlug}`],
   });
 }
 
