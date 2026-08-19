@@ -1,8 +1,26 @@
 import { Injectable } from '@nestjs/common';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, sql } from 'drizzle-orm';
 import type { EntityProfile } from '@sportbrain/contracts';
 import { DatabaseService } from '../../database/database.service';
 import { entityFact, entityRanking, entitySection } from '../../database/schema';
+
+/**
+ * The order the ranking tables appear in on an entity page.
+ *
+ * A fixed sequence rather than a column on the table, because the ordering is a
+ * presentation decision shared by every entity of a type, not a property of any
+ * one row. Appearances come before goals: a reader comparing two clubs wants
+ * the same table in the same place, and appearances is the broader measure.
+ *
+ * Anything unlisted sorts after these, alphabetically by kind, so a new kind
+ * appears predictably rather than at a random position.
+ */
+const RANKING_ORDER = ['most_appearances', 'top_scorers', 'roll_of_honour'];
+
+const rankingOrder = sql`array_position(
+  ${sql.raw(`ARRAY[${RANKING_ORDER.map((kind) => `'${kind}'`).join(', ')}]::text[]`)},
+  ${entityRanking.kind}
+) NULLS LAST`;
 
 /**
  * Gathers the rich detail behind an entity page.
@@ -62,6 +80,12 @@ export class ProfileAssembler {
         })
         .from(entityRanking)
         .where(and(eq(entityRanking.entityType, entityType), eq(entityRanking.entityId, entityId)))
+        // Ordered explicitly. Without this the rows came back in whatever order
+        // Postgres happened to hold them, which is write order, so a club whose
+        // scorers table was ingested first showed its tables the other way up
+        // from its neighbours: Liverpool led with Top scorers where Real Madrid
+        // led with Most appearances.
+        .orderBy(rankingOrder, asc(entityRanking.kind))
         .limit(20),
     ]);
 
