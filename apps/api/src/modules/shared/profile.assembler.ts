@@ -1,8 +1,14 @@
 import { Injectable } from '@nestjs/common';
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { EntityProfile } from '@sportbrain/contracts';
 import { DatabaseService } from '../../database/database.service';
-import { entityFact, entityRanking, entitySection } from '../../database/schema';
+import {
+  entityFact,
+  entityRanking,
+  entitySection,
+  externalMapping,
+  person,
+} from '../../database/schema';
 
 /**
  * The order the ranking tables appear in on an entity page.
@@ -89,6 +95,15 @@ export class ProfileAssembler {
         .limit(20),
     ]);
 
+    // Resolved in one query for every table on the page rather than per entry,
+    // so a club with two tables of fifteen players costs one lookup instead of
+    // thirty.
+    const playerSlugs = await this.resolvePlayers(
+      rankings.flatMap((ranking) =>
+        ((ranking.entries ?? []) as { link?: string | null }[]).map((entry) => entry.link ?? ''),
+      ),
+    );
+
     return {
       facts,
       sections,
@@ -103,8 +118,51 @@ export class ProfileAssembler {
             ? ranking.confidence
             : 'indicative',
         note: ranking.note,
-        entries: (ranking.entries ?? []) as EntityProfile['rankings'][number]['entries'],
+        entries: ((ranking.entries ?? []) as RawEntry[]).map((entry) => ({
+          rank: entry.rank,
+          name: entry.name,
+          value: entry.value ?? null,
+          detail: entry.detail ?? null,
+          playerSlug: entry.link ? (playerSlugs.get(entry.link) ?? null) : null,
+        })) as EntityProfile['rankings'][number]['entries'],
       })),
     };
   }
+
+  /**
+   * Maps Wikipedia article titles onto the slugs of players we hold.
+   *
+   * Joined through `external_mapping` rather than matched on name, which is the
+   * whole reason that table exists: the tables print "Raúl" where the entity is
+   * "Raúl (footballer)", and two players can share a name while no two share an
+   * article. Titles with no mapping are simply absent from the result, and the
+   * page renders those rows as plain text.
+   */
+  private async resolvePlayers(titles: string[]): Promise<Map<string, string>> {
+    const wanted = [...new Set(titles.filter(Boolean))];
+    if (wanted.length === 0) return new Map();
+
+    const rows = await this.database.db
+      .select({ title: externalMapping.externalId, slug: person.slug })
+      .from(externalMapping)
+      .innerJoin(person, eq(person.id, externalMapping.entityId))
+      .where(
+        and(
+          eq(externalMapping.provider, 'wikipedia'),
+          eq(externalMapping.entityType, 'person'),
+          inArray(externalMapping.externalId, wanted),
+        ),
+      );
+
+    return new Map(rows.map((row) => [row.title, row.slug]));
+  }
+}
+
+/** The stored shape of a ranking entry, before the link is resolved. */
+interface RawEntry {
+  rank: number;
+  name: string;
+  value: number | string | null;
+  detail: string | null;
+  link?: string | null;
 }

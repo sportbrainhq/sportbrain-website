@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import type { EntityProfile, EntityRanking } from '@sportbrain/contracts';
 
 /**
@@ -100,20 +101,27 @@ export function SectionPanel({ sections }: { sections: EntityProfile['sections']
 }
 
 /** Derived leaderboards, each carrying its own confidence. */
-export function RankingPanel({ rankings }: { rankings: EntityProfile['rankings'] }) {
+export function RankingPanel({
+  rankings,
+  sportSlug,
+}: {
+  rankings: EntityProfile['rankings'];
+  /** Needed to build player links; without it the rows render as plain text. */
+  sportSlug?: string;
+}) {
   const populated = rankings.filter((ranking) => ranking.entries.length > 0);
   if (populated.length === 0) return null;
 
   return (
     <div className="space-y-8">
       {populated.map((ranking) => (
-        <RankingTable key={ranking.kind} ranking={ranking} />
+        <RankingTable key={ranking.kind} ranking={ranking} sportSlug={sportSlug} />
       ))}
     </div>
   );
 }
 
-function RankingTable({ ranking }: { ranking: EntityRanking }) {
+function RankingTable({ ranking, sportSlug }: { ranking: EntityRanking; sportSlug?: string }) {
   return (
     <section>
       <div className="mb-2 flex flex-wrap items-baseline gap-2">
@@ -142,7 +150,22 @@ function RankingTable({ ranking }: { ranking: EntityRanking }) {
                 <td className="w-10 px-3 py-2 text-right font-mono text-xs tabular-nums text-muted-foreground">
                   {entry.rank}
                 </td>
-                <td className="px-3 py-2 font-medium">{entry.name}</td>
+                {/* Linked only where the player resolved to a page we hold.
+                    The rest stay plain text rather than becoming links to a
+                    404, which is why the slug is resolved server-side instead
+                    of guessed from the name here. */}
+                <td className="px-3 py-2 font-medium">
+                  {sportSlug && entry.playerSlug ? (
+                    <Link
+                      href={`/sports/${sportSlug}/players/${entry.playerSlug}`}
+                      className="underline decoration-border underline-offset-4 transition-colors hover:decoration-foreground"
+                    >
+                      {entry.name}
+                    </Link>
+                  ) : (
+                    entry.name
+                  )}
+                </td>
                 <td className="px-3 py-2 text-right font-mono tabular-nums">
                   {entry.value ?? '—'}
                 </td>

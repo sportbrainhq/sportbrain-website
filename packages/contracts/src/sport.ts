@@ -109,6 +109,17 @@ export const entityRankingSchema = z.object({
       name: z.string(),
       value: z.union([z.number(), z.string(), z.null()]),
       detail: z.string().nullable(),
+      /**
+       * Slug of the player's own page, when we hold one.
+       *
+       * Resolved server-side from the source link rather than by matching names
+       * in the browser: the tables print "Raúl" where the entity is "Raúl
+       * (footballer)", and name matching across two thousand players is exactly
+       * the guessing the mapping table exists to avoid. Null where the player
+       * is not in the database, which is most of the long tail, and the row is
+       * then rendered as plain text.
+       */
+      playerSlug: z.string().nullable().optional(),
     }),
   ),
 });

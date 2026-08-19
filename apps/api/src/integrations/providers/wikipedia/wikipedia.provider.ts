@@ -824,7 +824,32 @@ export class WikipediaProvider {
       // The link is taken from the name's own cell rather than from the row,
       // because many tables place a flag icon before the name and the row's
       // first link is therefore a country.
-      const link = row.cellLinks[nameIndex]?.[0];
+      //
+      // Within that cell the flag still comes first: Real Madrid's scorers gave
+      // "Portugal" for Ronaldo and "France" for Benzema, so every entry linked
+      // to a nationality. The player is the link whose target resembles the
+      // cell's text, allowing for the disambiguator Wikipedia appends
+      // ("Raúl (footballer)").
+      //
+      // There is deliberately no fallback to the first link. Where the display
+      // name and the article title genuinely differ, as with "Manolo Sanchís"
+      // linking to "Manuel Sanchís Hontiyuelo", falling back would attach the
+      // flag's country link instead, and a row that quietly navigates to Spain
+      // is worse than a row that does not navigate at all.
+      const candidates = row.cellLinks[nameIndex] ?? [];
+      const simplify = (value: string) =>
+        value
+          .replace(/\s*\([^)]*\)\s*$/, '')
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .toLowerCase()
+          .trim();
+      const wanted = simplify(name);
+      const link =
+        candidates.find((candidate) => simplify(candidate) === wanted) ??
+        candidates.find((candidate) => simplify(candidate).includes(wanted)) ??
+        // Also accept the reverse: a surname-only cell against a full title.
+        candidates.find((candidate) => wanted.includes(simplify(candidate)));
 
       // A name that is purely numeric means the columns were misidentified and
       // the rank column is being read as both name and value. Hearts' tables

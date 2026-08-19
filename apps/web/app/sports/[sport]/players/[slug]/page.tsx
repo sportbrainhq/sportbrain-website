@@ -128,7 +128,7 @@ export default async function PlayerPage({
         </section>
       )}
 
-      <RankingPanel rankings={player.profile.rankings} />
+      <RankingPanel rankings={player.profile.rankings} sportSlug={sportSlug} />
 
       <section>
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground">

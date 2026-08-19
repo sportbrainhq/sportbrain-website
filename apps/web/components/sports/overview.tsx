@@ -52,20 +52,26 @@ function renderInline(text: string): React.ReactNode[] {
 }
 
 /**
- * Quick facts, as a definition list rather than a table.
+ * Quick facts.
  *
- * A table of a dozen rows reads as a data dump; a two-column list of labelled
- * values reads as an introduction, which is what this is.
+ * A grid of label-above-value cells rather than side-by-side pairs. Several
+ * sports carry facts whose values are a sentence or a list (equipment, venue
+ * names, Olympic status); a fixed-width label column beside them squeezed the
+ * value into a one-word-per-line ribbon and left rows of wildly different
+ * heights. Stacking the label gives every value the full cell width, and one
+ * rule under each cell keeps the block reading as a single table.
  */
 export function QuickFacts({ facts }: { facts: EntityFact[] }) {
   if (facts.length === 0) return null;
 
   return (
-    <dl className="grid grid-cols-1 gap-x-8 gap-y-3 border-y border-border py-5 sm:grid-cols-2">
+    <dl className="grid grid-cols-1 gap-x-8 gap-y-0 border-t border-border sm:grid-cols-2 lg:grid-cols-3">
       {facts.map((fact) => (
-        <div key={`${fact.key}-${fact.value}`} className="flex gap-3 text-sm">
-          <dt className="w-36 shrink-0 text-muted-foreground">{fact.label}</dt>
-          <dd className="min-w-0 font-medium">{fact.value}</dd>
+        <div key={`${fact.key}-${fact.value}`} className="border-b border-border py-3">
+          <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            {fact.label}
+          </dt>
+          <dd className="mt-1 text-sm leading-relaxed text-balance">{fact.value}</dd>
         </div>
       ))}
     </dl>

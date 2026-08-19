@@ -105,7 +105,7 @@ export default async function CompetitionPage({
         </section>
       )}
 
-      <RankingPanel rankings={competition.profile.rankings} />
+      <RankingPanel rankings={competition.profile.rankings} sportSlug={sportSlug} />
 
       {competition.seasons.length > 0 && (
         <section>
