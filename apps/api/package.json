@@ -18,6 +18,10 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/database/migrate.ts",
     "db:studio": "drizzle-kit studio",
+    "ingest": "tsx src/integrations/ingest.cli.ts",
+    "seed": "tsx src/database/seed/seed.cli.ts",
+    "enrich": "tsx src/integrations/enrich.cli.ts",
+    "wiki": "tsx src/integrations/wiki.cli.ts",
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "dependencies": {

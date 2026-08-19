@@ -1,8 +1,42 @@
 import {
+  competitionDetailSchema,
+  competitionSummarySchema,
+  contentDetailSchema,
+  contentSummarySchema,
+  explainerDetailSchema,
+  explainerLibrarySchema,
+  explainerSummarySchema,
+  highlightSchema,
+  quizSummarySchema,
+  sportOverviewSchema,
   errorResponseSchema,
   healthResponseSchema,
+  paginated,
+  playerDetailSchema,
+  playerSummarySchema,
+  searchResultSchema,
+  sportDetailSchema,
+  sportSchema,
+  teamDetailSchema,
+  teamSummarySchema,
+  type CompetitionDetail,
+  type ContentDetail,
+  type ContentSummary,
+  type ExplainerDetail,
+  type ExplainerLibrary,
+  type ExplainerSummary,
   type HealthResponse,
+  type Highlight,
+  type QuizSummary,
+  type SportOverview,
+  type Paginated,
+  type PlayerDetail,
+  type SearchResult,
+  type Sport,
+  type SportDetail,
+  type TeamDetail,
 } from '@sportbrain/contracts';
+import { z } from 'zod';
 import type { ZodSchema } from 'zod';
 import { serverEnv } from './env';
 
@@ -119,7 +153,6 @@ async function toApiError(response: Response): Promise<ApiError> {
 }
 
 // --- Endpoints --------------------------------------------------------------
-// Only platform endpoints exist. Domain calls are added as domains ship.
 
 /**
  * Fetches API health.
@@ -129,4 +162,208 @@ async function toApiError(response: Response): Promise<ApiError> {
  */
 export function fetchHealth(): Promise<HealthResponse> {
   return apiGet('/health', healthResponseSchema, { noStore: true, timeoutMs: 3_000 });
+}
+
+/**
+ * Cache policy for sports data.
+ *
+ * The site is read-heavy, SEO-critical and backed by data that changes only
+ * when an ingestion run completes, so pages are cached aggressively and
+ * invalidated by tag rather than by waiting for a TTL.
+ *
+ * Tags mirror the URL hierarchy, so `revalidateTag('sport:football')` after an
+ * ingestion clears every football page at once without touching cricket.
+ */
+const CACHE = {
+  /** The sidebar. Changes when a sport launches, which is a deliberate act. */
+  sports: { revalidate: 3_600, tags: ['sports'] },
+  /** Entity pages. An hour is well inside how often ingestion runs. */
+  entity: (sportSlug: string) => ({ revalidate: 3_600, tags: ['sports', `sport:${sportSlug}`] }),
+  /** Lists carry filters, so they are cached shorter and re-fetched more often. */
+  list: (sportSlug: string) => ({ revalidate: 900, tags: ['sports', `sport:${sportSlug}`] }),
+};
+
+const listEnvelope = <T extends z.ZodTypeAny>(item: T) => z.object({ data: z.array(item) });
+
+/** Every launched sport, for the sidebar. */
+export function fetchSports(): Promise<{ data: Sport[] }> {
+  return apiGet('/v1/sports', listEnvelope(sportSchema), CACHE.sports);
+}
+
+/** One sport with the counts behind each tab. */
+export function fetchSport(slug: string): Promise<SportDetail> {
+  return apiGet(`/v1/sports/${slug}`, sportDetailSchema, CACHE.entity(slug));
+}
+
+export function fetchTeams(
+  sportSlug: string,
+  params: { page?: number; limit?: number; kind?: string; q?: string } = {},
+): Promise<Paginated<z.infer<typeof teamSummarySchema>>> {
+  return apiGet(
+    `/v1/sports/${sportSlug}/teams${toQuery(params)}`,
+    paginated(teamSummarySchema),
+    CACHE.list(sportSlug),
+  );
+}
+
+export function fetchTeam(sportSlug: string, slug: string): Promise<TeamDetail> {
+  return apiGet(`/v1/sports/${sportSlug}/teams/${slug}`, teamDetailSchema, CACHE.entity(sportSlug));
+}
+
+export function fetchPlayers(
+  sportSlug: string,
+  params: { page?: number; limit?: number; q?: string } = {},
+): Promise<Paginated<z.infer<typeof playerSummarySchema>>> {
+  return apiGet(
+    `/v1/sports/${sportSlug}/players${toQuery(params)}`,
+    paginated(playerSummarySchema),
+    CACHE.list(sportSlug),
+  );
+}
+
+export function fetchPlayer(sportSlug: string, slug: string): Promise<PlayerDetail> {
+  return apiGet(
+    `/v1/sports/${sportSlug}/players/${slug}`,
+    playerDetailSchema,
+    CACHE.entity(sportSlug),
+  );
+}
+
+export function fetchCompetitions(
+  sportSlug: string,
+  params: { page?: number; limit?: number; kind?: string; q?: string } = {},
+): Promise<Paginated<z.infer<typeof competitionSummarySchema>>> {
+  return apiGet(
+    `/v1/sports/${sportSlug}/competitions${toQuery(params)}`,
+    paginated(competitionSummarySchema),
+    CACHE.list(sportSlug),
+  );
+}
+
+export function fetchCompetition(sportSlug: string, slug: string): Promise<CompetitionDetail> {
+  return apiGet(
+    `/v1/sports/${sportSlug}/competitions/${slug}`,
+    competitionDetailSchema,
+    CACHE.entity(sportSlug),
+  );
+}
+
+/**
+ * Cross-entity search.
+ *
+ * Not cached at the fetch layer. Search is user input with an unbounded key
+ * space, so caching it fills the cache with entries that will never be read
+ * again. The API caches briefly on its own side, where the hit rate is real.
+ */
+export function search(
+  query: string,
+  params: { sport?: string; type?: string; limit?: number } = {},
+): Promise<{ data: SearchResult[] }> {
+  return apiGet(`/v1/search${toQuery({ q: query, ...params })}`, listEnvelope(searchResultSchema), {
+    noStore: true,
+    timeoutMs: 5_000,
+  });
+}
+
+/** Explainers for a sport's Explainers tab. */
+export function fetchExplainers(sportSlug: string): Promise<{ data: ContentSummary[] }> {
+  return apiGet(
+    `/v1/sports/${sportSlug}/explainers`,
+    listEnvelope(contentSummarySchema),
+    // Editorial content changes on publication rather than on a sync, so it is
+    // cached longer than anything ingestion touches.
+    { revalidate: 3_600, tags: ['content', `sport:${sportSlug}`] },
+  );
+}
+
+/**
+ * The explainer library landing page.
+ *
+ * One request for the whole page: the beginner path, the categories and the
+ * search index arrive together, so the page cannot render half-populated.
+ */
+export function fetchExplainerLibrary(sportSlug: string): Promise<ExplainerLibrary> {
+  return apiGet(`/v1/sports/${sportSlug}/explainer-library`, explainerLibrarySchema, {
+    revalidate: 3_600,
+    tags: ['content', 'explainers', `sport:${sportSlug}`],
+  });
+}
+
+/** One explainer, by slug or by any of its aliases. */
+export function fetchExplainerDetail(sportSlug: string, slug: string): Promise<ExplainerDetail> {
+  return apiGet(`/v1/sports/${sportSlug}/explainers/${slug}`, explainerDetailSchema, {
+    revalidate: 3_600,
+    tags: ['content', 'explainers', `sport:${sportSlug}`],
+  });
+}
+
+/** Every published explainer in one category, uncapped. */
+export function fetchExplainerCategory(
+  sportSlug: string,
+  categorySlug: string,
+): Promise<{ data: ExplainerSummary[] }> {
+  return apiGet(
+    `/v1/sports/${sportSlug}/explainer-categories/${categorySlug}`,
+    listEnvelope(explainerSummarySchema),
+    { revalidate: 3_600, tags: ['content', 'explainers', `sport:${sportSlug}`] },
+  );
+}
+
+export function fetchExplainer(slug: string): Promise<ContentDetail> {
+  return apiGet(`/v1/explainers/${slug}`, contentDetailSchema, {
+    revalidate: 3_600,
+    tags: ['content'],
+  });
+}
+
+/**
+ * Generated headline cards for the discovery panels.
+ *
+ * Short revalidation because the endpoint randomises: a long window would
+ * freeze one set of cards in place, which is the opposite of what a discovery
+ * panel is for.
+ */
+export function fetchHighlights(): Promise<{ data: Highlight[] }> {
+  return apiGet('/v1/highlights', listEnvelope(highlightSchema), {
+    revalidate: 120,
+    tags: ['highlights'],
+  });
+}
+
+/**
+ * The encyclopedia overview: facts, prose, timeline, governance and sources.
+ *
+ * Cached for an hour and tagged by sport, so publishing new editorial can
+ * invalidate one sport without clearing the rest.
+ */
+export function fetchSportOverview(slug: string): Promise<SportOverview> {
+  return apiGet(`/v1/sports/${slug}/overview`, sportOverviewSchema, {
+    revalidate: 3_600,
+    tags: ['sports', `sport:${slug}`],
+  });
+}
+
+/** Social media stories for a sport. */
+export function fetchStories(sportSlug: string): Promise<{ data: ContentSummary[] }> {
+  return apiGet(`/v1/sports/${sportSlug}/stories`, listEnvelope(contentSummarySchema), {
+    revalidate: 3_600,
+    tags: ['content', `sport:${sportSlug}`],
+  });
+}
+
+/** Quizzes for a sport. */
+export function fetchQuizzes(sportSlug: string): Promise<{ data: QuizSummary[] }> {
+  return apiGet(`/v1/sports/${sportSlug}/quizzes`, listEnvelope(quizSummarySchema), {
+    revalidate: 3_600,
+    tags: ['content', `sport:${sportSlug}`],
+  });
+}
+
+/** Builds a query string, dropping undefined values so they do not appear as "undefined". */
+function toQuery(params: Record<string, string | number | undefined>): string {
+  const entries = Object.entries(params).filter(
+    (entry): entry is [string, string | number] => entry[1] !== undefined && entry[1] !== '',
+  );
+  if (entries.length === 0) return '';
+  return `?${new URLSearchParams(entries.map(([k, v]) => [k, String(v)])).toString()}`;
 }

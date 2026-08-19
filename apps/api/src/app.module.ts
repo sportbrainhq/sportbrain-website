@@ -6,6 +6,14 @@ import { AllExceptionsFilter, LoggingInterceptor, RequestIdMiddleware } from './
 import { ConfigModule, type AppConfig } from './config';
 import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './health/health.module';
+import { IntegrationsModule } from './integrations/integrations.module';
+import { CompetitionsModule } from './modules/competitions/competitions.module';
+import { ContentModule } from './modules/content/content.module';
+import { PlayersModule } from './modules/players/players.module';
+import { SearchModule } from './modules/search/search.module';
+import { SharedModule } from './modules/shared/shared.module';
+import { SportsModule } from './modules/sports/sports.module';
+import { TeamsModule } from './modules/teams/teams.module';
 import { CacheModule } from './infrastructure/cache/cache.module';
 import { JobsModule } from './jobs/jobs.module';
 
@@ -49,7 +57,18 @@ import { JobsModule } from './jobs/jobs.module';
     // Platform features.
     HealthModule,
 
-    // Domain modules go here. See src/modules/README.md.
+    // External data sources and the ingestion pipeline.
+    IntegrationsModule,
+
+    // Domain modules. SharedModule is first because it is @Global and the
+    // others inject the statistics assembler it provides.
+    SharedModule,
+    SportsModule,
+    TeamsModule,
+    PlayersModule,
+    CompetitionsModule,
+    ContentModule,
+    SearchModule,
   ],
   providers: [
     // Registered globally so that every route gets the same error envelope,
