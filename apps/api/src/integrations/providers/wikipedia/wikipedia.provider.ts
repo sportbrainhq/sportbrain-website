@@ -1223,7 +1223,13 @@ export class WikipediaProvider {
       // linking to "Manuel Sanchís Hontiyuelo", falling back would attach the
       // flag's country link instead, and a row that quietly navigates to Spain
       // is worse than a row that does not navigate at all.
-      const candidates = row.cellLinks[nameIndex] ?? [];
+      // Redlinks and non-article hrefs are not entities. Wikipedia renders a
+      // link to a page that does not exist as "Title?action=edit&redlink=1",
+      // and carrying that through produced ranking rows pointing at an edit
+      // form.
+      const candidates = (row.cellLinks[nameIndex] ?? []).filter(
+        (candidate) => !candidate.includes('?') && !candidate.includes('action=edit'),
+      );
       const simplify = (value: string) =>
         value
           .replace(/\s*\([^)]*\)\s*$/, '')

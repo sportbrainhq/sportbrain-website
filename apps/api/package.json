@@ -22,7 +22,8 @@
     "seed": "tsx src/database/seed/seed.cli.ts",
     "enrich": "tsx src/integrations/enrich.cli.ts",
     "wiki": "tsx src/integrations/wiki.cli.ts",
-    "clean": "rm -rf dist *.tsbuildinfo"
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "backfill-people": "tsx src/integrations/backfill-people.cli.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.6",
