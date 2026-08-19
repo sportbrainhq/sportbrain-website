@@ -319,6 +319,72 @@ ORDER BY ?item ?when`.trim();
 }
 
 /**
+ * Titles and awards held by a batch of teams.
+ *
+ * Two properties are needed, and they carry genuinely different things:
+ *
+ *   - **P1346 (winner)**, queried inversely: competitions this team has won.
+ *     This is what fills a club's trophy cabinet, and the `pq:P585` qualifier
+ *     dates each win, so Real Madrid returns eight separate Supercopa titles
+ *     rather than one undated entry.
+ *   - **P166 (award received)**: awards given *to* the club rather than
+ *     competitions it won, such as IFFHS World's Best Club.
+ *
+ * Querying only P166, as the person query does, would return a handful of
+ * ceremonial awards and none of the trophies, which is the opposite of what a
+ * club page is for. Both are unioned so one pass covers the cabinet.
+ */
+export function teamHonoursQuery(teamQids: readonly string[]): string {
+  const values = teamQids.map((qid) => `wd:${qid}`).join(' ');
+  return `
+SELECT ?item ?awardLabel ?when ?kind WHERE {
+  {
+    VALUES ?item { ${values} }
+    ?competition p:P1346 ?statement .
+    ?statement ps:P1346 ?item .
+    # Constrained to sports seasons. Without this, P1346 returns every
+    # individual match a club has won: "Shakhtar Donetsk vs Juventus,
+    # 5 December 2012" is a thing with a winner, and an unconstrained query
+    # returned 10,527 of them for three pages of clubs. A season is the grain
+    # at which a trophy is actually awarded.
+    ?competition wdt:P31/wdt:P279* wd:Q27020041 .
+    OPTIONAL { ?statement pq:P585 ?when }
+    ?competition rdfs:label ?awardLabel . FILTER(LANG(?awardLabel) = "en")
+    BIND("title" AS ?kind)
+  } UNION {
+    VALUES ?item { ${values} }
+    ?item p:P166 ?statement .
+    ?statement ps:P166 ?award .
+    OPTIONAL { ?statement pq:P585 ?when }
+    ?award rdfs:label ?awardLabel . FILTER(LANG(?awardLabel) = "en")
+    BIND("award" AS ?kind)
+  }
+}
+ORDER BY ?item ?when`.trim();
+}
+
+/**
+ * Club and national-side memberships for a batch of people.
+ *
+ * P54 (member of sports team) with its `pq:P580` and `pq:P582` qualifiers is
+ * what turns a player page from a snapshot into a career timeline. Without the
+ * qualifiers a player appears to have been at every club simultaneously.
+ */
+export function membershipsQuery(personQids: readonly string[]): string {
+  const values = personQids.map((qid) => `wd:${qid}`).join(' ');
+  return `
+SELECT ?item ?team ?teamLabel ?start ?end WHERE {
+  VALUES ?item { ${values} }
+  ?item p:P54 ?statement .
+  ?statement ps:P54 ?team .
+  OPTIONAL { ?statement pq:P580 ?start }
+  OPTIONAL { ?statement pq:P582 ?end }
+  ?team rdfs:label ?teamLabel . FILTER(LANG(?teamLabel) = "en")
+}
+ORDER BY ?item ?start`.trim();
+}
+
+/**
  * Competitions for one sport.
  *
  * The class matters enormously here, and getting it wrong is not a subtle

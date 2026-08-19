@@ -52,7 +52,7 @@ async function main(): Promise<void> {
 
   if (!providerKey || !entityType || !sportSlug) {
     process.stderr.write(
-      'Usage: ingest <provider> <all|teams|people|competitions|venues|honours> <sport-slug> [--max-pages=N]\n',
+      'Usage: ingest <provider> <all|teams|people|competitions|venues|honours|team-honours|memberships> <sport-slug> [--max-pages=N]\n',
     );
     process.stderr.write(`Supported sports: ${SUPPORTED_SPORT_SLUGS.join(', ')}\n`);
     process.exitCode = 1;
@@ -89,7 +89,7 @@ async function main(): Promise<void> {
     // referenced by events later, and honours need people to already exist.
     const types =
       entityType === 'all'
-        ? ['competitions', 'venues', 'teams', 'people', 'honours']
+        ? ['competitions', 'venues', 'teams', 'people', 'honours', 'team-honours', 'memberships']
         : [entityType];
 
     let failed = false;
@@ -107,9 +107,17 @@ async function main(): Promise<void> {
                 ? await ingestion.ingestVenues(provider, sportSlug, { maxPages })
                 : type === 'honours'
                   ? await ingestion.ingestHonours(provider, sportSlug, { maxBatches: maxPages })
-                  : (() => {
-                      throw new Error(`Unknown entity type "${type}"`);
-                    })();
+                  : type === 'team-honours'
+                    ? await ingestion.ingestTeamHonours(provider, sportSlug, {
+                        maxBatches: maxPages,
+                      })
+                    : type === 'memberships'
+                      ? await ingestion.ingestMemberships(provider, sportSlug, {
+                          maxBatches: maxPages,
+                        })
+                      : (() => {
+                          throw new Error(`Unknown entity type "${type}"`);
+                        })();
 
       const seconds = ((Date.now() - typeStartedAt) / 1_000).toFixed(1);
       process.stdout.write(

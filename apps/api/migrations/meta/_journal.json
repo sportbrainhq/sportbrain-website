@@ -15,6 +15,13 @@
       "when": 1787122859244,
       "tag": "0001_opposite_freak",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1787134515346,
+      "tag": "0002_new_banshee",
+      "breakpoints": true
     }
   ]
 }

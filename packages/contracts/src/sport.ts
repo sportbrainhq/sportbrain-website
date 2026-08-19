@@ -264,3 +264,72 @@ export const entityListQuerySchema = z.object({
   q: z.string().max(100).optional(),
 });
 export type EntityListQuery = z.infer<typeof entityListQuerySchema>;
+
+// --- Editorial content ------------------------------------------------------
+
+/**
+ * A piece of editorial writing: an overview, explainer, story or article.
+ *
+ * This is the half of the product that is ours outright. The sports data is
+ * commodity, available to anyone who pays the same provider; the explainer that
+ * makes a statistic meaningful is not. It carries no licensing constraint and no
+ * refresh cadence, which makes it the opposite of everything else in this file.
+ */
+export const contentSummarySchema = z.object({
+  id: z.string(),
+  type: z.enum(['overview', 'explainer', 'story', 'article', 'fact']),
+  slug: z.string(),
+  title: z.string(),
+  excerpt: z.string().nullable(),
+  /** Editorial grouping within a tab: "Rules", "Tactics", "Concepts". */
+  category: z.string().nullable(),
+  heroImageUrl: z.string().nullable(),
+  publishedAt: z.string().nullable(),
+});
+export type ContentSummary = z.infer<typeof contentSummarySchema>;
+
+export const contentDetailSchema = contentSummarySchema.extend({
+  /** Markdown. Rendered server-side; see the CSP note in the schema. */
+  body: z.string().nullable(),
+  sport: z.object({ slug: z.string(), name: z.string() }).nullable(),
+  /** Entities this piece is about, for cross-linking back to their pages. */
+  related: z.array(
+    z.object({
+      entityType: z.string(),
+      entityId: z.string(),
+      relevance: z.string(),
+    }),
+  ),
+});
+export type ContentDetail = z.infer<typeof contentDetailSchema>;
+
+/** A quiz, with its questions but without their answers. */
+export const quizSummarySchema = z.object({
+  id: z.string(),
+  slug: z.string(),
+  title: z.string(),
+  description: z.string().nullable(),
+  difficulty: z.string(),
+  questionCount: z.number().int().nonnegative(),
+});
+export type QuizSummary = z.infer<typeof quizSummarySchema>;
+
+/**
+ * One question as delivered to a player.
+ *
+ * `correctOptionId` is deliberately absent. Sending the answer alongside the
+ * question puts it in the page source, where anybody can read it, so answers
+ * are checked server-side instead.
+ */
+export const quizQuestionSchema = z.object({
+  id: z.string(),
+  prompt: z.string(),
+  options: z.array(z.object({ id: z.string(), text: z.string() })),
+});
+export type QuizQuestion = z.infer<typeof quizQuestionSchema>;
+
+export const quizDetailSchema = quizSummarySchema.extend({
+  sport: z.object({ slug: z.string(), name: z.string() }).nullable(),
+  questions: z.array(quizQuestionSchema),
+});
+export type QuizDetail = z.infer<typeof quizDetailSchema>;

@@ -13,6 +13,8 @@ import {
 import {
   competitionsQuery,
   honoursQuery,
+  membershipsQuery,
+  teamHonoursQuery,
   peopleQuery,
   teamsByClassQuery,
   teamsByCompetitionQuery,
@@ -264,6 +266,65 @@ export class WikidataProvider implements SportsDataProvider {
 
       const existing = byPerson.get(qid) ?? [];
       existing.push({ title, year: this.year(row.when) });
+      byPerson.set(qid, existing);
+    }
+
+    return byPerson;
+  }
+
+  /**
+   * Titles and awards for a batch of teams.
+   *
+   * `kind` distinguishes a competition won from an award received, so a club
+   * page can separate its trophy cabinet from its ceremonial honours.
+   */
+  async fetchTeamHonours(
+    teamQids: readonly string[],
+  ): Promise<Map<string, { title: string; year?: number; kind: string }[]>> {
+    if (teamQids.length === 0) return new Map();
+
+    const rows = await this.runQuery(teamHonoursQuery(teamQids));
+    const byTeam = new Map<string, { title: string; year?: number; kind: string }[]>();
+
+    for (const row of rows) {
+      const qid = this.qid(row.item);
+      const title = row.awardLabel;
+      if (!qid || !title) continue;
+
+      const existing = byTeam.get(qid) ?? [];
+      existing.push({ title, year: this.year(row.when), kind: row.kind ?? 'title' });
+      byTeam.set(qid, existing);
+    }
+
+    return byTeam;
+  }
+
+  /** Club spells for a batch of people, with their start and end dates. */
+  async fetchMemberships(
+    personQids: readonly string[],
+  ): Promise<
+    Map<string, { teamExternalId: string; teamName: string; start?: string; end?: string }[]>
+  > {
+    if (personQids.length === 0) return new Map();
+
+    const rows = await this.runQuery(membershipsQuery(personQids));
+    const byPerson = new Map<
+      string,
+      { teamExternalId: string; teamName: string; start?: string; end?: string }[]
+    >();
+
+    for (const row of rows) {
+      const qid = this.qid(row.item);
+      const teamQid = this.qid(row.team);
+      if (!qid || !teamQid || !row.teamLabel) continue;
+
+      const existing = byPerson.get(qid) ?? [];
+      existing.push({
+        teamExternalId: teamQid,
+        teamName: row.teamLabel,
+        start: this.date(row.start),
+        end: this.date(row.end),
+      });
       byPerson.set(qid, existing);
     }
 

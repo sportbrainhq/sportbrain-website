@@ -275,13 +275,26 @@ export const personStatistic = pgTable(
     ...timestamps,
   },
   (table) => [
+    /**
+     * Nulls are coalesced to a sentinel UUID before being indexed.
+     *
+     * A plain unique index over these columns does not do what it looks like it
+     * does: Postgres treats nulls as distinct, so a career row (competition,
+     * season, team and discipline all null) never conflicts with itself and the
+     * seeder inserted a fresh duplicate on every run. Messi ended up with four
+     * identical honours rows, which the API dutifully rendered four times.
+     *
+     * Coalescing makes the null case a real value, so the constraint applies to
+     * exactly the rows it was always meant to cover. The sentinel is the nil
+     * UUID, which cannot collide with a generated one.
+     */
     uniqueIndex('person_statistic_unique_idx').on(
       table.personId,
       table.scope,
-      table.competitionId,
-      table.seasonId,
-      table.teamId,
-      table.disciplineId,
+      sql`coalesce(${table.competitionId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
+      sql`coalesce(${table.seasonId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
+      sql`coalesce(${table.teamId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
+      sql`coalesce(${table.disciplineId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
     ),
     index('person_statistic_lookup_idx').on(table.personId, table.scope, table.disciplineId),
     /** Serves leaderboards: "most Test runs", "most goals in La Liga 2011/12". */
@@ -341,12 +354,13 @@ export const teamStatistic = pgTable(
     ...timestamps,
   },
   (table) => [
+    /** Same null-coalescing as `person_statistic`, for the same reason. */
     uniqueIndex('team_statistic_unique_idx').on(
       table.teamId,
       table.scope,
-      table.competitionId,
-      table.seasonId,
-      table.disciplineId,
+      sql`coalesce(${table.competitionId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
+      sql`coalesce(${table.seasonId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
+      sql`coalesce(${table.disciplineId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
     ),
     index('team_statistic_standings_idx').on(table.seasonId, table.position),
     index('team_statistic_lookup_idx').on(table.teamId, table.scope, table.disciplineId),

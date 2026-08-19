@@ -1,11 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
 import {
   competition,
+  externalMapping,
   honour,
   ingestionRun,
   person,
+  personTeam,
   sport,
   team,
   venue,
@@ -529,6 +531,238 @@ export class IngestionService {
       'cricketer of the year',
     ];
     return included.some((term) => lower.includes(term));
+  }
+
+  /**
+   * Titles and awards for teams already ingested.
+   *
+   * Kept separate from person honours because the two draw on different
+   * properties: a club's trophies come from competitions that name it as
+   * winner, not from awards given to it. See `teamHonoursQuery`.
+   *
+   * The sporting-honour keyword filter is not applied here. A club's honours are
+   * competitions it won, which are sporting by definition, and the filter exists
+   * to strip civic decorations from people.
+   */
+  async ingestTeamHonours(
+    provider: SportsDataProvider & {
+      fetchTeamHonours?: (
+        qids: readonly string[],
+      ) => Promise<Map<string, { title: string; year?: number; kind: string }[]>>;
+    },
+    sportSlug: string,
+    options: { batchSize?: number; maxBatches?: number } = {},
+  ): Promise<IngestionSummary> {
+    if (!provider.fetchTeamHonours) {
+      return this.skipped(
+        provider.key,
+        `team-honours:${sportSlug}`,
+        'provider does not supply team honours',
+      );
+    }
+
+    const sportId = await this.sportIdBySlug(sportSlug);
+    if (!sportId) {
+      return this.skipped(
+        provider.key,
+        `team-honours:${sportSlug}`,
+        `unknown sport "${sportSlug}"`,
+      );
+    }
+
+    const run = await this.startRun(provider.key, `team-honours:${sportSlug}`);
+    const summary = this.newSummary(run.id);
+    const batchSize = options.batchSize ?? 40;
+    const maxBatches = options.maxBatches ?? Number.POSITIVE_INFINITY;
+
+    const mapped = await this.database.db.execute<{ entity_id: string; external_id: string }>(sql`
+      SELECT em.entity_id, em.external_id
+      FROM external_mapping em
+      JOIN team t ON t.id = em.entity_id
+      WHERE em.provider = ${provider.key}
+        AND em.entity_type = 'team'
+        AND t.sport_id = ${sportId}
+    `);
+
+    try {
+      for (
+        let index = 0, batch = 0;
+        index < mapped.length && batch < maxBatches;
+        index += batchSize, batch += 1
+      ) {
+        const slice = mapped.slice(index, index + batchSize);
+        const byQid = await provider.fetchTeamHonours(slice.map((row) => row.external_id));
+        summary.requestsUsed += 1;
+
+        for (const row of slice) {
+          for (const award of byQid.get(row.external_id) ?? []) {
+            summary.read += 1;
+            try {
+              // Checked rather than left to ON CONFLICT. `year` is nullable, and
+              // Postgres cannot match a partial unique index over a nullable
+              // column from an ON CONFLICT target, so the conflict clause fails
+              // outright rather than silently skipping.
+              const [existing] = await this.database.db
+                .select({ id: honour.id })
+                .from(honour)
+                .where(
+                  and(
+                    eq(honour.teamId, row.entity_id),
+                    eq(honour.title, award.title),
+                    award.year === undefined ? isNull(honour.year) : eq(honour.year, award.year),
+                  ),
+                )
+                .limit(1);
+
+              if (existing) continue;
+
+              await this.database.db.insert(honour).values({
+                sportId,
+                teamId: row.entity_id,
+                kind: award.kind,
+                title: award.title,
+                year: award.year,
+              });
+              summary.written += 1;
+            } catch (error) {
+              summary.failed += 1;
+              this.logger.warn(
+                `Failed to ingest team honour "${award.title}": ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+              );
+            }
+          }
+        }
+
+        await this.updateRunProgress(run.id, summary, String(index + batchSize));
+      }
+    } catch (error) {
+      summary.status = 'failed';
+      await this.finishRun(run.id, summary, error instanceof Error ? error.message : String(error));
+      if (error instanceof ProviderError && !error.retryable) throw error;
+      return summary;
+    }
+
+    await this.finishRun(run.id, summary);
+    return summary;
+  }
+
+  /**
+   * Club spells, which turn a player page into a career timeline.
+   *
+   * Only memberships whose club is already in our database are written. A spell
+   * at a club we do not hold cannot be linked, and inventing a placeholder team
+   * to hang it from would put entities in the catalogue that no ingestion run
+   * asked for.
+   */
+  async ingestMemberships(
+    provider: SportsDataProvider & {
+      fetchMemberships?: (
+        qids: readonly string[],
+      ) => Promise<
+        Map<string, { teamExternalId: string; teamName: string; start?: string; end?: string }[]>
+      >;
+    },
+    sportSlug: string,
+    options: { batchSize?: number; maxBatches?: number } = {},
+  ): Promise<IngestionSummary> {
+    if (!provider.fetchMemberships) {
+      return this.skipped(
+        provider.key,
+        `memberships:${sportSlug}`,
+        'provider does not supply memberships',
+      );
+    }
+
+    const sportId = await this.sportIdBySlug(sportSlug);
+    if (!sportId) {
+      return this.skipped(provider.key, `memberships:${sportSlug}`, `unknown sport "${sportSlug}"`);
+    }
+
+    const run = await this.startRun(provider.key, `memberships:${sportSlug}`);
+    const summary = this.newSummary(run.id);
+    const batchSize = options.batchSize ?? 40;
+    const maxBatches = options.maxBatches ?? Number.POSITIVE_INFINITY;
+
+    const people = await this.database.db.execute<{ entity_id: string; external_id: string }>(sql`
+      SELECT em.entity_id, em.external_id
+      FROM external_mapping em
+      JOIN person p ON p.id = em.entity_id
+      WHERE em.provider = ${provider.key}
+        AND em.entity_type = 'person'
+        AND p.primary_sport_id = ${sportId}
+    `);
+
+    // One lookup of every mapped team, rather than a query per membership.
+    const teamRows = await this.database.db
+      .select({ entityId: externalMapping.entityId, externalId: externalMapping.externalId })
+      .from(externalMapping)
+      .where(
+        and(
+          eq(externalMapping.provider, provider.key as never),
+          eq(externalMapping.entityType, 'team'),
+        ),
+      );
+    const teamByQid = new Map(teamRows.map((row) => [row.externalId, row.entityId]));
+
+    try {
+      for (
+        let index = 0, batch = 0;
+        index < people.length && batch < maxBatches;
+        index += batchSize, batch += 1
+      ) {
+        const slice = people.slice(index, index + batchSize);
+        const byQid = await provider.fetchMemberships(slice.map((row) => row.external_id));
+        summary.requestsUsed += 1;
+
+        for (const row of slice) {
+          for (const membership of byQid.get(row.external_id) ?? []) {
+            summary.read += 1;
+
+            const teamId = teamByQid.get(membership.teamExternalId);
+            if (!teamId) {
+              // Counted rather than failed: a spell at a club outside our
+              // catalogue is missing data, not an error.
+              summary.queued += 1;
+              continue;
+            }
+
+            try {
+              await this.database.db
+                .insert(personTeam)
+                .values({
+                  personId: row.entity_id,
+                  teamId,
+                  role: 'player',
+                  startDate: membership.start,
+                  endDate: membership.end,
+                  confidence: 'provisional',
+                })
+                .onConflictDoNothing();
+              summary.written += 1;
+            } catch (error) {
+              summary.failed += 1;
+              this.logger.warn(
+                `Failed to ingest membership: ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+              );
+            }
+          }
+        }
+
+        await this.updateRunProgress(run.id, summary, String(index + batchSize));
+      }
+    } catch (error) {
+      summary.status = 'failed';
+      await this.finishRun(run.id, summary, error instanceof Error ? error.message : String(error));
+      if (error instanceof ProviderError && !error.retryable) throw error;
+      return summary;
+    }
+
+    await this.finishRun(run.id, summary);
+    return summary;
   }
 
   // ---------------------------------------------------------------------------

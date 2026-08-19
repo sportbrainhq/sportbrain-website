@@ -1,6 +1,8 @@
 import {
   competitionDetailSchema,
   competitionSummarySchema,
+  contentDetailSchema,
+  contentSummarySchema,
   errorResponseSchema,
   healthResponseSchema,
   paginated,
@@ -12,6 +14,8 @@ import {
   teamDetailSchema,
   teamSummarySchema,
   type CompetitionDetail,
+  type ContentDetail,
+  type ContentSummary,
   type HealthResponse,
   type Paginated,
   type PlayerDetail,
@@ -246,6 +250,24 @@ export function search(
   return apiGet(`/v1/search${toQuery({ q: query, ...params })}`, listEnvelope(searchResultSchema), {
     noStore: true,
     timeoutMs: 5_000,
+  });
+}
+
+/** Explainers for a sport's Explainers tab. */
+export function fetchExplainers(sportSlug: string): Promise<{ data: ContentSummary[] }> {
+  return apiGet(
+    `/v1/sports/${sportSlug}/explainers`,
+    listEnvelope(contentSummarySchema),
+    // Editorial content changes on publication rather than on a sync, so it is
+    // cached longer than anything ingestion touches.
+    { revalidate: 3_600, tags: ['content', `sport:${sportSlug}`] },
+  );
+}
+
+export function fetchExplainer(slug: string): Promise<ContentDetail> {
+  return apiGet(`/v1/explainers/${slug}`, contentDetailSchema, {
+    revalidate: 3_600,
+    tags: ['content'],
   });
 }
 

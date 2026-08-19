@@ -8,6 +8,7 @@ import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './health/health.module';
 import { IntegrationsModule } from './integrations/integrations.module';
 import { CompetitionsModule } from './modules/competitions/competitions.module';
+import { ContentModule } from './modules/content/content.module';
 import { PlayersModule } from './modules/players/players.module';
 import { SearchModule } from './modules/search/search.module';
 import { SharedModule } from './modules/shared/shared.module';
@@ -66,6 +67,7 @@ import { JobsModule } from './jobs/jobs.module';
     TeamsModule,
     PlayersModule,
     CompetitionsModule,
+    ContentModule,
     SearchModule,
   ],
   providers: [
