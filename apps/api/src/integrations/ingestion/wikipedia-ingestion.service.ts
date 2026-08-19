@@ -163,7 +163,7 @@ export class WikipediaIngestionService {
 
     for (const [index, target] of targets.entries()) {
       try {
-        const recordsTitle = await this.provider.findRecordsArticle(target.name);
+        const recordsTitle = await this.provider.findRecordsArticle(target.name, sportSlug);
         if (!recordsTitle) continue;
 
         const extracted = await this.provider.fetchTeamRankings(recordsTitle);

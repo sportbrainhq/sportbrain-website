@@ -206,6 +206,40 @@ export class WikipediaProvider {
       ['regional name', 'Regional tournament', 'history', 120],
       ['regional cup apps', 'Regional appearances', 'history', 122],
       ['regional cup best', 'Best regional finish', 'history', 124],
+
+      // Cricket uses its own template with none of the field names above.
+      // Without these a national side returned a nickname and a coach, while
+      // its infobox carried the Test, ODI and T20I records, the World Cup
+      // history and the ICC standing.
+      ['icc_status', 'ICC status', 'governance', 16],
+      ['icc_region', 'ICC region', 'governance', 18],
+      ['icc_member_year', 'ICC member since', 'governance', 19],
+      ['coach', 'Coach', 'people', 64],
+      ['test_captain', 'Test captain', 'people', 67],
+      ['od_captain', 'ODI captain', 'people', 68],
+      ['t20i_captain', 'T20I captain', 'people', 69],
+      ['test_rank', 'Test ranking', 'records', 70],
+      ['odi_rank', 'ODI ranking', 'records', 72],
+      ['t20i_rank', 'T20I ranking', 'records', 74],
+      ['test_record', 'Test record', 'records', 80],
+      ['odi_record', 'ODI record', 'records', 82],
+      ['t20i_record', 'T20I record', 'records', 84],
+      ['first_test', 'First Test', 'history', 100],
+      ['first_odi', 'First ODI', 'history', 102],
+      ['first_t20i', 'First T20I', 'history', 104],
+      ['wc_apps', 'World Cup appearances', 'history', 110],
+      ['wc_best', 'Best World Cup', 'history', 112],
+      ['wt20_apps', 'T20 World Cup appearances', 'history', 114],
+      ['wt20_best', 'Best T20 World Cup', 'history', 116],
+      ['wtc_apps', 'World Test Championship apps', 'history', 118],
+      ['wtc_best', 'Best World Test Championship', 'history', 119],
+
+      // Franchise sides: an IPL club records its titles as numbered pairs.
+      ['city', 'City', 'identity', 27],
+      ['title1', 'Competition', 'honours', 50],
+      ['title1wins', 'Titles won', 'honours', 51],
+      ['title2', 'Second competition', 'honours', 52],
+      ['title2wins', 'Second competition titles', 'honours', 53],
     ];
 
     return this.factsFrom(box, map);
@@ -438,20 +472,73 @@ export class WikipediaProvider {
   // ---------------------------------------------------------------------------
 
   /** Resolves a records-article title for a club, or null if it has none. */
-  async findRecordsArticle(teamName: string): Promise<string | null> {
-    const title = await this.client.resolveTitle(`intitle:records intitle:statistics ${teamName}`);
+  async findRecordsArticle(teamName: string, sportSlug = 'football'): Promise<string | null> {
+    // Cricket names its records articles per format ("List of India Test
+    // cricket records") rather than as one combined page, so the football
+    // pattern finds nothing for a national side. The country is extracted from
+    // the team name and the Test article searched for, that being the format
+    // with the deepest records.
+    const searches =
+      sportSlug === 'cricket'
+        ? [
+            `intitle:records ${teamName.replace(/\b(national|cricket|team|men's|women's)\b/gi, '').trim()} Test cricket`,
+            `intitle:records intitle:statistics ${teamName}`,
+          ]
+        : [`intitle:records intitle:statistics ${teamName}`];
 
-    // The search returns a best match whether or not it is relevant, so the
-    // result is only accepted when it actually names the club. Without this,
-    // an obscure club inherits a famous one's records page.
-    if (!title) return null;
+    const candidates: string[] = [];
+    for (const search of searches) {
+      candidates.push(...(await this.client.resolveTitles(search, 5)));
+    }
+
+    if (candidates.length === 0) return null;
 
     const normalise = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
-    const words = teamName.split(/\s+/).filter((word) => word.length > 3);
-    const titleNormalised = normalise(title);
 
-    const overlaps = words.some((word) => titleNormalised.includes(normalise(word)));
-    return overlaps ? title : null;
+    // Words that appear in almost every club and country article and therefore
+    // prove nothing about a match. Requiring only "some word in common" let
+    // Bangladesh's records article be returned for Afghanistan, Zimbabwe and
+    // England Women alike, because all four share "cricket" and "team", and
+    // every one of those pages was then filled with Bangladesh's records.
+    const generic = new Set([
+      'national',
+      'cricket',
+      'football',
+      'team',
+      'club',
+      'mens',
+      'womens',
+      'women',
+      'list',
+      'records',
+      'statistics',
+      'association',
+      'united',
+      'city',
+      'sports',
+    ]);
+
+    const distinctive = teamName
+      .split(/\s+/)
+      .map(normalise)
+      // Three characters, not four. "Test cricket records" articles are named
+      // for the country alone, and a four-character floor drops England, whose
+      // distinctive word is exactly seven but whose sibling cases include
+      // shorter country names.
+      .filter((word) => word.length >= 3 && !generic.has(word));
+
+    // Nothing distinctive to check against means the name is entirely generic,
+    // and accepting the search's best guess would be a coin toss.
+    if (distinctive.length === 0) return null;
+
+    // The first candidate that actually names the team wins, rather than the
+    // first candidate outright.
+    for (const candidate of candidates) {
+      const candidateNormalised = normalise(candidate);
+      if (distinctive.some((word) => candidateNormalised.includes(word))) return candidate;
+    }
+
+    return null;
   }
 
   private factsFrom(box: Infobox, map: [string, string, string, number][]): WikiFact[] {

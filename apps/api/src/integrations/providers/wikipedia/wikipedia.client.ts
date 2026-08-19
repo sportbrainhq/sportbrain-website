@@ -108,12 +108,26 @@ export class WikipediaClient {
    * "Liverpool F.C. records and statistics" the pattern implied.
    */
   async resolveTitle(search: string): Promise<string | null> {
+    const [first] = await this.resolveTitles(search, 1);
+    return first ?? null;
+  }
+
+  /**
+   * Several candidate titles for a search, best first.
+   *
+   * The top hit is often not the right one. Searching for Australia's Test
+   * records returns the generic "List of Test cricket records" first and
+   * "List of Australia Test cricket records" second, so a caller that reads
+   * only the first result finds nothing usable and rejects a page that was
+   * there all along.
+   */
+  async resolveTitles(search: string, limit = 5): Promise<string[]> {
     const url =
       `${WikipediaClient.API}?action=query&list=search` +
-      `&srsearch=${encodeURIComponent(search)}&srlimit=1&format=json&formatversion=2`;
+      `&srsearch=${encodeURIComponent(search)}&srlimit=${limit}&format=json&formatversion=2`;
 
     const body = await this.getJson<{ query?: { search?: { title: string }[] } }>(url);
-    return body.query?.search?.[0]?.title ?? null;
+    return (body.query?.search ?? []).map((row) => row.title);
   }
 
   /** Whether a page exists, without downloading it. */
