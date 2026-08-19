@@ -30,5 +30,6 @@ export * from './entity.schema';
 export * from './participation.schema';
 export * from './statistic.schema';
 export * from './profile.schema';
+export * from './overview.schema';
 export * from './provider.schema';
 export * from './content.schema';

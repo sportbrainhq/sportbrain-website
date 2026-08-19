@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import type { Sport, SportDetail } from '@sportbrain/contracts';
+import type { Sport, SportDetail, SportOverview } from '@sportbrain/contracts';
 import { AppException } from '../../common';
 import { CacheService } from '../../infrastructure/cache/cache.service';
+import { OverviewRepository } from './overview.repository';
 import { SportsRepository } from './sports.repository';
 
 /**
@@ -19,8 +20,55 @@ export class SportsService {
 
   constructor(
     private readonly repository: SportsRepository,
+    private readonly overview: OverviewRepository,
     private readonly cache: CacheService,
   ) {}
+
+  /**
+   * The full overview payload.
+   *
+   * Cached for an hour, matching the sport list: this is encyclopedia content
+   * that changes when somebody publishes, not when a match finishes.
+   */
+  async findOverview(slug: string): Promise<SportOverview> {
+    return this.cache.wrap(
+      `${SportsService.CACHE_PREFIX}overview:${slug}`,
+      async () => {
+        const sport = await this.findBySlug(slug);
+
+        // Four independent reads, so they run together rather than in series.
+        const [quickFacts, sections, history, governance] = await Promise.all([
+          this.overview.facts(sport.id),
+          this.overview.sections(sport.id),
+          this.overview.timeline(sport.id),
+          this.overview.governance(sport.id),
+        ]);
+
+        // Only sources the page actually cites are listed, which is what makes
+        // the provenance panel meaningful rather than a dump of every row.
+        const sourceIds = [
+          ...new Set(history.map((event) => event.sourceId).filter((id): id is string => !!id)),
+        ];
+
+        return {
+          sport: {
+            id: sport.id,
+            slug: sport.slug,
+            name: sport.name,
+            shortCode: sport.shortCode,
+            traits: sport.traits,
+            summary: sport.summary,
+          },
+          quickFacts,
+          sections,
+          history,
+          governance,
+          sources: await this.overview.sources(sourceIds),
+        };
+      },
+      SportsService.CACHE_TTL_SECONDS,
+    );
+  }
 
   async findAll(): Promise<Sport[]> {
     return this.cache.wrap(

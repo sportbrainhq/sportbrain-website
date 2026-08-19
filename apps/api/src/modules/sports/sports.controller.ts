@@ -1,6 +1,6 @@
 import { Controller, Get, Param } from '@nestjs/common';
 import { ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
-import type { Sport, SportDetail } from '@sportbrain/contracts';
+import type { Sport, SportDetail, SportOverview } from '@sportbrain/contracts';
 import { SportsService } from './sports.service';
 
 /**
@@ -21,6 +21,17 @@ export class SportsController {
     // Not paginated, on purpose. There are a handful of sports and the sidebar
     // needs all of them; a page envelope here would be ceremony.
     return { data: await this.service.findAll() };
+  }
+
+  /**
+   * Registered before `:slug`, or "overview" would be captured as a sport slug.
+   * Literal routes must always precede parameterised ones.
+   */
+  @Get(':slug/overview')
+  @ApiOperation({ summary: 'Encyclopedia overview: facts, history, governance, sources' })
+  @ApiNotFoundResponse({ description: 'No sport with that slug' })
+  async overview(@Param('slug') slug: string): Promise<SportOverview> {
+    return this.service.findOverview(slug);
   }
 
   @Get(':slug')

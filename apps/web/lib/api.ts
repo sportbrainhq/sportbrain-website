@@ -5,6 +5,7 @@ import {
   contentSummarySchema,
   highlightSchema,
   quizSummarySchema,
+  sportOverviewSchema,
   errorResponseSchema,
   healthResponseSchema,
   paginated,
@@ -21,6 +22,7 @@ import {
   type HealthResponse,
   type Highlight,
   type QuizSummary,
+  type SportOverview,
   type Paginated,
   type PlayerDetail,
   type SearchResult,
@@ -286,6 +288,19 @@ export function fetchHighlights(): Promise<{ data: Highlight[] }> {
   return apiGet('/v1/highlights', listEnvelope(highlightSchema), {
     revalidate: 120,
     tags: ['highlights'],
+  });
+}
+
+/**
+ * The encyclopedia overview: facts, prose, timeline, governance and sources.
+ *
+ * Cached for an hour and tagged by sport, so publishing new editorial can
+ * invalidate one sport without clearing the rest.
+ */
+export function fetchSportOverview(slug: string): Promise<SportOverview> {
+  return apiGet(`/v1/sports/${slug}/overview`, sportOverviewSchema, {
+    revalidate: 3_600,
+    tags: ['sports', `sport:${slug}`],
   });
 }
 

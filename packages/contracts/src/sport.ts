@@ -402,3 +402,90 @@ export const quizDetailSchema = quizSummarySchema.extend({
   questions: z.array(quizQuestionSchema),
 });
 export type QuizDetail = z.infer<typeof quizDetailSchema>;
+
+// --- Sport overview ---------------------------------------------------------
+
+/**
+ * The overview payload.
+ *
+ * Structured rather than a rendered blob, so the page composes sections and the
+ * same data can drive a condensed view, a search index or another sport's page
+ * without reparsing prose.
+ */
+
+/** A cited source, surfaced in the "About this information" panel. */
+export const contentSourceSchema = z.object({
+  id: z.string(),
+  provider: z.string(),
+  title: z.string(),
+  url: z.string(),
+  license: z.string().nullable(),
+  retrievedAt: z.string(),
+});
+export type ContentSource = z.infer<typeof contentSourceSchema>;
+
+/** One dated milestone. */
+export const timelineEventSchema = z.object({
+  id: z.string(),
+  year: z.number().int(),
+  /** Set when the entry covers a period rather than a single year. */
+  endYear: z.number().int().nullable(),
+  title: z.string(),
+  shortDescription: z.string(),
+  longDescription: z.string().nullable(),
+  category: z.string(),
+  isMajorMilestone: z.boolean(),
+  /** `established`, `approximate` or `disputed`. Rendered as a qualifier, not hidden. */
+  certainty: z.string(),
+  sourceId: z.string().nullable(),
+});
+export type TimelineEvent = z.infer<typeof timelineEventSchema>;
+
+/** A governing body, with its children nested beneath it. */
+export const governingBodySchema: z.ZodType<{
+  id: string;
+  slug: string;
+  shortName: string;
+  name: string;
+  level: string;
+  region: string | null;
+  foundedYear: number | null;
+  memberCount: number | null;
+  headquarters: string | null;
+  websiteUrl: string | null;
+  children: unknown[];
+}> = z.object({
+  id: z.string(),
+  slug: z.string(),
+  shortName: z.string(),
+  name: z.string(),
+  level: z.string(),
+  region: z.string().nullable(),
+  foundedYear: z.number().int().nullable(),
+  memberCount: z.number().int().nullable(),
+  headquarters: z.string().nullable(),
+  websiteUrl: z.string().nullable(),
+  children: z.array(z.lazy(() => governingBodySchema)),
+});
+export type GoverningBody = z.infer<typeof governingBodySchema>;
+
+/** One authored section: the "What is football?" prose and its siblings. */
+export const overviewSectionSchema = z.object({
+  kind: z.string(),
+  heading: z.string(),
+  body: z.string(),
+});
+export type OverviewSection = z.infer<typeof overviewSectionSchema>;
+
+export const sportOverviewSchema = z.object({
+  sport: sportSchema,
+  /** Structured quick facts, grouped by category for display. */
+  quickFacts: z.array(entityFactSchema),
+  /** Authored prose, keyed by kind: `introduction`, `basics`, `evolution`, `womens`. */
+  sections: z.array(overviewSectionSchema),
+  history: z.array(timelineEventSchema),
+  /** The world body with its confederations nested. */
+  governance: z.array(governingBodySchema),
+  sources: z.array(contentSourceSchema),
+});
+export type SportOverview = z.infer<typeof sportOverviewSchema>;

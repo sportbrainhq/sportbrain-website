@@ -34,6 +34,12 @@ import { loadConfiguration } from '../../config/configuration';
 import * as schema from '../schema';
 import { EXPLAINERS, SPORT_OVERVIEWS } from './editorial';
 import { COMPETITION_SECTIONS, TEAM_SECTIONS } from './entity-editorial';
+import {
+  FOOTBALL_GOVERNANCE,
+  FOOTBALL_SECTIONS,
+  FOOTBALL_SOURCES,
+  FOOTBALL_TIMELINE,
+} from './football-overview';
 import { STATISTIC_REGISTRY } from './statistic-registry';
 
 for (const candidate of [resolve(process.cwd(), '../../.env'), resolve(process.cwd(), '.env')]) {
@@ -63,6 +69,12 @@ async function main(): Promise<void> {
 
     const entitySections = await seedEntitySections(db);
     process.stdout.write(`Content:  ${entitySections} entity sections published\n`);
+
+    const overview = await seedFootballOverview(db);
+    process.stdout.write(
+      `Overview: ${overview.sources} sources, ${overview.timeline} timeline events, ` +
+        `${overview.bodies} governing bodies, ${overview.sections} sections\n`,
+    );
   } catch (error) {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     process.exitCode = 1;
@@ -360,6 +372,123 @@ async function seedEntitySections(db: Db): Promise<number> {
   }
 
   return count;
+}
+
+/**
+ * The football overview: sources, timeline, governance and authored sections.
+ *
+ * Idempotent throughout. Every write is an upsert on a natural key, so running
+ * the seeder twice refreshes content rather than duplicating it, and a source
+ * that temporarily returns nothing cannot wipe good rows.
+ */
+async function seedFootballOverview(db: Db): Promise<{
+  sources: number;
+  timeline: number;
+  bodies: number;
+  sections: number;
+}> {
+  const [sportRow] = await db.execute<{ id: string }>(
+    sql`SELECT id FROM sport WHERE slug = 'football' LIMIT 1`,
+  );
+  if (!sportRow) return { sources: 0, timeline: 0, bodies: 0, sections: 0 };
+
+  // Sources first: the timeline and governance rows reference them.
+  const sourceIds = new Map<string, string>();
+  for (const source of FOOTBALL_SOURCES) {
+    const [row] = await db.execute<{ id: string }>(sql`
+      INSERT INTO content_source (provider, title, url, external_id, license, retrieved_at)
+      VALUES (${source.provider}, ${source.title}, ${source.url},
+              ${source.externalId ?? null}, ${source.license ?? null}, now())
+      ON CONFLICT (provider, url) DO UPDATE SET
+        title = EXCLUDED.title,
+        external_id = EXCLUDED.external_id,
+        license = EXCLUDED.license,
+        retrieved_at = now(),
+        updated_at = now()
+      RETURNING id
+    `);
+    if (row) sourceIds.set(source.key, row.id);
+  }
+
+  let timeline = 0;
+  for (const [index, event] of FOOTBALL_TIMELINE.entries()) {
+    await db.execute(sql`
+      INSERT INTO sport_timeline_event (
+        sport_id, year, end_year, title, short_description, category,
+        is_major_milestone, certainty, source_id, display_order, status
+      ) VALUES (
+        ${sportRow.id}, ${event.year}, ${event.endYear ?? null}, ${event.title},
+        ${event.shortDescription}, ${event.category},
+        ${event.isMajorMilestone ? 'true' : 'false'}, ${event.certainty ?? 'established'},
+        ${event.sourceKey ? (sourceIds.get(event.sourceKey) ?? null) : null},
+        ${event.order ?? (index + 1) * 10}, 'published'
+      )
+      ON CONFLICT (sport_id, year, title) DO UPDATE SET
+        end_year = EXCLUDED.end_year,
+        short_description = EXCLUDED.short_description,
+        category = EXCLUDED.category,
+        is_major_milestone = EXCLUDED.is_major_milestone,
+        certainty = EXCLUDED.certainty,
+        source_id = EXCLUDED.source_id,
+        display_order = EXCLUDED.display_order,
+        updated_at = now()
+    `);
+    timeline += 1;
+  }
+
+  // Two passes: the world body must exist before a confederation can point at
+  // it, and a single pass would leave the first parent reference unresolved.
+  const bodyIds = new Map<string, string>();
+  let bodies = 0;
+  for (const pass of ['world', 'continental'] as const) {
+    for (const body of FOOTBALL_GOVERNANCE.filter((entry) => entry.level === pass)) {
+      const [row] = await db.execute<{ id: string }>(sql`
+        INSERT INTO governing_body (
+          sport_id, parent_id, slug, short_name, name, level, region,
+          founded_year, member_count, headquarters, website_url, display_order
+        ) VALUES (
+          ${sportRow.id},
+          ${body.parentSlug ? (bodyIds.get(body.parentSlug) ?? null) : null},
+          ${body.slug}, ${body.shortName}, ${body.name}, ${body.level},
+          ${body.region ?? null}, ${body.foundedYear ?? null}, ${body.memberCount ?? null},
+          ${body.headquarters ?? null}, ${body.websiteUrl ?? null}, ${body.order ?? 100}
+        )
+        ON CONFLICT (sport_id, slug) DO UPDATE SET
+          parent_id = EXCLUDED.parent_id,
+          name = EXCLUDED.name,
+          region = EXCLUDED.region,
+          founded_year = EXCLUDED.founded_year,
+          member_count = EXCLUDED.member_count,
+          headquarters = EXCLUDED.headquarters,
+          website_url = EXCLUDED.website_url,
+          display_order = EXCLUDED.display_order,
+          updated_at = now()
+        RETURNING id
+      `);
+      if (row) bodyIds.set(body.slug, row.id);
+      bodies += 1;
+    }
+  }
+
+  let sections = 0;
+  for (const section of FOOTBALL_SECTIONS) {
+    await db.execute(sql`
+      INSERT INTO entity_section (
+        entity_type, entity_id, kind, heading, body, status, display_order
+      ) VALUES (
+        'sport', ${sportRow.id}, ${section.kind}, ${section.heading},
+        ${section.body}, 'published', ${section.order}
+      )
+      ON CONFLICT (entity_type, entity_id, kind) DO UPDATE SET
+        heading = EXCLUDED.heading,
+        body = EXCLUDED.body,
+        display_order = EXCLUDED.display_order,
+        updated_at = now()
+    `);
+    sections += 1;
+  }
+
+  return { sources: sourceIds.size, timeline, bodies, sections };
 }
 
 void main();

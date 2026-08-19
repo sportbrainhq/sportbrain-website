@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { SportsController } from './sports.controller';
+import { OverviewRepository } from './overview.repository';
 import { SportsRepository } from './sports.repository';
 import { SportsService } from './sports.service';
 
@@ -12,7 +13,7 @@ import { SportsService } from './sports.service';
  */
 @Module({
   controllers: [SportsController],
-  providers: [SportsService, SportsRepository],
+  providers: [SportsService, SportsRepository, OverviewRepository],
   exports: [SportsService],
 })
 export class SportsModule {}
