@@ -50,11 +50,19 @@ async function bootstrap(): Promise<void> {
 
   // Everything lives under /v1 from the first commit. Retrofitting a version
   // prefix after clients exist means maintaining both forever.
-  app.setGlobalPrefix('v1', {
+  app.setGlobalPrefix('', {
     // Probes stay at the root: orchestrators and uptime checks should not have
     // to know the API's versioning scheme.
     exclude: ['health', 'health/liveness', 'health/readiness'],
   });
+
+  // URI versioning supplies the `v1` segment on its own, producing `/v1/sports`.
+  //
+  // This previously combined `setGlobalPrefix('v1')` with URI versioning, and
+  // the two compose rather than overlap: every route was served at `/v1/v1/...`
+  // while the documentation, the Swagger UI and every controller comment said
+  // `/v1/...`. Nothing caught it because the foundation had no domain routes to
+  // request. Versioning owns the prefix; the global prefix stays empty.
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
 
   // --- Documentation ------------------------------------------------------

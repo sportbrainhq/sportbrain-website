@@ -493,6 +493,21 @@ export const honour = pgTable(
     index('honour_person_idx').on(table.personId, table.year),
     index('honour_team_idx').on(table.teamId, table.year),
     index('honour_competition_idx').on(table.competitionId),
+    /**
+     * Stops the same award being recorded twice for one subject.
+     *
+     * Ingestion already used `onConflictDoNothing`, but with no constraint to
+     * conflict against it did nothing at all, and re-running produced duplicate
+     * honours that reached the API: Messi's page listed the 2023 Ballon d'Or
+     * twice. Partial indexes because the subject is either a person or a team,
+     * never both, and Postgres treats nulls as distinct in a plain unique index.
+     */
+    uniqueIndex('honour_person_unique_idx')
+      .on(table.personId, table.title, table.year)
+      .where(sql`${table.personId} IS NOT NULL`),
+    uniqueIndex('honour_team_unique_idx')
+      .on(table.teamId, table.title, table.year)
+      .where(sql`${table.teamId} IS NOT NULL`),
   ],
 );
 

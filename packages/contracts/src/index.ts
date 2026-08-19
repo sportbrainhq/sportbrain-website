@@ -9,10 +9,12 @@
  *
  *   1. Schemas only. No business logic, no I/O, no framework imports.
  *   2. Types are always inferred (`z.infer`), never hand-written alongside.
- *   3. It stays domain-agnostic until a domain actually ships. Sports
- *      entities do not belong here yet.
+ *   3. Canonical shapes only. Nothing provider-shaped crosses this boundary:
+ *      no Wikidata QIDs, no vendor field names. The website must never learn
+ *      which source a fact came from, because sources are expected to change.
  */
 
 export * from './error';
 export * from './health';
 export * from './pagination';
+export * from './sport';

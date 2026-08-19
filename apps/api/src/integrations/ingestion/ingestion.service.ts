@@ -466,7 +466,11 @@ export class IngestionService {
                   title: award.title,
                   year: award.year,
                 })
-                .onConflictDoNothing();
+                // Targets the partial unique index, so a re-run updates
+                // nothing rather than inserting a second copy.
+                .onConflictDoNothing({
+                  target: [honour.personId, honour.title, honour.year],
+                });
               summary.written += 1;
             } catch (error) {
               summary.failed += 1;
