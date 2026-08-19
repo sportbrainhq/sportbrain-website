@@ -4,10 +4,10 @@ import { Container } from './container';
 /**
  * Global site header.
  *
- * A server component with no client JavaScript. The navigation is an empty
- * array because no sections exist yet; adding one is a matter of listing it
- * here, and the mobile menu (which will need a client boundary) is deferred
- * until there is something to put in it.
+ * A server component with no client JavaScript. The sport list is not rendered
+ * here: it lives in the sidebar, where the sport-first navigation belongs, and
+ * duplicating it across the top would give two competing ways to do the same
+ * thing. The mobile menu is still deferred until there is more to put in it.
  */
 
 interface NavItem {
@@ -15,8 +15,7 @@ interface NavItem {
   label: string;
 }
 
-// Populated as sections ship: /sports, /stories, /players, /records, /search.
-const NAV_ITEMS: NavItem[] = [];
+const NAV_ITEMS: NavItem[] = [{ href: '/search', label: 'Search' }];
 
 export function SiteHeader() {
   return (

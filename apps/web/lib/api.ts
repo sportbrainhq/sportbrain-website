@@ -1,8 +1,26 @@
 import {
+  competitionDetailSchema,
+  competitionSummarySchema,
   errorResponseSchema,
   healthResponseSchema,
+  paginated,
+  playerDetailSchema,
+  playerSummarySchema,
+  searchResultSchema,
+  sportDetailSchema,
+  sportSchema,
+  teamDetailSchema,
+  teamSummarySchema,
+  type CompetitionDetail,
   type HealthResponse,
+  type Paginated,
+  type PlayerDetail,
+  type SearchResult,
+  type Sport,
+  type SportDetail,
+  type TeamDetail,
 } from '@sportbrain/contracts';
+import { z } from 'zod';
 import type { ZodSchema } from 'zod';
 import { serverEnv } from './env';
 
@@ -119,7 +137,6 @@ async function toApiError(response: Response): Promise<ApiError> {
 }
 
 // --- Endpoints --------------------------------------------------------------
-// Only platform endpoints exist. Domain calls are added as domains ship.
 
 /**
  * Fetches API health.
@@ -129,4 +146,114 @@ async function toApiError(response: Response): Promise<ApiError> {
  */
 export function fetchHealth(): Promise<HealthResponse> {
   return apiGet('/health', healthResponseSchema, { noStore: true, timeoutMs: 3_000 });
+}
+
+/**
+ * Cache policy for sports data.
+ *
+ * The site is read-heavy, SEO-critical and backed by data that changes only
+ * when an ingestion run completes, so pages are cached aggressively and
+ * invalidated by tag rather than by waiting for a TTL.
+ *
+ * Tags mirror the URL hierarchy, so `revalidateTag('sport:football')` after an
+ * ingestion clears every football page at once without touching cricket.
+ */
+const CACHE = {
+  /** The sidebar. Changes when a sport launches, which is a deliberate act. */
+  sports: { revalidate: 3_600, tags: ['sports'] },
+  /** Entity pages. An hour is well inside how often ingestion runs. */
+  entity: (sportSlug: string) => ({ revalidate: 3_600, tags: ['sports', `sport:${sportSlug}`] }),
+  /** Lists carry filters, so they are cached shorter and re-fetched more often. */
+  list: (sportSlug: string) => ({ revalidate: 900, tags: ['sports', `sport:${sportSlug}`] }),
+};
+
+const listEnvelope = <T extends z.ZodTypeAny>(item: T) => z.object({ data: z.array(item) });
+
+/** Every launched sport, for the sidebar. */
+export function fetchSports(): Promise<{ data: Sport[] }> {
+  return apiGet('/v1/sports', listEnvelope(sportSchema), CACHE.sports);
+}
+
+/** One sport with the counts behind each tab. */
+export function fetchSport(slug: string): Promise<SportDetail> {
+  return apiGet(`/v1/sports/${slug}`, sportDetailSchema, CACHE.entity(slug));
+}
+
+export function fetchTeams(
+  sportSlug: string,
+  params: { page?: number; limit?: number; kind?: string; q?: string } = {},
+): Promise<Paginated<z.infer<typeof teamSummarySchema>>> {
+  return apiGet(
+    `/v1/sports/${sportSlug}/teams${toQuery(params)}`,
+    paginated(teamSummarySchema),
+    CACHE.list(sportSlug),
+  );
+}
+
+export function fetchTeam(sportSlug: string, slug: string): Promise<TeamDetail> {
+  return apiGet(`/v1/sports/${sportSlug}/teams/${slug}`, teamDetailSchema, CACHE.entity(sportSlug));
+}
+
+export function fetchPlayers(
+  sportSlug: string,
+  params: { page?: number; limit?: number; q?: string } = {},
+): Promise<Paginated<z.infer<typeof playerSummarySchema>>> {
+  return apiGet(
+    `/v1/sports/${sportSlug}/players${toQuery(params)}`,
+    paginated(playerSummarySchema),
+    CACHE.list(sportSlug),
+  );
+}
+
+export function fetchPlayer(sportSlug: string, slug: string): Promise<PlayerDetail> {
+  return apiGet(
+    `/v1/sports/${sportSlug}/players/${slug}`,
+    playerDetailSchema,
+    CACHE.entity(sportSlug),
+  );
+}
+
+export function fetchCompetitions(
+  sportSlug: string,
+  params: { page?: number; limit?: number; kind?: string; q?: string } = {},
+): Promise<Paginated<z.infer<typeof competitionSummarySchema>>> {
+  return apiGet(
+    `/v1/sports/${sportSlug}/competitions${toQuery(params)}`,
+    paginated(competitionSummarySchema),
+    CACHE.list(sportSlug),
+  );
+}
+
+export function fetchCompetition(sportSlug: string, slug: string): Promise<CompetitionDetail> {
+  return apiGet(
+    `/v1/sports/${sportSlug}/competitions/${slug}`,
+    competitionDetailSchema,
+    CACHE.entity(sportSlug),
+  );
+}
+
+/**
+ * Cross-entity search.
+ *
+ * Not cached at the fetch layer. Search is user input with an unbounded key
+ * space, so caching it fills the cache with entries that will never be read
+ * again. The API caches briefly on its own side, where the hit rate is real.
+ */
+export function search(
+  query: string,
+  params: { sport?: string; type?: string; limit?: number } = {},
+): Promise<{ data: SearchResult[] }> {
+  return apiGet(`/v1/search${toQuery({ q: query, ...params })}`, listEnvelope(searchResultSchema), {
+    noStore: true,
+    timeoutMs: 5_000,
+  });
+}
+
+/** Builds a query string, dropping undefined values so they do not appear as "undefined". */
+function toQuery(params: Record<string, string | number | undefined>): string {
+  const entries = Object.entries(params).filter(
+    (entry): entry is [string, string | number] => entry[1] !== undefined && entry[1] !== '',
+  );
+  if (entries.length === 0) return '';
+  return `?${new URLSearchParams(entries.map(([k, v]) => [k, String(v)])).toString()}`;
 }
