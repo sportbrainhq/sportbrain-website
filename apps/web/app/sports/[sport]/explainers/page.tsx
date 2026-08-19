@@ -1,6 +1,8 @@
-import Link from 'next/link';
 import type { Metadata } from 'next';
-import { fetchExplainers, fetchSport } from '@/lib/api';
+import { notFound } from 'next/navigation';
+import { CategoryNav, CategorySection, ExplainerRow } from '@/components/sports/explainer';
+import { ExplainerSearch } from '@/components/sports/explainer-search';
+import { ApiError, fetchExplainerLibrary } from '@/lib/api';
 import { buildMetadata } from '@/lib/seo';
 
 export async function generateMetadata({
@@ -8,65 +10,89 @@ export async function generateMetadata({
 }: {
   params: Promise<{ sport: string }>;
 }): Promise<Metadata> {
-  const { sport } = await params;
-  return buildMetadata({ title: 'Explainers', path: `/sports/${sport}/explainers` });
+  const { sport: slug } = await params;
+  try {
+    const { sport } = await fetchExplainerLibrary(slug);
+    return buildMetadata({
+      title: `${sport.name} Explainers`,
+      description: `Rules, tactics, positions, terminology and concepts in ${sport.name.toLowerCase()}, explained clearly.`,
+      path: `/sports/${slug}/explainers`,
+    });
+  } catch {
+    return buildMetadata({ title: 'Explainers', path: `/sports/${slug}/explainers` });
+  }
 }
 
 /**
- * The Explainers tab.
+ * The explainer library.
  *
- * Grouped by the editorial category rather than listed flat, because "Rules",
- * "Tactics" and "Concepts" answer different questions and a reader usually
- * arrives wanting one of them.
+ * Organised as a reference work rather than a blog: a search box, a short
+ * beginner path, then the taxonomy with a preview of each category. Concepts
+ * are rows in a list, because a hundred identical cards is a wall the reader has
+ * to scan rather than a structure they can navigate.
+ *
+ * Only the search box is a client component. The categories and every concept
+ * are server-rendered, so the library is fully indexable and readable without
+ * JavaScript.
  */
 export default async function ExplainersPage({ params }: { params: Promise<{ sport: string }> }) {
   const { sport: slug } = await params;
-  const [sport, explainers] = await Promise.all([fetchSport(slug), fetchExplainers(slug)]);
 
-  const byCategory = new Map<string, typeof explainers.data>();
-  for (const item of explainers.data) {
-    const key = item.category ?? 'General';
-    byCategory.set(key, [...(byCategory.get(key) ?? []), item]);
+  let library;
+  try {
+    library = await fetchExplainerLibrary(slug);
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) notFound();
+    throw error;
   }
 
+  const { sport, startHere, categories, searchIndex } = library;
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-10">
       <header>
-        <h1 className="text-2xl font-black tracking-tight sm:text-3xl">{sport.name} explainers</h1>
-        <p className="mt-2 text-muted-foreground">
-          How the sport works, and how to read what the numbers say.
+        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+          {sport.name} / Explainers
+        </p>
+        <h1 className="mt-2 text-3xl font-black tracking-tight sm:text-4xl">
+          Understand {sport.name}
+        </h1>
+        <p className="mt-3 max-w-2xl text-lg leading-relaxed text-muted-foreground">
+          Rules, tactics, positions, terminology and concepts, explained clearly.
         </p>
       </header>
 
-      {explainers.data.length === 0 ? (
+      <ExplainerSearch
+        sportSlug={slug}
+        index={searchIndex}
+        placeholder="Search offside, xG, false nine, pressing..."
+      />
+
+      {startHere.length > 0 && (
+        <section>
+          <h2 className="text-2xs font-semibold uppercase tracking-widest text-muted-foreground">
+            Start here
+          </h2>
+          <div className="mt-3">
+            {startHere.map((explainer) => (
+              <ExplainerRow key={explainer.id} sportSlug={slug} explainer={explainer} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {categories.length > 0 && <CategoryNav categories={categories} />}
+
+      {categories.length === 0 ? (
         <p className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-          No explainers written yet.
+          No explainers published yet.
         </p>
       ) : (
-        [...byCategory].map(([category, items]) => (
-          <section key={category}>
-            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-              {category}
-            </h2>
-            <ul className="grid gap-2 sm:grid-cols-2">
-              {items.map((item) => (
-                <li key={item.id}>
-                  <Link
-                    href={`/sports/${slug}/explainers/${item.slug}`}
-                    className="block rounded-lg border border-border bg-card p-4 transition-colors hover:border-foreground/20 hover:bg-muted/50"
-                  >
-                    <span className="block font-medium">{item.title}</span>
-                    {item.excerpt && (
-                      <span className="mt-1 block text-sm text-muted-foreground">
-                        {item.excerpt}
-                      </span>
-                    )}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ))
+        <div className="space-y-10">
+          {categories.map((category) => (
+            <CategorySection key={category.id} sportSlug={slug} category={category} />
+          ))}
+        </div>
       )}
     </div>
   );

@@ -3,6 +3,9 @@ import {
   competitionSummarySchema,
   contentDetailSchema,
   contentSummarySchema,
+  explainerDetailSchema,
+  explainerLibrarySchema,
+  explainerSummarySchema,
   highlightSchema,
   quizSummarySchema,
   sportOverviewSchema,
@@ -19,6 +22,9 @@ import {
   type CompetitionDetail,
   type ContentDetail,
   type ContentSummary,
+  type ExplainerDetail,
+  type ExplainerLibrary,
+  type ExplainerSummary,
   type HealthResponse,
   type Highlight,
   type QuizSummary,
@@ -267,6 +273,39 @@ export function fetchExplainers(sportSlug: string): Promise<{ data: ContentSumma
     // Editorial content changes on publication rather than on a sync, so it is
     // cached longer than anything ingestion touches.
     { revalidate: 3_600, tags: ['content', `sport:${sportSlug}`] },
+  );
+}
+
+/**
+ * The explainer library landing page.
+ *
+ * One request for the whole page: the beginner path, the categories and the
+ * search index arrive together, so the page cannot render half-populated.
+ */
+export function fetchExplainerLibrary(sportSlug: string): Promise<ExplainerLibrary> {
+  return apiGet(`/v1/sports/${sportSlug}/explainer-library`, explainerLibrarySchema, {
+    revalidate: 3_600,
+    tags: ['content', 'explainers', `sport:${sportSlug}`],
+  });
+}
+
+/** One explainer, by slug or by any of its aliases. */
+export function fetchExplainerDetail(sportSlug: string, slug: string): Promise<ExplainerDetail> {
+  return apiGet(`/v1/sports/${sportSlug}/explainers/${slug}`, explainerDetailSchema, {
+    revalidate: 3_600,
+    tags: ['content', 'explainers', `sport:${sportSlug}`],
+  });
+}
+
+/** Every published explainer in one category, uncapped. */
+export function fetchExplainerCategory(
+  sportSlug: string,
+  categorySlug: string,
+): Promise<{ data: ExplainerSummary[] }> {
+  return apiGet(
+    `/v1/sports/${sportSlug}/explainer-categories/${categorySlug}`,
+    listEnvelope(explainerSummarySchema),
+    { revalidate: 3_600, tags: ['content', 'explainers', `sport:${sportSlug}`] },
   );
 }
 

@@ -1,9 +1,18 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
-import type { ContentDetail, ContentSummary, QuizDetail, QuizSummary } from '@sportbrain/contracts';
+import type {
+  ContentDetail,
+  ContentSummary,
+  ExplainerDetail,
+  ExplainerLibrary,
+  ExplainerSummary,
+  QuizDetail,
+  QuizSummary,
+} from '@sportbrain/contracts';
 import { zodPipe } from '../../common';
 import { ContentService } from './content.service';
+import { ExplainerService } from './explainer.service';
 
 /**
  * Editorial content: the Explainers, Stories and Quiz tabs.
@@ -15,7 +24,10 @@ import { ContentService } from './content.service';
 @ApiTags('content')
 @Controller()
 export class ContentController {
-  constructor(private readonly service: ContentService) {}
+  constructor(
+    private readonly service: ContentService,
+    private readonly library: ExplainerService,
+  ) {}
 
   @Get('highlights')
   @ApiOperation({ summary: 'Generated headline cards for the discovery panels' })
@@ -27,6 +39,47 @@ export class ContentController {
   @ApiOperation({ summary: 'Explainers for a sport: rules, formats, tactics, concepts' })
   async explainers(@Param('sportSlug') sportSlug: string): Promise<{ data: ContentSummary[] }> {
     return { data: await this.service.listBySport(sportSlug, 'explainer') };
+  }
+
+  /**
+   * The explainer library landing page.
+   *
+   * One response rather than several: the page needs the beginner path, the
+   * categories and the search index together, and three round trips to render
+   * one screen is three chances to arrive half-populated.
+   */
+  @Get('sports/:sportSlug/explainer-library')
+  @ApiOperation({ summary: 'The explainer library: start-here, categories and search index' })
+  @ApiNotFoundResponse({ description: 'No such sport' })
+  async explainerLibrary(@Param('sportSlug') sportSlug: string): Promise<ExplainerLibrary> {
+    return this.library.library(sportSlug);
+  }
+
+  @Get('sports/:sportSlug/explainer-categories/:categorySlug')
+  @ApiOperation({ summary: 'Every published explainer in one category' })
+  @ApiNotFoundResponse({ description: 'No such sport' })
+  async explainerCategory(
+    @Param('sportSlug') sportSlug: string,
+    @Param('categorySlug') categorySlug: string,
+  ): Promise<{ data: ExplainerSummary[] }> {
+    return { data: await this.library.byCategory(sportSlug, categorySlug) };
+  }
+
+  /**
+   * One explainer.
+   *
+   * Scoped by sport rather than global, because a slug like `transition` is a
+   * different concept in football and cricket and the library is meant to grow
+   * into both.
+   */
+  @Get('sports/:sportSlug/explainers/:slug')
+  @ApiOperation({ summary: 'One explainer with its sections, relations and sources' })
+  @ApiNotFoundResponse({ description: 'No such explainer' })
+  async explainerDetail(
+    @Param('sportSlug') sportSlug: string,
+    @Param('slug') slug: string,
+  ): Promise<ExplainerDetail> {
+    return this.library.detail(sportSlug, slug);
   }
 
   @Get('sports/:sportSlug/stories')

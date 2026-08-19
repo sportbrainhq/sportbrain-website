@@ -57,6 +57,20 @@
       "when": 1787161174847,
       "tag": "0007_lame_madelyne_pryor",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1787164095550,
+      "tag": "0008_living_rumiko_fujikawa",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1787164095551,
+      "tag": "0009_add_rule_section_types",
+      "breakpoints": true
     }
   ]
 }

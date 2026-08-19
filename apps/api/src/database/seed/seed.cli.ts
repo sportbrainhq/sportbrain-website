@@ -40,6 +40,12 @@ import {
   FOOTBALL_SOURCES,
   FOOTBALL_TIMELINE,
 } from './football-overview';
+import {
+  FOOTBALL_EXPLAINER_CATEGORIES,
+  FOOTBALL_EXPLAINER_TOPICS,
+} from './football-explainer-taxonomy';
+import { FOOTBALL_EXPLAINERS, FOOTBALL_EXPLAINER_SOURCES } from './football-explainers';
+import { seedExplainerLibrary } from './seed-explainers';
 import { STATISTIC_REGISTRY } from './statistic-registry';
 
 for (const candidate of [resolve(process.cwd(), '../../.env'), resolve(process.cwd(), '.env')]) {
@@ -74,6 +80,20 @@ async function main(): Promise<void> {
     process.stdout.write(
       `Overview: ${overview.sources} sources, ${overview.timeline} timeline events, ` +
         `${overview.bodies} governing bodies, ${overview.sections} sections\n`,
+    );
+
+    const library = await seedExplainerLibrary(
+      db,
+      'football',
+      FOOTBALL_EXPLAINER_CATEGORIES,
+      FOOTBALL_EXPLAINER_TOPICS,
+      FOOTBALL_EXPLAINERS,
+      FOOTBALL_EXPLAINER_SOURCES,
+    );
+    process.stdout.write(
+      `Explainers: ${library.categories} categories, ${library.explainers} concepts ` +
+        `(${library.published} published), ${library.sections} sections, ` +
+        `${library.aliases} aliases, ${library.relations} relations\n`,
     );
   } catch (error) {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);

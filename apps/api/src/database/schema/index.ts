@@ -19,6 +19,7 @@
  *   5. `statistic`      the registry, and the aggregates derived from events
  *   6. `provider`       provider identifiers and ingestion bookkeeping
  *   7. `content`        the editorial layer we own outright
+ *   8. `explainer`      the concept library, and the graph joining it up
  *
  * To add a table: create the file, re-export it here, run `pnpm db:generate`,
  * read the generated SQL by hand, then `pnpm db:migrate`.
@@ -31,5 +32,6 @@ export * from './participation.schema';
 export * from './statistic.schema';
 export * from './profile.schema';
 export * from './overview.schema';
+export * from './explainer.schema';
 export * from './provider.schema';
 export * from './content.schema';
