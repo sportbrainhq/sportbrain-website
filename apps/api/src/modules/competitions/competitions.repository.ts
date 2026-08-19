@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, asc, count, eq, ilike, sql, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, ilike, sql, type SQL } from 'drizzle-orm';
 import type { CompetitionRecord, CompetitionSummary, EntityListQuery } from '@sportbrain/contracts';
 import { DatabaseService } from '../../database/database.service';
 import {
@@ -44,9 +44,9 @@ export class CompetitionsRepository {
       .from(competition)
       .innerJoin(sport, eq(sport.id, competition.sportId))
       .where(where)
-      // Tier first: it is the column that says the Premier League matters more
-      // than a regional cup, and without it the list is alphabetical noise.
-      .orderBy(asc(competition.tier), asc(competition.name))
+      // Tier first, because it is the column that says the Premier League
+      // matters more than a regional cup, then notability within a tier.
+      .orderBy(asc(competition.tier), desc(competition.notability), asc(competition.name))
       .limit(query.limit)
       .offset((query.page - 1) * query.limit);
 

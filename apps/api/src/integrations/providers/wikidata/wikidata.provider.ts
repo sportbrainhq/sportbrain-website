@@ -149,6 +149,9 @@ export class WikidataProvider implements SportsDataProvider {
     const items = this.deduplicateByQid(rows).map<ProviderTeam>((row) => ({
       externalId: this.qid(row.item),
       name: row.itemLabel ?? '',
+      // Already selected for ordering the query; kept so the ordering survives
+      // into the database rather than being recomputed or lost.
+      notability: row.sitelinks ? Number(row.sitelinks) : undefined,
       fields: {
         name: row.itemLabel ?? '',
         shortName: row.shortName,
@@ -190,6 +193,7 @@ export class WikidataProvider implements SportsDataProvider {
       return {
         externalId: this.qid(row.item),
         name: row.itemLabel ?? '',
+        notability: row.sitelinks ? Number(row.sitelinks) : undefined,
         crossReferences,
         fields: {
           fullName: row.itemLabel ?? '',
@@ -235,6 +239,7 @@ export class WikidataProvider implements SportsDataProvider {
     const items = this.deduplicateByQid(rows).map<ProviderCompetition>((row) => ({
       externalId: this.qid(row.item),
       name: row.itemLabel ?? '',
+      notability: row.sitelinks ? Number(row.sitelinks) : undefined,
       fields: {
         name: row.itemLabel ?? '',
         country: row.countryLabel,

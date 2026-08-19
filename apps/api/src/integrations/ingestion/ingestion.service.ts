@@ -255,6 +255,7 @@ export class IngestionService {
                 country: item.fields.country,
                 foundedYear: item.fields.foundedYear,
                 logoUrl: item.fields.logoUrl,
+                notability: item.notability ?? 0,
                 confidence: 'provisional',
               })
               .onConflictDoNothing({ target: [competition.sportId, competition.slug] })
@@ -790,6 +791,7 @@ export class IngestionService {
           country: item.fields.country,
           foundedYear: item.fields.foundedYear,
           logoUrl: item.fields.logoUrl,
+          notability: item.notability ?? 0,
           updatedAt: new Date(),
         })
         .where(eq(team.id, existingId));
@@ -853,6 +855,7 @@ export class IngestionService {
         country: item.fields.country,
         foundedYear: item.fields.foundedYear,
         logoUrl: item.fields.logoUrl,
+        notability: item.notability ?? 0,
         // Provisional until corroborated: a single free source is not enough to
         // put a row in front of the public.
         confidence: 'provisional',
@@ -903,6 +906,7 @@ export class IngestionService {
           dateOfDeath: item.fields.dateOfDeath,
           nationality: item.fields.nationality,
           imageUrl: item.fields.imageUrl,
+          notability: item.notability ?? 0,
           // Merged rather than replaced: a second provider contributing one
           // attribute must not erase what the first supplied.
           attributes: sql`${person.attributes} || ${JSON.stringify(item.fields.attributes ?? {})}::jsonb`,
@@ -966,6 +970,7 @@ export class IngestionService {
         nationality: item.fields.nationality,
         imageUrl: item.fields.imageUrl,
         attributes: item.fields.attributes ?? {},
+        notability: item.notability ?? 0,
         confidence: 'provisional',
       })
       .onConflictDoNothing({ target: [person.primarySportId, person.slug] })

@@ -33,10 +33,11 @@ export class PlayersRepository {
       .from(person)
       .innerJoin(sport, eq(sport.id, person.primarySportId))
       .where(where)
-      // Players with a portrait first, then alphabetically. A list of names with
-      // no faces reads as broken even when the data is correct, and image
-      // presence correlates well with how well known somebody is.
-      .orderBy(sql`(${person.imageUrl} is null)`, asc(person.fullName))
+      // Most widely documented first, then players with a portrait, then
+      // alphabetically. Notability is the stronger signal; image presence is
+      // kept as a tiebreak because a list of faceless names reads as broken
+      // even when the data behind it is correct.
+      .orderBy(desc(person.notability), sql`(${person.imageUrl} is null)`, asc(person.fullName))
       .limit(query.limit)
       .offset((query.page - 1) * query.limit);
 

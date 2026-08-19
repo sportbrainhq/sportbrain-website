@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, asc, count, eq, ilike, sql, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, ilike, sql, type SQL } from 'drizzle-orm';
 import type { EntityListQuery, TeamSummary } from '@sportbrain/contracts';
 import { DatabaseService } from '../../database/database.service';
 import { sport, team } from '../../database/schema';
@@ -42,9 +42,11 @@ export class TeamsRepository {
       .from(team)
       .innerJoin(sport, eq(sport.id, team.sportId))
       .where(where)
-      // Named teams before unnamed, then alphabetical. Founding year is not the
-      // sort key: it is null often enough that it would scatter the list.
-      .orderBy(asc(team.name))
+      // Most widely documented first, then alphabetical as a tiebreak.
+      // Alphabetical alone puts Abkhazia and Anguilla on the first page of
+      // national teams while Brazil and Argentina sit hundreds of rows down,
+      // which reads as a broken list rather than an ordered one.
+      .orderBy(desc(team.notability), asc(team.name))
       .limit(query.limit)
       .offset((query.page - 1) * query.limit);
 

@@ -104,6 +104,9 @@ export const person = pgTable(
      */
     imageUrl: text('image_url'),
 
+    /** See `team.notability`. Orders player lists so famous names come first. */
+    notability: integer('notability').notNull().default(0),
+
     confidence: confidenceEnum('confidence').notNull().default('provisional'),
 
     /**
@@ -119,6 +122,7 @@ export const person = pgTable(
     uniqueIndex('person_slug_idx').on(table.primarySportId, table.slug),
     index('person_name_idx').on(table.fullName),
     index('person_sport_idx').on(table.primarySportId),
+    index('person_notability_idx').on(table.primarySportId, table.notability),
   ],
 );
 
@@ -168,6 +172,20 @@ export const team = pgTable(
     attributes: jsonb('attributes').notNull().default({}),
 
     /**
+     * How widely documented this entity is, used to order lists.
+     *
+     * The count of Wikipedia language editions carrying an article on it, which
+     * is the best notability proxy available for free. Alphabetical ordering
+     * puts Abkhazia and Anguilla on the first page of national teams while
+     * Brazil and India sit hundreds of rows down, and nothing else in the schema
+     * distinguishes a side anybody searches for from one nobody does.
+     *
+     * Zero means unmeasured rather than obscure: entities ingested before this
+     * existed carry no score until they are refreshed.
+     */
+    notability: integer('notability').notNull().default(0),
+
+    /**
      * Whether the team still competes.
      *
      * Historical sides must remain queryable: a defunct club still appears in
@@ -182,6 +200,7 @@ export const team = pgTable(
   (table) => [
     uniqueIndex('team_slug_idx').on(table.sportId, table.slug),
     index('team_sport_kind_idx').on(table.sportId, table.kind),
+    index('team_notability_idx').on(table.sportId, table.kind, table.notability),
     index('team_name_idx').on(table.name),
   ],
 );
@@ -229,6 +248,9 @@ export const competition = pgTable(
      * a regional cup.
      */
     tier: integer('tier').notNull().default(3),
+
+    /** See `team.notability`. */
+    notability: integer('notability').notNull().default(0),
 
     isActive: boolean('is_active').notNull().default(true),
     confidence: confidenceEnum('confidence').notNull().default('provisional'),

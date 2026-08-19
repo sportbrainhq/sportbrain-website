@@ -184,6 +184,28 @@ export class WikipediaProvider {
       ['current', 'Current season', 'competition', 75],
       ['website', 'Website', 'commercial', 80],
       ['colours', 'Colours', 'identity', 26],
+
+      // National sides use a different template from clubs, and omitting these
+      // left Brazil with a coach and a captain where its infobox also carries
+      // "Most caps: Cafu (142)" and "Top scorer: Neymar". The records are the
+      // reason to visit the page.
+      ['association', 'Association', 'governance', 12],
+      ['confederation', 'Confederation', 'governance', 14],
+      ['fifa trigramme', 'FIFA code', 'identity', 15],
+      ['most caps', 'Most caps', 'records', 90],
+      ['top scorer', 'Top scorer', 'records', 92],
+      ['most runs', 'Most runs', 'records', 90],
+      ['most wickets', 'Most wickets', 'records', 92],
+      ['home stadium', 'Home stadium', 'venue', 40],
+      ['first game', 'First match', 'history', 100],
+      ['largest win', 'Largest win', 'history', 102],
+      ['largest loss', 'Largest defeat', 'history', 104],
+      ['world cup apps', 'World Cup appearances', 'history', 110],
+      ['world cup first', 'First World Cup', 'history', 112],
+      ['world cup best', 'Best World Cup', 'history', 114],
+      ['regional name', 'Regional tournament', 'history', 120],
+      ['regional cup apps', 'Regional appearances', 'history', 122],
+      ['regional cup best', 'Best regional finish', 'history', 124],
     ];
 
     return this.factsFrom(box, map);

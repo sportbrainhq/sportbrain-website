@@ -47,6 +47,15 @@ export interface ProviderEntity {
 
   /** Fields that map onto canonical columns. Adapter-normalised, not provider-shaped. */
   fields: Record<string, unknown>;
+
+  /**
+   * How widely documented the entity is, where the provider can say.
+   *
+   * Persisted so lists can be ordered by it. Without it the only orderings
+   * available are alphabetical and insertion order, neither of which puts the
+   * teams people search for on the first page.
+   */
+  notability?: number;
 }
 
 /** A person as a provider describes them. */

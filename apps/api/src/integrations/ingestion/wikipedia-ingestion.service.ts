@@ -418,8 +418,18 @@ export class WikipediaIngestionService {
         AND em.entity_type = ${entityType}
         ${sql.raw(sportSlug && entityType !== 'sport' ? `AND s.slug = '${sportSlug}'` : '')}
         AND (${slug ?? null}::text IS NULL OR e.slug = ${slug ?? null})
-      GROUP BY e.id, em.external_id, e.${sql.raw(nameColumn)}
-      ${sql.raw(entityType === 'sport' ? '' : 'ORDER BY count(h.id) DESC')}
+      GROUP BY e.id, em.external_id, e.${sql.raw(nameColumn)}${sql.raw(
+        entityType === 'sport' ? '' : ', e.notability',
+      )}
+      ${sql.raw(
+        entityType === 'sport'
+          ? ''
+          : // Notability before honours. Ordering by honours alone works for
+            // clubs, which accumulate trophies, and fails for national teams,
+            // which record almost none: Brazil and Germany sorted below
+            // Trinidad and Tobago and were never reached.
+            'ORDER BY e.notability DESC, count(h.id) DESC',
+      )}
       LIMIT ${limit}
     `);
   }

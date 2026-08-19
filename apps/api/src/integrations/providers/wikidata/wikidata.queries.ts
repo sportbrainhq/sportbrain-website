@@ -155,7 +155,7 @@ export function teamsByCompetitionQuery(
 ): string {
   const values = competitionQids.map((qid) => `wd:${qid}`).join(' ');
   return `
-SELECT ?item ?itemLabel ?inception ?countryLabel ?shortName ?logo WHERE {
+SELECT ?item ?itemLabel ?inception ?countryLabel ?shortName ?logo ?sitelinks WHERE {
   VALUES ?league { ${values} }
   ?item wdt:P118 ?league .
   FILTER NOT EXISTS { ?item wdt:P31 wd:${WD.HUMAN} }
@@ -211,7 +211,7 @@ export function teamsByClassQuery(
     : 'OPTIONAL { ?item wdt:P571 ?inception }';
 
   return `
-SELECT ?item ?itemLabel ?inception ?countryLabel ?shortName ?logo WHERE {
+SELECT ?item ?itemLabel ?inception ?countryLabel ?shortName ?logo ?sitelinks WHERE {
   ?item wdt:P31/wdt:P279* wd:${classQid} .
   ?item rdfs:label ?itemLabel . FILTER(LANG(?itemLabel) = "en")
   ${inceptionClause}
@@ -427,7 +427,7 @@ export function competitionsQuery(
   offset: number,
 ): string {
   return `
-SELECT ?item ?itemLabel ?inception ?countryLabel ?logo WHERE {
+SELECT ?item ?itemLabel ?inception ?countryLabel ?logo ?sitelinks WHERE {
   ?item wdt:P31/wdt:P279* wd:${competitionClassQid} .
   ?item wdt:P641 wd:${sportQid} .
   ?item rdfs:label ?itemLabel . FILTER(LANG(?itemLabel) = "en")
