@@ -6,11 +6,15 @@ export function EntityListShell({
   title,
   pagination,
   basePath,
+  toolbar,
   children,
 }: {
   title: string;
   pagination: PaginationMeta;
+  /** May already carry a query string; pagination appends to it correctly. */
   basePath: string;
+  /** Filters or other controls, shown under the heading. */
+  toolbar?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -21,6 +25,8 @@ export function EntityListShell({
           {pagination.total.toLocaleString('en-GB')} total
         </p>
       </header>
+
+      {toolbar}
 
       {pagination.total === 0 ? (
         <p className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
@@ -47,7 +53,12 @@ function Pagination({ pagination, basePath }: { pagination: PaginationMeta; base
   if (pagination.totalPages <= 1) return null;
 
   const { page, totalPages } = pagination;
-  const href = (target: number) => `${basePath}?page=${target}`;
+
+  // `?` only when the base path does not already have one. A filtered list
+  // passes "…/teams?kind=club", and appending "?page=2" to that produces a URL
+  // with two query strings, which drops the filter on every page after the
+  // first.
+  const href = (target: number) => `${basePath}${basePath.includes('?') ? '&' : '?'}page=${target}`;
 
   return (
     <nav

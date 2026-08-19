@@ -1,4 +1,7 @@
+'use client';
+
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import type { Sport } from '@sportbrain/contracts';
 
 /**
@@ -16,7 +19,6 @@ import type { Sport } from '@sportbrain/contracts';
 interface SportSidebarProps {
   sports: Sport[];
   activeSport?: string;
-  activeSection?: string;
 }
 
 interface Section {
@@ -36,7 +38,18 @@ const SECTIONS: Section[] = [
   { slug: 'stories', label: 'Social Media Stories' },
 ];
 
-export function SportSidebar({ sports, activeSport, activeSection }: SportSidebarProps) {
+/**
+ * Reads the active section from the URL rather than taking it as a prop.
+ *
+ * The layout that renders this is a server component and has no access to the
+ * pathname, so the prop it was supposed to pass was never passed and every
+ * section link rendered inactive: a reader on the Teams tab had nothing on the
+ * page telling them so. Reading the path here is what makes the highlight
+ * correct on every route without threading a value through each page.
+ */
+export function SportSidebar({ sports, activeSport }: SportSidebarProps) {
+  const pathname = usePathname() ?? '';
+
   return (
     <nav aria-label="Sports" className="text-sm">
       <ul className="space-y-1">
@@ -74,16 +87,22 @@ export function SportSidebar({ sports, activeSport, activeSection }: SportSideba
                     const href = section.slug
                       ? `/sports/${sport.slug}/${section.slug}`
                       : `/sports/${sport.slug}`;
-                    const current = (activeSection ?? '') === section.slug;
+                    // Compared against the path rather than a prefix match, so
+                    // a team's detail page keeps Teams highlighted while the
+                    // Overview link does not also light up on every subpage.
+                    const current = section.slug ? pathname.startsWith(href) : pathname === href;
 
                     return (
                       <li key={section.slug || 'overview'}>
                         <Link
                           href={href}
-                          className={`block rounded-md px-2 py-1 transition-colors ${
+                          // A left rule and a filled background, not just a
+                          // heavier font. Weight alone was too quiet to read as
+                          // "you are here" against the other six links.
+                          className={`-ml-px block border-l-2 py-1 pl-3 pr-2 transition-colors ${
                             current
-                              ? 'font-medium text-foreground'
-                              : 'text-muted-foreground hover:text-foreground'
+                              ? 'border-foreground bg-muted/60 font-semibold text-foreground'
+                              : 'border-transparent text-muted-foreground hover:border-border hover:text-foreground'
                           }`}
                           aria-current={current ? 'page' : undefined}
                         >

@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import type { CompetitionSummary, PlayerSummary, TeamSummary } from '@sportbrain/contracts';
-import { imageUrl } from '@/lib/image';
+import { Avatar } from '@/components/sports/avatar';
 
 /**
  * Cards for the list views.
@@ -10,39 +10,6 @@ import { imageUrl } from '@/lib/image';
  * shows nationality and position, a competition shows its kind. A single card
  * taking a props bag would hide that difference behind conditionals.
  */
-
-function Avatar({ text, imageUrl: source }: { text: string; imageUrl?: string | null }) {
-  // Requested at twice the rendered size so the image is still sharp on a
-  // high-density display, and no larger.
-  const src = imageUrl(source, 80);
-
-  const initials = text
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((word) => word[0])
-    .join('')
-    .toUpperCase();
-
-  return src ? (
-    // eslint-disable-next-line @next/next/no-img-element -- Remote hosts are not
-    // in next.config's remotePatterns, and adding them would turn the deployment
-    // into an open image proxy. These are third-party URLs we do not control.
-    <img
-      src={src}
-      alt=""
-      loading="lazy"
-      decoding="async"
-      className="size-10 shrink-0 rounded-full object-cover"
-    />
-  ) : (
-    <span
-      aria-hidden
-      className="grid size-10 shrink-0 place-items-center rounded-full bg-muted text-xs font-bold text-muted-foreground"
-    >
-      {initials}
-    </span>
-  );
-}
 
 const cardClass =
   'flex items-center gap-3 rounded-lg border border-border bg-card p-3 transition-colors hover:border-foreground/20 hover:bg-muted/50';
