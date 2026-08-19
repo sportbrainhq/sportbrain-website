@@ -255,18 +255,61 @@ export function peopleQuery(
   offset: number,
   requireParticipation = false,
   occupationQid?: string,
+  clubClassQid?: string,
+  minSitelinks?: number,
 ): string {
+  // Identity only: who they are and how notable. Every optional detail moves to
+  // `peopleDetailQuery`, which is bounded by a VALUES list of the people this
+  // query already chose.
+  //
+  // The split is what makes the query finish at all. Nine OPTIONAL joins over an
+  // unbounded candidate set took the Query Service past its 60-second limit on
+  // every page; the same joins over a fixed hundred QIDs are trivial. Measured:
+  // 21 seconds for this pass, a few for the second, against a 504 for the
+  // combined form.
+  //
+  // Club membership is expressed as FILTER EXISTS rather than a join. A join
+  // multiplies the row set by the number of clubs a player has had, which is
+  // both wasteful and what pushed the combined query over the limit.
+  const clubClause = clubClassQid ? 'FILTER EXISTS { ?item wdt:P54 ?anyClub }' : '';
+
   const competitionClause =
-    competitionQids && competitionQids.length > 0
+    !clubClassQid && competitionQids && competitionQids.length > 0
       ? `VALUES ?league { ${competitionQids.map((qid) => `wd:${qid}`).join(' ')} }\n  ?item wdt:P118 ?league .`
       : '';
 
-  // For team sports, league membership is the notability filter. Sports without
-  // teams have no equivalent, so participation in a recorded event stands in.
   const participationClause = requireParticipation ? '?item wdt:P1344 ?participatedIn .' : '';
+  const sitelinkClause = minSitelinks ? `FILTER(?sitelinks >= ${minSitelinks})` : '';
 
   return `
-SELECT ?item ?itemLabel ?sitelinks
+SELECT DISTINCT ?item ?itemLabel ?sitelinks
+WHERE {
+  ${competitionClause}
+  ${participationClause}
+  ?item wdt:P31 wd:${WD.HUMAN} .
+  ${occupationQid ? `?item wdt:P106 wd:${occupationQid} .` : `?item wdt:P641 wd:${sportQid} .`}
+  ?item wikibase:sitelinks ?sitelinks .
+  ${sitelinkClause}
+  ${clubClause}
+  ?item rdfs:label ?itemLabel . FILTER(LANG(?itemLabel) = "en")
+}
+ORDER BY DESC(?sitelinks)
+LIMIT ${limit}
+OFFSET ${offset}`.trim();
+}
+
+/**
+ * Biographical detail for one page of people.
+ *
+ * Bounded by an explicit VALUES list, which is the whole point: the same
+ * OPTIONAL joins that time out against every footballer in Wikidata cost almost
+ * nothing against a hundred named QIDs.
+ */
+export function peopleDetailQuery(personQids: readonly string[]): string {
+  const values = personQids.map((qid) => `wd:${qid}`).join(' ');
+
+  return `
+SELECT ?item
        (SAMPLE(?birth) AS ?birthDate)
        (SAMPLE(?death) AS ?deathDate)
        (SAMPLE(?natLabel) AS ?nationality)
@@ -280,12 +323,7 @@ SELECT ?item ?itemLabel ?sitelinks
        (SAMPLE(?nba) AS ?nbaId)
        (SAMPLE(?atp) AS ?atpId)
 WHERE {
-  ${competitionClause}
-  ${participationClause}
-  ?item wdt:P31 wd:${WD.HUMAN} .
-  ${occupationQid ? `?item wdt:P106 wd:${occupationQid} .` : `?item wdt:P641 wd:${sportQid} .`}
-  ?item rdfs:label ?itemLabel . FILTER(LANG(?itemLabel) = "en")
-  ?item wikibase:sitelinks ?sitelinks .
+  VALUES ?item { ${values} }
   OPTIONAL { ?item wdt:P569 ?birth }
   OPTIONAL { ?item wdt:P570 ?death }
   OPTIONAL { ?item wdt:P27 ?nationalityItem .
@@ -302,10 +340,7 @@ WHERE {
   OPTIONAL { ?item wdt:P3647 ?nba }
   OPTIONAL { ?item wdt:P536 ?atp }
 }
-GROUP BY ?item ?itemLabel ?sitelinks
-ORDER BY DESC(?sitelinks)
-LIMIT ${limit}
-OFFSET ${offset}`.trim();
+GROUP BY ?item`.trim();
 }
 
 /**

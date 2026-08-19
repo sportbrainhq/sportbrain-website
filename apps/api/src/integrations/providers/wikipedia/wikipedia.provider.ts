@@ -2,10 +2,12 @@ import { Injectable } from '@nestjs/common';
 import { WikipediaClient } from './wikipedia.client';
 import {
   findTableByHeading,
+  parseDefinitionLists,
   parseInfobox,
   parseNumber,
   parseTables,
   type Infobox,
+  type ParsedList,
   type ParsedTable,
 } from './wikipedia.parser';
 
@@ -197,6 +199,71 @@ export class WikipediaProvider {
   // Layer 3: teams
   // ---------------------------------------------------------------------------
 
+  /**
+   * The crest filename from a team's infobox, as a `File:` title.
+   *
+   * Verified against the live API for the clubs whose crests were missing, and
+   * every one resolves from the infobox when no other route does:
+   *
+   * | Article                       | Field   | Value                                  |
+   * |-------------------------------|---------|----------------------------------------|
+   * | Real Madrid CF                | `image` | `Real Madrid CF.svg`                   |
+   * | Arsenal F.C.                  | `image` | `Arsenal FC.svg`                       |
+   * | Manchester City F.C.          | `image` | `Manchester City FC badge.svg`         |
+   * | Manchester United F.C.        | `image` | `Manchester United FC crest.svg`       |
+   * | France national football team | `image` | `File:France national football team seal.svg` |
+   *
+   * Note the last row: some articles include the `File:` prefix and some do not,
+   * so it is stripped and re-added rather than assumed either way.
+   *
+   * `logo` and `crest` are checked as well as `image` because the football club
+   * and national team infoboxes do not agree on the field name, and reading only
+   * `image` misses a share of them.
+   *
+   * **Photographs are rejected.** The point of this is a crest, and an infobox
+   * `image` is not guaranteed to be one: Wikidata's equivalent field gave a
+   * training-ground JPG for Barcelona and a squad photo for France. A raster
+   * extension is the signal that separates the two, since crests are drawn as
+   * SVG almost without exception while photographs are JPEG. PNG is allowed
+   * because a minority of genuine crests are only available as PNG, but a `.jpg`
+   * is a photograph and is never a crest.
+   */
+  /** Raw wikitext for a page, for callers that parse it themselves. */
+  async fetchWikitextFor(title: string): Promise<string | null> {
+    return this.client.fetchWikitext(title);
+  }
+
+  /** Rendered thumbnail URLs for `File:` titles, batched. */
+  async resolveThumbnails(
+    fileTitles: readonly string[],
+    width: number,
+  ): Promise<Map<string, string>> {
+    return this.client.fetchThumbnails(fileTitles, width);
+  }
+
+  crestFileFrom(wikitext: string): string | null {
+    const box = parseInfobox(wikitext);
+    if (!box) return null;
+
+    for (const field of ['image', 'logo', 'crest', 'badge']) {
+      const raw = box[field]?.trim();
+      if (!raw) continue;
+
+      const name = raw
+        .replace(/^\[\[/, '')
+        .replace(/\]\]$/, '')
+        .replace(/^(?:File|Image):/i, '')
+        .trim();
+
+      if (!name) continue;
+      if (!/\.(svg|png)$/i.test(name)) continue;
+
+      return `File:${name}`;
+    }
+
+    return null;
+  }
+
   /** A club's infobox facts: ground, capacity, manager, league. */
   async fetchTeamFacts(title: string): Promise<WikiFact[]> {
     const wikitext = await this.client.fetchWikitext(title);
@@ -310,9 +377,14 @@ export class WikipediaProvider {
    * the clubs tried have a records article in a shape this recognises, and the
    * rest simply render without these tables.
    */
-  async fetchTeamRankings(recordsTitle: string): Promise<WikiRanking[]> {
-    const html = await this.client.fetchHtml(recordsTitle);
-    if (!html) return [];
+  async fetchTeamRankings(recordsTitle: string | null, teamName?: string): Promise<WikiRanking[]> {
+    // A missing records article is not the end of the attempt. Two thirds of
+    // countries have none: Poland, Ghana and Egypt among them, and Poland's
+    // list of internationals carries the same two leaderboards.
+    const html = recordsTitle ? await this.client.fetchHtml(recordsTitle) : null;
+    if (!html) {
+      return teamName ? this.fetchInternationalsRankings(teamName) : [];
+    }
 
     const tables = parseTables(html);
     const rankings: WikiRanking[] = [];
@@ -326,11 +398,25 @@ export class WikipediaProvider {
     //
     // Heading terms are ordered by how specific they are, so "Most goals"
     // beats the section-level "Goalscorers" that contains it.
+    // National sides count appearances as caps and head the section
+    // accordingly: Brazil and Germany use "Most appearances" with a "Caps"
+    // column, Argentina heads it "Most-capped players". Without both spellings
+    // every country's appearance table was dropped while its scorers table
+    // published, which is why Brazil showed goals and no caps.
     const appearances = findTableByHeading(
       tables,
-      ['Most appearances', 'Appearances', 'Most apps', 'All competitions'],
-      ['player'],
-      ['total', 'apps', 'appearances', 'matches', 'games'],
+      [
+        'Most appearances',
+        'Most-capped players',
+        'Most capped players',
+        'Appearances',
+        'Appearance records',
+        'Appearances (most)',
+        'Most apps',
+        'All competitions',
+      ],
+      ['player|name'],
+      ['total', 'apps', 'appearances', 'matches', 'games', 'caps'],
     );
     if (appearances) {
       const entries = this.rowsToEntries(appearances, [
@@ -338,6 +424,7 @@ export class WikipediaProvider {
         // competition and then total them, and any single competition column
         // matches "apps" just as well as the total does.
         'total',
+        'caps',
         'appearances',
         'apps',
         'matches',
@@ -370,8 +457,17 @@ export class WikipediaProvider {
         'All-time scorers',
         'Goalscorers',
         'Top scorers',
+        'Goalscoring records',
+        'Goal scorers',
+        'Goals scored',
+        // Bare "Goals", last because it is the least specific term available.
+        // England's article heads the section with it and nothing else, so
+        // without this the heading match failed entirely and the column
+        // fallback chose the per-club record-scorer table beneath, publishing
+        // England's record scorer as Nat Lofthouse with 30.
+        'Goals',
       ],
-      ['player'],
+      ['player|name'],
       ['goals', 'official goals', 'total'],
     );
     if (scorers && scorers !== appearances) {
@@ -387,7 +483,183 @@ export class WikipediaProvider {
       }
     }
 
+    // Articles written as prose lists rather than tables, filling in whichever
+    // of the two rankings the table pass did not produce. Only the gaps are
+    // filled: where a page has both shapes the table is the fuller one.
+    const lists = parseDefinitionLists(html);
+
+    if (!rankings.some((ranking) => ranking.kind === 'most_appearances')) {
+      const entries = this.listToEntries(lists, ['most appearances', 'most caps', 'most capped']);
+      if (entries.length > 0) {
+        rankings.push({
+          kind: 'most_appearances',
+          label: 'Most appearances',
+          entries,
+          confidence: 'high',
+          note: 'From the club records article on Wikipedia.',
+        });
+      }
+    }
+
+    if (!rankings.some((ranking) => ranking.kind === 'top_scorers')) {
+      const entries = this.listToEntries(lists, ['most goals', 'top goalscorer', 'top scorer']);
+      if (entries.length > 0) {
+        rankings.push({
+          kind: 'top_scorers',
+          label: 'Top scorers',
+          entries,
+          confidence: 'high',
+          note: 'From the club records article on Wikipedia.',
+        });
+      }
+    }
+
+    // Last resort for national sides: the squad list. France's records article
+    // names only the single record holder for goals, so a leaderboard has to be
+    // derived from "List of France international footballers", which tabulates
+    // caps and goals for every capped player.
+    // A ranking with a single entry is a record holder, not a leaderboard, so
+    // it counts as a gap: France's article states its record scorer in prose
+    // and lists nobody else.
+    const thin = (kind: string) =>
+      (rankings.find((ranking) => ranking.kind === kind)?.entries.length ?? 0) < 3;
+
+    if (teamName && (thin('most_appearances') || thin('top_scorers'))) {
+      for (const derived of await this.fetchInternationalsRankings(teamName)) {
+        if (!thin(derived.kind)) continue;
+
+        // Replaces the thin ranking rather than sitting beside it: two
+        // leaderboards of the same kind on one team is not a shape the page can
+        // render.
+        const existing = rankings.findIndex((ranking) => ranking.kind === derived.kind);
+        if (existing >= 0) rankings.splice(existing, 1, derived);
+        else rankings.push(derived);
+      }
+    }
+
     return rankings;
+  }
+
+  /**
+   * Leaderboards derived from a country's list of internationals.
+   *
+   * Lower confidence than a records article on purpose. These lists are capped
+   * at a minimum number of appearances, so a prolific scorer with few caps can
+   * be missing from the goals ranking, and the figures are maintained less
+   * closely than the records article's.
+   */
+  private async fetchInternationalsRankings(teamName: string): Promise<WikiRanking[]> {
+    const country = this.plainTeamName(teamName)
+      .replace(/\b(football|soccer)\b/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!country) return [];
+
+    const title = `List of ${country} international footballers`;
+    if (!(await this.client.exists(title))) return [];
+
+    const html = await this.client.fetchHtml(title);
+    if (!html) return [];
+
+    // Every table on the page that has a person, caps and goals, merged into
+    // one. Ireland's list is split alphabetically into 26 tables, so reading a
+    // single table gave a leaderboard drawn from the surnames beginning with
+    // one letter, topped by John Aldridge on 69 rather than Robbie Keane on 146.
+    const candidates = parseTables(html).filter((entry) => {
+      const headers = entry.headers.map((header) => header.toLowerCase().replace(/[^a-z0-9]/g, ''));
+      const hasName = headers.some((header) => header.includes('player') || header === 'name');
+      return hasName && headers.some((header) => header.includes('caps'));
+    });
+    if (candidates.length === 0) return [];
+
+    const table: ParsedTable = {
+      heading: candidates[0]!.heading,
+      headingPath: candidates[0]!.headingPath,
+      caption: candidates[0]!.caption,
+      headers: candidates[0]!.headers,
+      // Only tables sharing the first one's columns are merged: an alphabetical
+      // split repeats the same header row, while a page that happens to carry
+      // an unrelated caps table does not.
+      rows: candidates
+        .filter(
+          (entry) =>
+            entry.headers.join('|').toLowerCase() ===
+            candidates[0]!.headers.join('|').toLowerCase(),
+        )
+        .flatMap((entry) => entry.rows),
+    };
+
+    const rankings: WikiRanking[] = [];
+
+    const note = `Derived from the list of ${country} internationals on Wikipedia.`;
+
+    const appearances = this.rowsToEntries(table, ['caps']);
+    if (appearances.length > 0) {
+      rankings.push({
+        kind: 'most_appearances',
+        label: 'Most appearances',
+        entries: appearances,
+        confidence: 'partial',
+        note,
+      });
+    }
+
+    const scorers = this.rowsToEntries(table, ['goals']);
+    if (scorers.length > 0) {
+      rankings.push({
+        kind: 'top_scorers',
+        label: 'Top scorers',
+        entries: scorers,
+        confidence: 'partial',
+        note,
+      });
+    }
+
+    return rankings;
+  }
+
+  /**
+   * Ranking entries from a prose-list leaderboard.
+   *
+   * Labels are matched most-specific-first for the same reason table headings
+   * are: "Most appearances as a captain" contains "most appearances" and is a
+   * different record.
+   */
+  private listToEntries(lists: ParsedList[], labels: string[]): WikiRankingEntry[] {
+    const normalise = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    // Qualified variants of the same record, excluded outright. A captaincy or
+    // goalkeeping list is not a shorter version of the overall one.
+    const qualified = (label: string) =>
+      /captain|goalkeep|clean sheet|substitute|youngest|oldest|manager|coach|single|season|tournament|world cup|euro|friendl|penalt|hat.?trick/i.test(
+        label,
+      );
+
+    const usable = lists.filter((list) => !qualified(list.label));
+
+    for (const wanted of labels) {
+      const target = normalise(wanted);
+      const match =
+        usable.find((list) => normalise(list.label) === target) ??
+        usable.find((list) => normalise(list.label).includes(target));
+      if (!match) continue;
+
+      const entries = match.entries
+        .slice()
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 25)
+        .map((entry, index) => ({
+          rank: index + 1,
+          name: entry.name,
+          value: entry.value,
+          detail: entry.detail,
+          link: entry.link,
+        }));
+
+      if (entries.length > 0 && Number(entries[0]?.value ?? 0) > 0) return entries;
+    }
+
+    return [];
   }
 
   // ---------------------------------------------------------------------------
@@ -661,11 +933,33 @@ export class WikipediaProvider {
             `intitle:records ${teamName.replace(/\b(national|cricket|team|men's|women's)\b/gi, '').trim()} Test cricket`,
             `intitle:records intitle:statistics ${teamName}`,
           ]
-        : [`intitle:records intitle:statistics ${teamName}`];
+        : [
+            `intitle:records intitle:statistics ${teamName}`,
+            // The same search with the qualifiers stripped. Wikipedia's search
+            // ranks on the whole phrase, and a name like "France men's national
+            // association football team" scores so many generic words that
+            // France's own records article fell outside the first five hits
+            // while five other countries' did not.
+            `intitle:records intitle:statistics ${this.plainTeamName(teamName)}`,
+          ];
+
+    // National sides name their records article to a fixed pattern, so it is
+    // cheaper and far more accurate to ask for the title outright than to
+    // search for it. Searching alone left France, whose page exists, with no
+    // records at all. A hit returns immediately: the guessed title already
+    // names the team, so the name check below would be a formality, and every
+    // avoided search is one fewer request against a rate-limited endpoint.
+    for (const guess of this.guessedRecordsTitles(teamName, sportSlug)) {
+      if (await this.client.exists(guess)) return guess;
+    }
 
     const candidates: string[] = [];
+
     for (const search of searches) {
-      candidates.push(...(await this.client.resolveTitles(search, 5)));
+      candidates.push(...(await this.client.resolveTitles(search, 8)));
+      // The second search exists only to rescue names the first is too diluted
+      // to match, so it is skipped whenever the first found anything at all.
+      if (candidates.length > 0) break;
     }
 
     if (candidates.length === 0) return null;
@@ -708,14 +1002,63 @@ export class WikipediaProvider {
     // and accepting the search's best guess would be a coin toss.
     if (distinctive.length === 0) return null;
 
+    // Every distinctive word must appear, not merely one of them. Matching on
+    // any single word gave Atlético Madrid and Real Sociedad both of Real
+    // Madrid's leaderboards, because "madrid" and "real" are shared, and the
+    // site published Cristiano Ronaldo as Real Sociedad's record scorer.
+    const names = (candidate: string) => {
+      const candidateNormalised = normalise(candidate);
+      return distinctive.every((word) => candidateNormalised.includes(word));
+    };
+
+    // A women's article is never the men's team's records, and vice versa. PSG's
+    // search returned the women's page, so the club's record appearance holder
+    // was published as Sabrina Delannoy.
+    const wantsWomen = /\bwomen'?s?\b/i.test(teamName);
+    const genderMatches = (candidate: string) => /\bwomen'?s?\b/i.test(candidate) === wantsWomen;
+
     // The first candidate that actually names the team wins, rather than the
     // first candidate outright.
     for (const candidate of candidates) {
-      const candidateNormalised = normalise(candidate);
-      if (distinctive.some((word) => candidateNormalised.includes(word))) return candidate;
+      if (names(candidate) && genderMatches(candidate)) return candidate;
     }
 
     return null;
+  }
+
+  /**
+   * A team name with the qualifiers every side shares removed.
+   *
+   * "France men's national association football team" is nine words of which
+   * one identifies the team. The rest only dilute a search.
+   */
+  private plainTeamName(teamName: string): string {
+    return teamName
+      .replace(/\b(men's|women's|national|association|team)\b/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  /** Records-article titles worth trying directly, most likely first. */
+  private guessedRecordsTitles(teamName: string, sportSlug: string): string[] {
+    // Only the national-team pattern is guessable. Club records articles are
+    // named inconsistently ("Liverpool F.C. records and statistics" beside
+    // "List of Arsenal F.C. records"), which is why searching exists at all.
+    if (!/\bnational\b/i.test(teamName)) return [];
+
+    const country = this.plainTeamName(teamName)
+      .replace(new RegExp(`\\b${sportSlug}\\b`, 'gi'), ' ')
+      .replace(/\b(football|cricket|basketball|soccer)\b/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!country) return [];
+
+    const sportWord = sportSlug === 'football' ? 'football' : sportSlug;
+
+    return [
+      `${country} national ${sportWord} team records and statistics`,
+      `${country} men's national ${sportWord} team records and statistics`,
+    ];
   }
 
   private factsFrom(box: Infobox, map: [string, string, string, number][]): WikiFact[] {
@@ -746,6 +1089,16 @@ export class WikipediaProvider {
   }
 
   /** Converts a parsed table into ranking entries, picking the value column by header. */
+  /**
+   * Test seam onto `rowsToEntries`.
+   *
+   * Column choice is where this class has been wrong most often, and every case
+   * needed a live article to reproduce. Exposing it keeps those cases as fixtures.
+   */
+  rankingsForTest(table: ParsedTable, valueHeaders: string[]): WikiRankingEntry[] {
+    return this.rowsToEntries(table, valueHeaders);
+  }
+
   private rowsToEntries(table: ParsedTable, valueHeaders: string[]): WikiRankingEntry[] {
     const normalise = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
     const headers = table.headers.map(normalise);
@@ -766,12 +1119,24 @@ export class WikipediaProvider {
       header === 'ratio' ||
       header.includes('average');
 
+    // Columns whose cells are date spans or durations rather than counts. The
+    // Netherlands' tables carry both "Matches" and "Total career", and a search
+    // for "total" matched the career column, whose cells read "2003–2018": no
+    // row parsed as a number, so the country published no tables at all.
+    const isSpan = (header: string) =>
+      header.includes('career') ||
+      header.includes('period') ||
+      header.includes('minutes') ||
+      header.includes('date') ||
+      header.includes('years');
+
     // Exact header match first, then prefix, then substring. Without the
     // ordering a column called "Goals per game" satisfies a search for "goals"
     // as readily as the column actually called "Goals".
     const findColumn = (term: string): number => {
       const wanted = normalise(term);
-      const usable = (candidate: string) => !isCombined(candidate) && !isRate(candidate);
+      const usable = (candidate: string) =>
+        !isCombined(candidate) && !isRate(candidate) && !isSpan(candidate);
 
       const exact = headers.findIndex((candidate) => candidate === wanted && usable(candidate));
       if (exact >= 0) return exact;
@@ -786,7 +1151,16 @@ export class WikipediaProvider {
 
     const valueIndex = valueHeaders.map(findColumn).find((index) => index >= 0);
 
-    const nameIndex = headers.findIndex((header) => header.includes('player'));
+    // "Player" first, then "Name". The internationals lists head the column
+    // "Name" while records articles head it "Player", and requiring "player"
+    // alone made those lists unreadable.
+    // "Name" is matched as a prefix rather than exactly: Rangers heads the
+    // column "Name and nationality". It is still not a substring match, because
+    // "Name" appears inside headers like "Opponent name" that are not people.
+    const nameIndex =
+      headers.findIndex((header) => header.includes('player')) >= 0
+        ? headers.findIndex((header) => header.includes('player'))
+        : headers.findIndex((header) => header.startsWith('name'));
     if (nameIndex < 0) return [];
 
     // Falling back to a combined column when no plain one exists. Arsenal's
@@ -802,9 +1176,22 @@ export class WikipediaProvider {
     const entries: WikiRankingEntry[] = [];
 
     for (const row of table.rows) {
-      const name = row.cells[nameIndex];
+      const rawName = row.cells[nameIndex];
       const rawCell = row.cells[valueIndex ?? combinedIndex];
-      if (!name || !rawCell) continue;
+      if (!rawName || !rawCell) continue;
+
+      // Several countries' tables append a link to a per-player match list, so
+      // the cell renders as "Lionel Messi ( list )" and that is what was
+      // published as the player's name. Only trailing editorial annotations are
+      // removed: a genuine disambiguator is part of the name Wikipedia uses.
+      const name = rawName
+        .replace(/\s*\(\s*(list|lists|matches|goals|details|stats|captain|c|vc)\s*\)\s*$/i, '')
+        // A trailing asterisk or dagger marks a still-active player. It is a
+        // footnote, not part of the name: the lists of internationals rendered
+        // "Erling Haaland *".
+        .replace(/[\s*†‡^]+$/, '')
+        .trim();
+      if (!name) continue;
 
       // A combined cell reads "406/0": appearances before the slash, goals
       // after it.
@@ -868,7 +1255,11 @@ export class WikipediaProvider {
         link,
       });
 
-      if (entries.length >= 25) break;
+      // Deliberately no early break. Truncating as rows are read and sorting
+      // afterwards works only on a table that is already a leaderboard: the
+      // lists of internationals are alphabetical, so taking the first rows gave
+      // Poland's most-capped player as Zygmunt Anczok with 48 rather than
+      // Robert Lewandowski with 167.
     }
 
     // Sorted and renumbered rather than trusted as read. Not every records
@@ -876,13 +1267,15 @@ export class WikipediaProvider {
     // ranked above 29, because the page sorts by a different column than the
     // one being extracted.
     entries.sort((a, b) => Number(b.value ?? 0) - Number(a.value ?? 0));
-    for (const [index, entry] of entries.entries()) entry.rank = index + 1;
+
+    const ranked = entries.slice(0, 25);
+    for (const [index, entry] of ranked.entries()) entry.rank = index + 1;
 
     // A leaderboard whose top value is zero was not a leaderboard for the thing
     // being asked about.
-    if (entries.length === 0 || Number(entries[0]?.value ?? 0) <= 0) return [];
+    if (ranked.length === 0 || Number(ranked[0]?.value ?? 0) <= 0) return [];
 
-    return entries;
+    return ranked;
   }
 
   /** Maps a cricket infobox column label onto a discipline key. */

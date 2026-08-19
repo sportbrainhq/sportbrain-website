@@ -973,7 +973,22 @@ export class IngestionService {
         notability: item.notability ?? 0,
         confidence: 'provisional',
       })
-      .onConflictDoNothing({ target: [person.primarySportId, person.slug] })
+      // Refreshed rather than skipped. `DO NOTHING` meant a re-run could never
+      // correct an existing row, so when `displayName` began being populated and
+      // notability began being stored, every person already in the table kept
+      // the old blank and the old zero. Only provider-owned fields are touched,
+      // and a row a human has curated is left alone.
+      .onConflictDoUpdate({
+        target: [person.primarySportId, person.slug],
+        set: {
+          displayName: item.fields.displayName,
+          notability: item.notability ?? 0,
+          nationality: item.fields.nationality,
+          imageUrl: item.fields.imageUrl,
+          updatedAt: new Date(),
+        },
+        setWhere: sql`${person.confidence} <> 'curated'`,
+      })
       .returning({ id: person.id });
 
     if (!created) {

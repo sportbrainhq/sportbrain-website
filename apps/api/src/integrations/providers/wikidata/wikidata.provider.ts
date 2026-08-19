@@ -12,6 +12,7 @@ import {
 } from '../provider.types';
 import {
   competitionsQuery,
+  peopleDetailQuery,
   honoursQuery,
   membershipsQuery,
   teamHonoursQuery,
@@ -169,6 +170,10 @@ export class WikidataProvider implements SportsDataProvider {
     const source = this.sourceFor(sportSlug);
     const offset = this.parseCursor(cursor);
 
+    // Two passes rather than one. The identity pass chooses the people; the
+    // detail pass decorates only those, bounded by a VALUES list. Combining
+    // them put the Query Service past its 60-second limit on every page, which
+    // failed the whole run rather than degrading it.
     const rows = await this.runQuery(
       peopleQuery(
         source.sportQid,
@@ -177,18 +182,43 @@ export class WikidataProvider implements SportsDataProvider {
         offset,
         source.requireParticipation ?? false,
         source.personOccupationQid,
+        source.personClubClassQid,
+        source.personMinSitelinks,
       ),
     );
 
-    const items = this.deduplicateByQid(rows).map<ProviderPerson>((row) => {
+    const identities = this.deduplicateByQid(rows);
+    const qids = identities.map((row) => this.qid(row.item));
+
+    // Detail failing must not fail the page: a person with a name and a
+    // notability score is still worth having, and the enrichment pass can fill
+    // the rest later.
+    const details = new Map<string, Record<string, string | undefined>>();
+    if (qids.length > 0) {
+      try {
+        const detailRows = await this.runQuery(peopleDetailQuery(qids));
+        for (const row of detailRows) details.set(this.qid(row.item), row);
+      } catch (error) {
+        // Written rather than thrown: identity is the valuable half, and a
+        // page of names without birthdates beats no page at all.
+        process.stderr.write(
+          `  person detail pass failed at offset ${offset}: ${error instanceof Error ? error.message : String(error)}
+`,
+        );
+      }
+    }
+
+    const items = identities.map<ProviderPerson>((row) => {
+      const detail = details.get(this.qid(row.item)) ?? {};
+
       // Cross-references are the reason this provider goes first: they let a
       // later commercial feed be matched deterministically rather than by name.
       const crossReferences: Record<string, string> = {};
-      if (row.transfermarktId) crossReferences.transfermarkt = row.transfermarktId;
-      if (row.fifaId) crossReferences.fifa = row.fifaId;
-      if (row.espncricinfoId) crossReferences.espncricinfo = row.espncricinfoId;
-      if (row.nbaId) crossReferences.nba = row.nbaId;
-      if (row.atpId) crossReferences.atp = row.atpId;
+      if (detail.transfermarktId) crossReferences.transfermarkt = detail.transfermarktId;
+      if (detail.fifaId) crossReferences.fifa = detail.fifaId;
+      if (detail.espncricinfoId) crossReferences.espncricinfo = detail.espncricinfoId;
+      if (detail.nbaId) crossReferences.nba = detail.nbaId;
+      if (detail.atpId) crossReferences.atp = detail.atpId;
 
       return {
         externalId: this.qid(row.item),
@@ -197,17 +227,19 @@ export class WikidataProvider implements SportsDataProvider {
         crossReferences,
         fields: {
           fullName: row.itemLabel ?? '',
-          dateOfBirth: this.date(row.birthDate),
-          dateOfDeath: this.date(row.deathDate),
-          nationality: row.nationality,
-          imageUrl: row.imageUrl,
-          // Sport-specific facts land in `person.attributes` rather than
-          // becoming columns: position means something different in every
-          // sport, and height is absent from most of them.
+          // Populated rather than left unset. It never was, so 2,389 of 2,395
+          // people carried a blank display name and anything rendering it showed
+          // an empty cell. Wikidata's label is already the name a reader
+          // recognises, so the two match until an editor overrides one.
+          displayName: row.itemLabel ?? '',
+          dateOfBirth: this.date(detail.birthDate),
+          dateOfDeath: this.date(detail.deathDate),
+          nationality: detail.nationality,
+          imageUrl: detail.imageUrl,
           attributes: {
-            ...(row.position ? { position: row.position } : {}),
-            ...(row.currentClub ? { currentClub: row.currentClub } : {}),
-            ...(row.heightCm ? { heightCm: Number(row.heightCm) } : {}),
+            ...(detail.position ? { position: detail.position } : {}),
+            ...(detail.currentClub ? { currentClub: detail.currentClub } : {}),
+            ...(detail.heightCm ? { heightCm: Number(detail.heightCm) } : {}),
           },
         },
       };
@@ -672,7 +704,17 @@ export class WikidataProvider implements SportsDataProvider {
 
   /** Wikidata dates are ISO 8601 with a time component we do not want. */
   private date(value: string | undefined): string | undefined {
-    return value?.slice(0, 10);
+    if (!value) return undefined;
+
+    // Validated rather than sliced. Wikidata occasionally carries a URI where a
+    // date belongs (an "unknown value" node, or a sourcing statement), and
+    // slicing the first ten characters of one produces "http://www", which
+    // Postgres rejects and which failed 27 people mid-run. A date that cannot
+    // be parsed is simply absent.
+    const candidate = value.slice(0, 10);
+    if (!/^-?\d{4}-\d{2}-\d{2}$/.test(candidate)) return undefined;
+
+    return candidate;
   }
 
   private year(value: string | undefined): number | undefined {

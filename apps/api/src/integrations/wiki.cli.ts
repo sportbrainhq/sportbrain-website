@@ -4,6 +4,8 @@
  * ```bash
  * pnpm --filter @sportbrain/api wiki map teams football 500
  * pnpm --filter @sportbrain/api wiki facts teams football 200
+ * pnpm --filter @sportbrain/api wiki crests football 300
+ * pnpm --filter @sportbrain/api wiki crests all 3000 overwrite
  * pnpm --filter @sportbrain/api wiki rankings football 60
  * pnpm --filter @sportbrain/api wiki cricket-stats 300
  * pnpm --filter @sportbrain/api wiki careers 300
@@ -35,7 +37,7 @@ async function main(): Promise<void> {
 
   if (!command) {
     process.stderr.write(
-      'Usage: wiki <map|facts|rankings|cricket-stats|basketball-stats|careers|all> [entityType] [sport] [limit]\n',
+      'Usage: wiki <map|facts|crests|rankings|cricket-stats|basketball-stats|careers|all> [entityType] [sport] [limit]\n',
     );
     process.exitCode = 1;
     return;
@@ -87,6 +89,19 @@ async function main(): Promise<void> {
         break;
       }
 
+      case 'crests': {
+        const [sport, limit, mode] = args;
+        const result = await ingestion.ingestTeamCrests(
+          sport === 'all' ? null : (sport ?? 'football'),
+          Number(limit ?? 200),
+          mode === 'overwrite',
+        );
+        process.stdout.write(
+          `${result.examined} scanned, ${result.resolved} crests, ${result.written} teams updated\n`,
+        );
+        break;
+      }
+
       case 'basketball-stats': {
         const result = await ingestion.ingestBasketballStats(Number(args[0] ?? 200));
         process.stdout.write(`${result.players} players, ${result.blocks} stat blocks\n`);
@@ -132,6 +147,11 @@ async function main(): Promise<void> {
               `${String(result.entities).padStart(4)} entities  ${result.facts} facts\n`,
           );
         }
+
+        const crests = await ingestion.ingestTeamCrests(sportSlug, cap);
+        process.stdout.write(
+          `  crests       ${crests.written} teams updated from ${crests.resolved} files\n`,
+        );
 
         const rankings = await ingestion.ingestTeamRankings(sportSlug, Math.min(cap, 60));
         process.stdout.write(

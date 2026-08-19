@@ -34,6 +34,15 @@ export type Infobox = Record<string, string>;
 export interface ParsedTable {
   heading: string | null;
   /**
+   * A spanning header cell above the columns, where the table has one.
+   *
+   * Newcastle's page files a dozen trivia tables under one "Goal scorers"
+   * heading and distinguishes them only by this caption ("Players who scored in
+   * consecutive games"), so the heading alone cannot tell an all-time
+   * leaderboard from a curiosity.
+   */
+  caption: string | null;
+  /**
    * The heading hierarchy above the table, outermost first.
    *
    * Needed because the nearest heading is frequently a subdivision that says
@@ -263,10 +272,52 @@ export function parseTables(html: string): ParsedTable[] {
       .filter((chunk) => /<t[hd][^>]*>/.test(chunk));
     if (rowChunks.length === 0) continue;
 
-    const headers = [...(rowChunks[0] ?? '').matchAll(/<th[^>]*>([\s\S]*?)<\/th>/g)].map((cell) =>
-      cleanHtml(cell[1] ?? ''),
+    // A single spanning `<th>` is a caption, not the header row. Rangers' page
+    // titles each table that way ("Appearances records by player") and puts the
+    // real columns underneath, so reading the first row as headers gave a
+    // one-column table and the club's two leaderboards were both dropped.
+    let caption: string | null = null;
+
+    // Some pages write the caption as a spanning `<td>` instead of a `<th>`.
+    // Newcastle's article does, a dozen times under one heading, and the prose
+    // ("Players who scored in consecutive games") then parses as the first data
+    // row, so a trivia table looked exactly like an all-time leaderboard.
+    const spanning = /<td[^>]*colspan\s*=\s*["']?[2-9][^>]*>([\s\S]*?)<\/td>/i;
+
+    const headerIndex = rowChunks.findIndex((chunk, index) => {
+      const cells = [...chunk.matchAll(/<th([^>]*)>([\s\S]*?)<\/th>/g)];
+      if (cells.length === 0) return false;
+      if (cells.length > 1) return true;
+      // Only the first row may be a caption; a later single-cell header row is
+      // the header of a table that genuinely has one column.
+      if (index > 0 || !/colspan\s*=\s*["']?[2-9]/i.test(cells[0]![1] ?? '')) return true;
+
+      caption = cleanHtml(cells[0]![2] ?? '') || null;
+      return false;
+    });
+    if (headerIndex < 0) continue;
+
+    const headers = [...(rowChunks[headerIndex] ?? '').matchAll(/<th[^>]*>([\s\S]*?)<\/th>/g)].map(
+      (cell) => cleanHtml(cell[1] ?? ''),
     );
     if (headers.length === 0) continue;
+
+    // A lone cell where the header row promised several columns is a caption,
+    // whether or not it carries a colspan attribute: Newcastle's does not.
+    const captionRow =
+      headers.length > 1
+        ? rowChunks
+            .slice(headerIndex + 1)
+            .find((chunk) => [...chunk.matchAll(/<t[hd][^>]*>/g)].length === 1)
+        : undefined;
+
+    if (captionRow && !caption) {
+      const inner =
+        spanning.exec(captionRow)?.[1] ??
+        /<t[hd][^>]*>([\s\S]*?)<\/t[hd]>/.exec(captionRow)?.[1] ??
+        '';
+      caption = cleanHtml(inner) || null;
+    }
 
     const rows: ParsedRow[] = [];
 
@@ -282,9 +333,13 @@ export function parseTables(html: string): ParsedTable[] {
      */
     let carried = new Map<number, { value: string; links: string[]; remaining: number }>();
 
-    for (const chunk of rowChunks.slice(1)) {
+    for (const chunk of rowChunks.slice(headerIndex + 1)) {
       const rawCells = [...chunk.matchAll(/<t[hd][^>]*>([\s\S]*?)<\/t[hd]>/g)];
       if (rawCells.length === 0) continue;
+
+      // The caption row is not data. Left in, its prose became row one of every
+      // Newcastle table and displaced the ranking by a place.
+      if (headers.length > 1 && rawCells.length === 1) continue;
 
       // Full attribute text per cell, so the rowspan can be read back off it.
       const rawTags = [...chunk.matchAll(/<t[hd]([^>]*)>([\s\S]*?)<\/t[hd]>/g)];
@@ -342,6 +397,7 @@ export function parseTables(html: string): ParsedTable[] {
       tables.push({
         heading: stack.length > 0 ? stack[stack.length - 1]!.text : null,
         headingPath: stack.map((entry) => entry.text),
+        caption,
         headers,
         rows,
       });
@@ -358,6 +414,83 @@ export function parseTables(html: string): ParsedTable[] {
  * first: without that, a header comes back as
  * `Games played</span>"}]]}'>GP` rather than `GP`.
  */
+/** A leaderboard written as a definition list rather than a table. */
+export interface ParsedList {
+  /** The `<dt>` label the entries sit under, e.g. "Most appearances". */
+  label: string;
+  entries: { name: string; value: number; link?: string; detail: string | null }[];
+}
+
+/**
+ * Leaderboards written as prose lists.
+ *
+ * Not every records article uses tables. France's is written entirely as
+ * definition lists: a `<dt>` naming the record and `<dd>` entries reading
+ * "**Hugo Lloris**, 145, 19 November 2008 — 18 December 2022". The table parser
+ * finds nothing on such a page, so France had no records at all while every
+ * comparable country had two tables.
+ *
+ * Consecutive lists are merged when the later one continues the earlier: the
+ * record holder sits alone under "Most appearances" and the rest of the
+ * leaderboard follows under "Other centurions", which is one ranking split
+ * across two elements.
+ */
+export function parseDefinitionLists(html: string): ParsedList[] {
+  const lists: ParsedList[] = [];
+
+  for (const match of html.matchAll(/<dl[^>]*>([\s\S]*?)<\/dl>/g)) {
+    const body = match[1] ?? '';
+
+    const label = cleanHtml(/<dt[^>]*>([\s\S]*?)<\/dt>/.exec(body)?.[1] ?? '');
+
+    const entries: ParsedList['entries'] = [];
+
+    for (const item of body.matchAll(/<dd[^>]*>([\s\S]*?)<\/dd>/g)) {
+      const raw = item[1] ?? '';
+      const text = cleanHtml(raw);
+
+      // "Name, 145, 19 November 2008 — 18 December 2022". The name runs to the
+      // first comma and the figure to the second; anything after is the span of
+      // the record, which is kept as detail rather than parsed.
+      const parts = text.split(',');
+      if (parts.length < 2) continue;
+
+      const name = parts[0]!.trim();
+      const value = parseNumber(parts[1]!);
+      if (!name || value === null) continue;
+
+      // A row whose "name" is a number means the entry is not a person.
+      if (/^[\d\s]+$/.test(name)) continue;
+
+      const link = /<a[^>]+href="\.\/([^"#]+)"/.exec(raw)?.[1];
+
+      entries.push({
+        name,
+        value,
+        link: link ? decodeURIComponent(link).replace(/_/g, ' ') : undefined,
+        detail: parts.slice(2).join(',').trim() || null,
+      });
+    }
+
+    if (entries.length === 0) continue;
+
+    // A list with no `<dt>` of its own, or one whose label announces itself as
+    // the remainder of the list above, extends the previous entry instead of
+    // starting a new leaderboard.
+    const previous = lists[lists.length - 1];
+    const isContinuation = !label || /^(other|also|further|remaining)\b/i.test(label);
+
+    if (previous && isContinuation) {
+      previous.entries.push(...entries);
+      continue;
+    }
+
+    lists.push({ label, entries });
+  }
+
+  return lists;
+}
+
 function cleanHtml(value: string): string {
   let text = value;
 
@@ -385,6 +518,28 @@ function cleanHtml(value: string): string {
 }
 
 /**
+ * Whether a table's headers satisfy one required term.
+ *
+ * A term may list alternatives separated by "|". Records articles are split
+ * roughly evenly between heading the person column "Player" and heading it
+ * "Name": Scotland uses "Name" for both its leaderboards, so a hard
+ * requirement on "player" rejected two correct tables and sent the country to a
+ * worse source.
+ */
+function satisfiesTerm(headers: string[], term: string): boolean {
+  const normalise = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  return term.split('|').some((option) => {
+    const wanted = normalise(option);
+    // "name" is matched as a prefix so "Name and nationality" qualifies while
+    // "Opponent name" does not; everything else matches as a substring.
+    return headers.some((header) =>
+      wanted === 'name' ? header.startsWith(wanted) : header.includes(wanted),
+    );
+  });
+}
+
+/**
  * Finds a table whose headers look like what the caller wants.
  *
  * Matching on headers rather than on position is what makes this survive the
@@ -404,9 +559,7 @@ export function findTable(
   for (const table of tables) {
     const headers = table.headers.map(normalise);
 
-    const hasAll = required.every((term) =>
-      headers.some((header) => header.includes(normalise(term))),
-    );
+    const hasAll = required.every((term) => satisfiesTerm(headers, term));
     if (!hasAll) continue;
 
     const score = optional.filter((term) =>
@@ -447,7 +600,7 @@ export function findTableByHeading(
 
   const satisfies = (table: ParsedTable) => {
     const headers = table.headers.map(normalise);
-    return required.every((term) => headers.some((header) => header.includes(normalise(term))));
+    return required.every((term) => satisfiesTerm(headers, term));
   };
 
   // Headings that qualify a table as a subset rather than the whole record.
@@ -455,9 +608,17 @@ export function findTableByHeading(
   // Newcastle's a goalkeeping section, both of which satisfy every column test
   // the all-time table does. Matching them produced Harry Kane with 41 goals
   // and Newcastle's record scorer as a goalkeeper with 13.
+  // A nested table under a heading that only enumerates ("List of topscorers"
+  // beneath "Goals scored") is a breakdown of the table above it, not the
+  // record itself. São Paulo's published record scorer came from such a list: a
+  // 1933 state-championship tally of 21.
+  const isEnumeration = (table: ParsedTable) =>
+    table.headingPath.length > 1 && /^list of\b/i.test(table.heading ?? '');
+
   const isSubset = (table: ParsedTable) =>
-    table.headingPath.some((entry) =>
-      /european|champions league|league only|domestic|in a season|by season|single season|goalkeep|clean sheet|substitute|youngest|oldest|fastest/i.test(
+    isEnumeration(table) ||
+    [...table.headingPath, table.caption ?? ''].some((entry) =>
+      /european|champions league|world cup|olympic|copa am|euros?\b|confederations|league only|domestic|in a season|by season|single season|single match|in a match|milestone|national cup|cup match|streak|firsts?\)|age\)|transfer|consecutive|fastest|latest|earliest|games taken|scored in|debut|goalkeep|clean sheet|substitute|youngest|oldest|fastest|assist|own goal|hat.?trick|manager|coach|captain/i.test(
         entry,
       ),
     );
@@ -471,13 +632,23 @@ export function findTableByHeading(
       (table) => table.headingPath.length > 0 && satisfies(table) && !isSubset(table),
     );
 
+    // The caption counts as a heading. Newcastle files a dozen trivia tables and
+    // its actual all-time list under the same "Goal scorers" heading, and only
+    // the caption ("Records of all competition top goal scorers") tells them
+    // apart; matching on the heading alone picked a single-match record and
+    // published the club's top scorer with 20 goals.
+    const labels = (table: ParsedTable) => [...table.headingPath, table.caption ?? ''];
+
     const exact = candidates.filter((table) =>
-      table.headingPath.some((entry) => normalise(entry) === wanted),
+      labels(table).some((entry) => normalise(entry) === wanted),
     );
     if (exact.length > 0) return best(exact, wanted);
 
+    const captioned = candidates.filter((table) => normalise(table.caption ?? '').includes(wanted));
+    if (captioned.length > 0) return best(captioned, wanted);
+
     const partial = candidates.filter((table) =>
-      table.headingPath.some((entry) => normalise(entry).includes(wanted)),
+      labels(table).some((entry) => normalise(entry).includes(wanted)),
     );
     if (partial.length > 0) return best(partial, wanted);
   }
@@ -504,7 +675,16 @@ function best(tables: ParsedTable[], wanted: string): ParsedTable {
     (table) => table.heading && normalise(table.heading).includes(wanted),
   );
 
-  return direct[0] ?? tables[0]!;
+  const pool = direct.length > 0 ? direct : tables;
+
+  // Shallowest heading path first. São Paulo files its all-time scorers under
+  // "Goals scored" and a per-season list one level deeper under "List of
+  // topscorers", which matches the term "Top scorers" as readily; taking the
+  // deeper table published the club's record scorer as a 1933 state-championship
+  // tally of 21.
+  return pool.reduce((chosen, table) =>
+    table.headingPath.length < chosen.headingPath.length ? table : chosen,
+  );
 }
 
 /**

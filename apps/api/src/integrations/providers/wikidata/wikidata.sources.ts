@@ -107,6 +107,32 @@ export interface WikidataSportSource {
   readonly personOccupationQid?: string;
 
   /**
+   * Class of club a person must have played for, in place of a league filter.
+   *
+   * The league filter (P118 on the person) turned out to be close to useless
+   * for football: of the players who matter, only some carry it, and the
+   * property is essentially never set on anyone retired. Pelé, Neymar, Modrić,
+   * Benzema and Casillas all lack it, so the entire first rank of the sport was
+   * excluded from ingestion while thousands of squad players were kept.
+   *
+   * Club membership (P54) is the property the community actually maintains, and
+   * requiring it also does the job the league filter was meant to do. Both
+   * Albert Camus and Sean Connery carry "association football player" as an
+   * occupation, having played in their youth, and both drop out here because
+   * neither has a club membership.
+   */
+  readonly personClubClassQid?: string;
+
+  /**
+   * Minimum sitelink count for a person to be worth ingesting.
+   *
+   * Sitelinks are the notability proxy used throughout: the number of language
+   * Wikipedias carrying an article. A floor keeps the roster to people a reader
+   * might plausibly search for rather than every recorded squad member.
+   */
+  readonly personMinSitelinks?: number;
+
+  /**
    * Skip the sport filter on venues.
    *
    * Race circuits do not carry P641, so filtering by it returns nothing at all.
@@ -121,6 +147,11 @@ export const SPORT_SOURCES: Record<string, WikidataSportSource> = {
   football: {
     // association football
     sportQid: 'Q2736',
+    // association football player
+    personOccupationQid: 'Q937857',
+    // association football club, which the person must have played for
+    personClubClassQid: 'Q476028',
+    personMinSitelinks: 12,
     // association football club
     teamClassQid: 'Q476028',
     // national association football team

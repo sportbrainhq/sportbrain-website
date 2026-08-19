@@ -147,6 +147,93 @@ export class WikipediaIngestionService {
   }
 
   /**
+   * Backfills team crests from en.wikipedia infoboxes.
+   *
+   * Wikidata cannot supply these. Its crest property is absent for Real Madrid,
+   * Arsenal, Manchester City, Manchester United and France, because a club crest
+   * is a copyrighted logo and Commons hosts only freely-licensed media. The
+   * files live on en.wikipedia under fair use, and the infobox is what names
+   * them. See `WikipediaProvider.crestFileFrom` and
+   * `WikipediaClient.fetchThumbnails` for the verification behind both halves.
+   *
+   * Requested at 512px and stored at that width. Crests are overwhelmingly SVG,
+   * so the rasterised thumbnail is sharp at any display size, and 512 covers the
+   * largest place one is currently drawn (80px at 2x) with room to spare. Storing
+   * a rendered thumbnail rather than the SVG is deliberate: it keeps the existing
+   * `<img>` rendering path unchanged.
+   *
+   * `overwrite` is off by default, so a crest already held is left alone and the
+   * job can be re-run cheaply to fill only what is missing. Pass it to replace
+   * the Wikidata-sourced values that are not crests at all: 92 of the 317 stored
+   * logos are photographs, flags or colour swatches, Barcelona's among them.
+   *
+   * One wikitext fetch per team, throttled by the client. The thumbnail lookups
+   * are batched fifty at a time.
+   */
+  async ingestTeamCrests(
+    sportSlug: string | null,
+    limit: number,
+    overwrite = false,
+  ): Promise<{ examined: number; resolved: number; written: number }> {
+    const targets = await this.database.db.execute<{ id: string; title: string; name: string }>(sql`
+      SELECT e.id, em.external_id AS title, e.name
+      FROM external_mapping em
+      JOIN team e ON e.id = em.entity_id
+      JOIN sport s ON s.id = e.sport_id
+      WHERE em.provider = 'wikipedia'
+        AND em.entity_type = 'team'
+        ${sql.raw(sportSlug ? `AND s.slug = '${sportSlug}'` : '')}
+        ${sql.raw(overwrite ? '' : 'AND e.logo_url IS NULL')}
+      ORDER BY e.notability DESC
+      LIMIT ${limit}
+    `);
+
+    // Collected before resolving, so the thumbnail lookups can be batched rather
+    // than run one per team.
+    const wanted = new Map<string, { id: string; name: string }[]>();
+    let examined = 0;
+
+    for (const [index, target] of targets.entries()) {
+      try {
+        const wikitext = await this.provider.fetchWikitextFor(target.title);
+        examined += 1;
+        if (!wikitext) continue;
+
+        const file = this.provider.crestFileFrom(wikitext);
+        if (!file) continue;
+
+        const group = wanted.get(file) ?? [];
+        group.push({ id: target.id, name: target.name });
+        wanted.set(file, group);
+      } catch (error) {
+        this.logger.warn(`Crest lookup failed for ${target.title}: ${this.message(error)}`);
+      }
+
+      if ((index + 1) % 25 === 0) {
+        this.logger.log(`  ${index + 1}/${targets.length} teams scanned`);
+      }
+    }
+
+    const thumbnails = await this.provider.resolveThumbnails([...wanted.keys()], 512);
+
+    let written = 0;
+
+    for (const [file, teams] of wanted) {
+      const url = thumbnails.get(file);
+      if (!url) continue;
+
+      for (const team of teams) {
+        await this.database.db.execute(sql`
+          UPDATE team SET logo_url = ${url}, updated_at = now() WHERE id = ${team.id}
+        `);
+        written += 1;
+      }
+    }
+
+    return { examined, resolved: wanted.size, written };
+  }
+
+  /**
    * Ingests club record tables.
    *
    * The records article is a separate page from the club's own, and its title
@@ -163,10 +250,12 @@ export class WikipediaIngestionService {
 
     for (const [index, target] of targets.entries()) {
       try {
+        // No early exit on a missing records article: national sides without one
+        // can still be read from their list of internationals, which is where
+        // Poland's and Ecuador's leaderboards come from.
         const recordsTitle = await this.provider.findRecordsArticle(target.name, sportSlug);
-        if (!recordsTitle) continue;
 
-        const extracted = await this.provider.fetchTeamRankings(recordsTitle);
+        const extracted = await this.provider.fetchTeamRankings(recordsTitle, target.name);
         if (extracted.length === 0) continue;
 
         for (const ranking of extracted) {

@@ -48,7 +48,15 @@ export class WikipediaClient {
    * hammer a donated service: a full crawl of the catalogue is thousands of
    * requests, and the polite rate is what keeps it available.
    */
-  private static readonly MIN_INTERVAL_MS = 250;
+  private static readonly MIN_INTERVAL_MS = 400;
+
+  /**
+   * Retries allowed after a 429.
+   *
+   * Measured: a records-article crawl at the old 250ms pace was throttled
+   * roughly ten teams in, which is well short of a full catalogue.
+   */
+  private static readonly MAX_RETRIES = 4;
 
   private lastRequestAt = 0;
 
@@ -75,19 +83,9 @@ export class WikipediaClient {
 
   /** Rendered HTML. The route to tables, where templates are already expanded. */
   async fetchHtml(title: string): Promise<string | null> {
-    await this.throttle();
-
     const url = `${WikipediaClient.REST}/page/html/${encodeURIComponent(title)}`;
 
-    let response: Response;
-    try {
-      response = await fetch(url, {
-        headers: { 'User-Agent': WikipediaClient.USER_AGENT, Accept: 'text/html' },
-        signal: AbortSignal.timeout(45_000),
-      });
-    } catch (error) {
-      throw new ProviderError('wikipedia', 'request failed', true, error);
-    }
+    const response = await this.send(url, 'text/html');
 
     if (response.status === 404) return null;
     if (!response.ok) {
@@ -141,18 +139,70 @@ export class WikipediaClient {
     return page !== undefined && page.missing !== true;
   }
 
-  private async getJson<T>(url: string): Promise<T> {
-    await this.throttle();
+  /**
+   * Rendered thumbnail URLs for file pages, keyed by the file title given.
+   *
+   * This is the only route to a club crest, and the reason is licensing rather
+   * than data quality. Crests are copyrighted logos, so they are not on Commons
+   * and Wikidata's P154 cannot point at them: probing the live endpoint returns
+   * no P154 at all for Real Madrid, Arsenal, Manchester City, Manchester United
+   * or France, and the properties that *are* present are a stadium photo (P18)
+   * and a colour swatch or national flag (P41). Every one of those would be
+   * worse in a crest slot than no image. The files exist on **en.wikipedia**
+   * under fair use, and only the local API exposes them.
+   *
+   * Two further findings, each of which produced a broken result first:
+   *
+   *   - **`prop=pageimages` returns nothing for these pages.** Non-free files
+   *     are excluded from it, which is exactly the set wanted here, so the
+   *     obvious API is the one that cannot work.
+   *   - **The thumbnail URL must be taken from the response, not built.**
+   *     Hand-assembling the conventional `.../thumb/a/ab/Name.svg/320px-Name.svg.png`
+   *     form returned HTTP 400 for all three crests it was tried on. The
+   *     `thumburl` the API returns carries query parameters and serves 200.
+   *
+   * Batched 50 titles per call, which is the API limit for `titles`, because
+   * this runs over thousands of teams.
+   */
+  async fetchThumbnails(
+    fileTitles: readonly string[],
+    width: number,
+  ): Promise<Map<string, string>> {
+    const resolved = new Map<string, string>();
 
-    let response: Response;
-    try {
-      response = await fetch(url, {
-        headers: { 'User-Agent': WikipediaClient.USER_AGENT, Accept: 'application/json' },
-        signal: AbortSignal.timeout(45_000),
-      });
-    } catch (error) {
-      throw new ProviderError('wikipedia', 'request failed', true, error);
+    for (let index = 0; index < fileTitles.length; index += 50) {
+      const batch = fileTitles.slice(index, index + 50);
+
+      const url =
+        `${WikipediaClient.API}?action=query&prop=imageinfo&iiprop=url|mime` +
+        `&iiurlwidth=${width}&titles=${encodeURIComponent(batch.join('|'))}` +
+        `&format=json&formatversion=2`;
+
+      const body = await this.getJson<{
+        query?: {
+          pages?: {
+            title: string;
+            missing?: boolean;
+            imageinfo?: { thumburl?: string; url?: string }[];
+          }[];
+        };
+      }>(url);
+
+      for (const page of body.query?.pages ?? []) {
+        if (page.missing) continue;
+
+        // `thumburl` is absent for formats MediaWiki will not rasterise. The
+        // original is still better than nothing for those.
+        const source = page.imageinfo?.[0]?.thumburl ?? page.imageinfo?.[0]?.url;
+        if (source) resolved.set(page.title, source);
+      }
     }
+
+    return resolved;
+  }
+
+  private async getJson<T>(url: string): Promise<T> {
+    const response = await this.send(url, 'application/json');
 
     if (!response.ok) {
       const retryable = response.status === 429 || response.status >= 500;
@@ -160,6 +210,37 @@ export class WikipediaClient {
     }
 
     return (await response.json()) as T;
+  }
+
+  /**
+   * One request, paced and retried on throttling.
+   *
+   * Wikimedia answers a sustained crawl with 429 well before it answers with an
+   * error, and a 429 halfway through a catalogue walk loses every team after
+   * it. Backing off and retrying turns that into a pause rather than a failure,
+   * and honours `Retry-After` when the response carries one.
+   */
+  private async send(url: string, accept: string): Promise<Response> {
+    for (let attempt = 0; ; attempt += 1) {
+      await this.throttle();
+
+      let response: Response;
+      try {
+        response = await fetch(url, {
+          headers: { 'User-Agent': WikipediaClient.USER_AGENT, Accept: accept },
+          signal: AbortSignal.timeout(45_000),
+        });
+      } catch (error) {
+        throw new ProviderError('wikipedia', 'request failed', true, error);
+      }
+
+      if (response.status !== 429 || attempt >= WikipediaClient.MAX_RETRIES) return response;
+
+      const header = Number(response.headers.get('retry-after'));
+      const wait = Number.isFinite(header) && header > 0 ? header * 1000 : 2000 * 2 ** attempt;
+
+      await new Promise((resolve) => setTimeout(resolve, Math.min(wait, 30_000)));
+    }
   }
 
   private async throttle(): Promise<void> {
