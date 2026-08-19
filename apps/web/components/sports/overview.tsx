@@ -191,12 +191,34 @@ export function GovernanceHierarchy({ bodies }: { bodies: GoverningBody[] }) {
                   </li>
                 ))}
               </ul>
+              {world.memberCount !== null && hasConfederationCounts(world) && (
+                <p className="mt-3 max-w-2xl text-xs leading-relaxed text-muted-foreground">
+                  Confederation membership sums to more than the world body&rsquo;s total because
+                  confederations also admit associate and non-member territories.
+                </p>
+              )}
             </>
           )}
         </div>
       ))}
     </div>
   );
+}
+
+/**
+ * Whether the children carry counts that a reader could add up.
+ *
+ * The reconciling note is only shown when both figures are actually on screen,
+ * so a sport whose confederations have no member counts does not explain away a
+ * discrepancy the reader cannot see.
+ */
+function hasConfederationCounts(body: GoverningBody): boolean {
+  const children = body.children as GoverningBody[];
+  const counted = children.filter((child) => child.memberCount !== null);
+  if (counted.length !== children.length || counted.length === 0) return false;
+
+  const total = counted.reduce((sum, child) => sum + (child.memberCount ?? 0), 0);
+  return total !== body.memberCount;
 }
 
 /** Internal navigation. The call to action matters more than any count. */

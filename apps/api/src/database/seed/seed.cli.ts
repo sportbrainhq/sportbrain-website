@@ -381,6 +381,19 @@ async function seedEntitySections(db: Db): Promise<number> {
  * the seeder twice refreshes content rather than duplicating it, and a source
  * that temporarily returns nothing cannot wipe good rows.
  */
+/**
+ * Renders a string list as a Postgres text array literal.
+ *
+ * Drizzle expands a bound JS array into a comma-separated record list, which is
+ * right for `VALUES` and wrong for `= ANY (...)`. Building the literal keeps the
+ * quoting in one place; every caller passes values this file owns, and the
+ * escaping below is what stops a stray quote from breaking the statement.
+ */
+function pgTextArray(values: string[]): string {
+  const escaped = values.map((value) => `'${value.replaceAll("'", "''")}'`);
+  return `ARRAY[${escaped.join(', ')}]::text[]`;
+}
+
 async function seedFootballOverview(db: Db): Promise<{
   sources: number;
   timeline: number;
@@ -436,6 +449,22 @@ async function seedFootballOverview(db: Db): Promise<{
     timeline += 1;
   }
 
+  // Re-dating an event changes part of its natural key, so the upsert above
+  // writes a new row and leaves the old one behind. Deleting what the seed no
+  // longer defines is what makes this genuinely idempotent: without it the
+  // timeline only ever grows, and a corrected date shows up twice.
+  // Matched on the whole natural key, not the title alone: re-dating an event
+  // keeps its title, so a title-only check would find the stale row still
+  // "seeded" and leave both copies in place.
+  // Separated by a control character rather than NUL: Postgres rejects NUL in
+  // text values outright, and a printable separator could occur in a title.
+  const seededKeys = FOOTBALL_TIMELINE.map((event) => `${event.year}\u001f${event.title}`);
+  await db.execute(sql`
+    DELETE FROM sport_timeline_event
+    WHERE sport_id = ${sportRow.id}
+      AND NOT (year::text || chr(31) || title = ANY (${sql.raw(pgTextArray(seededKeys))}))
+  `);
+
   // Two passes: the world body must exist before a confederation can point at
   // it, and a single pass would leave the first parent reference unresolved.
   const bodyIds = new Map<string, string>();
@@ -470,6 +499,13 @@ async function seedFootballOverview(db: Db): Promise<{
     }
   }
 
+  const seededSlugs = FOOTBALL_GOVERNANCE.map((body) => body.slug);
+  await db.execute(sql`
+    DELETE FROM governing_body
+    WHERE sport_id = ${sportRow.id}
+      AND NOT (slug = ANY (${sql.raw(pgTextArray(seededSlugs))}))
+  `);
+
   let sections = 0;
   for (const section of FOOTBALL_SECTIONS) {
     await db.execute(sql`
@@ -487,6 +523,16 @@ async function seedFootballOverview(db: Db): Promise<{
     `);
     sections += 1;
   }
+
+  // Sources are shared across sports, so this cannot prune by sport the way the
+  // two above do. It removes only rows that nothing references at all, which is
+  // what a moved URL leaves behind once its dependants have been repointed.
+  await db.execute(sql`
+    DELETE FROM content_source cs
+    WHERE NOT EXISTS (SELECT 1 FROM sport_timeline_event e WHERE e.source_id = cs.id)
+      AND NOT EXISTS (SELECT 1 FROM governing_body g WHERE g.source_id = cs.id)
+      AND NOT (cs.url = ANY (${sql.raw(pgTextArray(FOOTBALL_SOURCES.map((source) => source.url)))}))
+  `);
 
   return { sources: sourceIds.size, timeline, bodies, sections };
 }

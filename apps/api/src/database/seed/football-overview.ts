@@ -110,8 +110,16 @@ export const FOOTBALL_SOURCES: SourceSeed[] = [
   {
     key: 'ifab',
     provider: 'ifab',
-    title: 'The IFAB — Laws of the Game',
-    url: 'https://www.theifab.com/laws-of-the-game-documents/',
+    title: 'IFAB, Laws of the Game 2026/27',
+    url: 'https://www.theifab.com/downloads/laws-of-the-game-202627-single-pages?l=en',
+    license: 'IFAB',
+  },
+  {
+    key: 'ifab-statutes',
+    provider: 'ifab',
+    title: 'IFAB Statutes',
+    url: 'https://www.theifab.com/downloads/ifab-statutes?l=en',
+    license: 'IFAB',
   },
 ];
 
@@ -136,12 +144,13 @@ export const FOOTBALL_TIMELINE: TimelineSeed[] = [
     order: 10,
   },
   {
-    year: 1848,
+    year: 1856,
+    endYear: 1863,
     title: 'The Cambridge Rules',
     shortDescription:
-      'Students at Cambridge drafted one of the first attempts to reconcile the differing football codes played at English public schools, an early step towards a shared set of laws.',
+      'Students at Cambridge made repeated attempts to reconcile the differing football codes played at English public schools. There is no single Cambridge code: a version is said to have been drafted in 1848 but no text survives, and the earliest surviving formulations are those of 1856 and 1863, the latter of which influenced the FA\u2019s first Laws.',
     category: 'codification',
-    certainty: 'approximate',
+    certainty: 'disputed',
     sourceKey: 'wp-history',
   },
   {
@@ -209,8 +218,9 @@ export const FOOTBALL_TIMELINE: TimelineSeed[] = [
     endYear: 1971,
     title: "The English ban on women's football",
     shortDescription:
-      "The Football Association barred women's teams from member grounds in 1921, at a point when women's matches were drawing very large crowds. The ban stood for fifty years and set back the women's game across much of the world.",
+      "The Football Association barred women's teams from member grounds on 5 December 1921, at a point when women's matches were drawing very large crowds. The ban stood for roughly fifty years: the FA began reversing it from 1969, and the restrictions were formally removed in 1971. France and Brazil imposed comparable bans of their own. The FA apologised in 2008.",
     category: 'womens',
+    certainty: 'disputed',
     isMajorMilestone: true,
     sourceKey: 'wp-womens',
   },
@@ -265,6 +275,10 @@ export const FOOTBALL_GOVERNANCE: GoverningBodySeed[] = [
     name: 'Fédération Internationale de Football Association',
     level: 'world',
     foundedYear: 1904,
+    // Wikidata carries no P2124 for FIFA, so this comes from the FIFA article's
+    // infobox. A SPARQL count of `wdt:P463 wd:Q253414` returns 251, which sweeps
+    // in non-national entities and is not the member-association figure.
+    memberCount: 211,
     headquarters: 'Zurich, Switzerland',
     websiteUrl: 'https://www.fifa.com',
     externalId: 'Q253414',
