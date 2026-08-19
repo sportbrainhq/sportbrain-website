@@ -357,24 +357,44 @@ export class WikipediaProvider {
     const infobox = /<table[^>]*class="[^"]*infobox[^"]*"[^>]*>[\s\S]*?<\/table>/.exec(html);
     if (!infobox) return [];
 
-    const rows = parseTables(infobox[0].replace(/class="([^"]*)infobox/, 'class="$1wikitable'));
+    // Parsed directly rather than through `parseTables`, which requires a
+    // header row. An infobox has none: its career rows are bare `<td>` pairs
+    // under a "Senior career" heading, so routing them through the table parser
+    // returned nothing at all for every player.
+    //
+    // Rows come in two shapes. Youth spells carry two cells (years, club) and
+    // senior spells carry four (years, club, appearances, goals in brackets).
+    // Both are kept, because a youth spell is part of a career timeline even
+    // without figures attached.
     const career: { years: string; team: string; apps: number | null; goals: number | null }[] = [];
 
-    for (const table of rows) {
-      for (const row of table.rows) {
-        const [years, team, apps, goals] = row.cells;
-        // A career row starts with a year range. Anything else in the infobox
-        // is biography and is skipped.
-        if (!years || !team || !/^\d{4}/.test(years)) continue;
+    for (const chunk of infobox[0].split(/<tr[^>]*>/)) {
+      const cells = [...chunk.matchAll(/<t[hd][^>]*>([\s\S]*?)<\/t[hd]>/g)].map((cell) =>
+        cell[1]!
+          .replace(/<sup[\s\S]*?<\/sup>/g, '')
+          .replace(/<style[\s\S]*?<\/style>/g, '')
+          .replace(/\sdata-mw='[^']*'/g, '')
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/&nbsp;/g, ' ')
+          .replace(/&amp;/g, '&')
+          .replace(/\s+/g, ' ')
+          .trim(),
+      );
 
-        career.push({
-          years,
-          team,
-          apps: apps ? parseNumber(apps) : null,
-          // Goals are rendered parenthesised: "(474)".
-          goals: goals ? parseNumber(goals.replace(/[()]/g, '')) : null,
-        });
-      }
+      const [years, team, apps, goals] = cells;
+
+      // A career row begins with a year. Everything else in an infobox is
+      // biography and is skipped.
+      if (!years || !team || !/^\d{4}/.test(years)) continue;
+      if (cells.length < 2) continue;
+
+      career.push({
+        years,
+        team,
+        apps: apps ? parseNumber(apps) : null,
+        // Goals are rendered parenthesised: "(474)".
+        goals: goals ? parseNumber(goals.replace(/[()]/g, '')) : null,
+      });
     }
 
     return career;

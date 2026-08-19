@@ -268,14 +268,56 @@ export class WikipediaIngestionService {
       JOIN sport s ON s.id = t.sport_id AND s.slug = 'football'
     `);
 
+    // Club-type tokens are stripped with optional dots, because the same club
+    // appears as "Swansea City A.F.C." here and "Swansea City" on Wikipedia,
+    // and as "Real Madrid Club de Futbol" against "Real Madrid".
     const normalise = (value: string) =>
       value
         .toLowerCase()
-        .replace(/\b(fc|cf|afc|f\.c\.|c\.f\.|club|de|futbol|football)\b/g, '')
+        .replace(/\(.*?\)/g, '')
+        .replace(
+          /\b(f\.?c\.?|a\.?f\.?c\.?|c\.?f\.?|s\.?k\.?|a\.?c\.?|s\.?c\.?|clube?|de|del|futbol|football|fussball|calcio|sporting)\b/g,
+          '',
+        )
         .replace(/[^a-z0-9]/g, '');
 
     const byName = new Map<string, string>();
-    for (const team of teams) byName.set(normalise(team.name), team.id);
+    for (const team of teams) {
+      const key = normalise(team.name);
+      // First writer wins. Two clubs can normalise identically ("Barcelona"
+      // the club and "Barcelona B" the reserve side), and overwriting means the
+      // senior side loses its spells to its own B team.
+      if (key.length > 2 && !byName.has(key)) byName.set(key, team.id);
+    }
+
+    /**
+     * Resolves a Wikipedia club name to a team we hold.
+     *
+     * Exact normalised match first, then containment in either direction, which
+     * is what connects "Naotico" to "Clube Nautico Capibaribe". Containment is
+     * length-guarded: a three-character key matches far too much.
+     */
+    const resolveTeam = (name: string): string | undefined => {
+      // Reserve and youth sides are not the senior club and must not inherit
+      // its spells. Messi's Barcelona B and C rows resolved to FC Barcelona and
+      // appeared on the senior club's timeline as separate spells.
+      if (/\b(b|c|ii|iii|u\d{2}|reserves?|youth|academy|junior)\b\s*$/i.test(name.trim())) {
+        return undefined;
+      }
+
+      const key = normalise(name);
+      if (key.length < 3) return undefined;
+
+      const exact = byName.get(key);
+      if (exact) return exact;
+
+      for (const [candidate, id] of byName) {
+        if (candidate.length < 4 || key.length < 4) continue;
+        if (candidate === key || candidate.includes(key) || key.includes(candidate)) return id;
+      }
+
+      return undefined;
+    };
 
     let players = 0;
     let spells = 0;
@@ -286,7 +328,7 @@ export class WikipediaIngestionService {
         if (career.length === 0) continue;
 
         for (const entry of career) {
-          const teamId = byName.get(normalise(entry.team));
+          const teamId = resolveTeam(entry.team);
           if (!teamId) continue;
 
           const [startYear, endYear] = entry.years.split(/[–-]/);

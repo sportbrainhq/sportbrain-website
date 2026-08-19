@@ -134,8 +134,12 @@ export const CROSS_REFERENCE_PROPERTIES = {
  * most-searched teams in the world. Measured across the five founding leagues,
  * the class filter matches 105 entities while excluding humans matches 128.
  *
- * League membership already guarantees the entity is a club. The only thing that
- * needs excluding is players, who carry P118 as well.
+ * League membership does not on its own guarantee a club, which the first
+ * version assumed. Seasons, drafts and individual matches all carry P118 and
+ * none of them is a person, so excluding humans alone let 68 of them into the
+ * catalogue: "2023-24 Serie A", "2007 MLS SuperDraft" and
+ * "Wellington Phoenix v Brisbane Roar, 31 March 2024" were all stored as teams.
+ * The season and event classes are therefore excluded explicitly as well.
  *
  * The `_classQid` parameter is retained so the national-team path can keep
  * passing one, but this query no longer uses it.
@@ -155,6 +159,11 @@ SELECT ?item ?itemLabel ?inception ?countryLabel ?shortName ?logo WHERE {
   VALUES ?league { ${values} }
   ?item wdt:P118 ?league .
   FILTER NOT EXISTS { ?item wdt:P31 wd:${WD.HUMAN} }
+  # Sports seasons, competition editions and single matches.
+  FILTER NOT EXISTS { ?item wdt:P31/wdt:P279* wd:Q27020041 }
+  FILTER NOT EXISTS { ?item wdt:P31/wdt:P279* wd:Q1656682 }
+  # A season or match names the competition it belongs to; a club does not.
+  FILTER NOT EXISTS { ?item wdt:P3450 ?anySeason }
   ?item rdfs:label ?itemLabel . FILTER(LANG(?itemLabel) = "en")
   OPTIONAL { ?item wdt:P571 ?inception }
   OPTIONAL { ?item wdt:P17 ?country }
