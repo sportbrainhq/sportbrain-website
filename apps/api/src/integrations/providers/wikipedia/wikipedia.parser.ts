@@ -332,10 +332,19 @@ export function findTable(
   return best?.table ?? null;
 }
 
-/** Parses "9,230" or "46.85" into a number. Returns null for "–" and other placeholders. */
+/**
+ * Parses "9,230", "46.85" or ".471" into a number.
+ *
+ * The leading-dot form matters: basketball writes shooting percentages as
+ * ".471" rather than "0.471", and a pattern requiring a digit before the point
+ * rejected every shooting figure on every player page while accepting
+ * everything around them, so the columns simply went missing.
+ *
+ * Returns null for "-" and other placeholders.
+ */
 export function parseNumber(value: string): number | null {
   const cleaned = value.replace(/[,\s]/g, '').replace(/[*†‡]/g, '');
-  if (!/^-?\d+(\.\d+)?$/.test(cleaned)) return null;
+  if (!/^-?(\d+(\.\d+)?|\.\d+)$/.test(cleaned)) return null;
 
   const parsed = Number(cleaned);
   return Number.isFinite(parsed) ? parsed : null;

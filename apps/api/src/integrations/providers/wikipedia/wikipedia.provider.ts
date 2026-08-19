@@ -441,6 +441,98 @@ export class WikipediaProvider {
   }
 
   /**
+   * A basketball player's career averages, per competition phase.
+   *
+   * Wikipedia carries what the NBA's own statistics service will not license:
+   * per-season tables with games, minutes, shooting percentages, rebounds,
+   * assists and points, each ending in a career summary row. Three tables
+   * appear, for the regular season, the playoffs and college, and they are kept
+   * apart because a playoff average is drawn from a different pool of opponents
+   * than a regular-season one.
+   *
+   * Only the career row is taken. Per-season rows are real data and belong in a
+   * season-scoped table that does not exist yet; storing them flattened into a
+   * career row would silently overwrite one season with the next.
+   */
+  async fetchBasketballStats(title: string): Promise<WikiStatBlock[]> {
+    const html = await this.client.fetchHtml(title);
+    if (!html) return [];
+
+    const tables = parseTables(html);
+    const blocks: WikiStatBlock[] = [];
+
+    // Column meaning comes from the header rather than the position, because
+    // older articles omit steals and blocks and every index after them shifts.
+    const columnMap: Record<string, string> = {
+      gp: 'games_played',
+      ppg: 'points_per_game',
+      rpg: 'rebounds_per_game',
+      apg: 'assists_per_game',
+      spg: 'steals_per_game',
+      bpg: 'blocks_per_game',
+      mpg: 'minutes_per_game',
+      'fg%': 'field_goal_percentage',
+      '3p%': 'three_point_percentage',
+      'ft%': 'free_throw_percentage',
+    };
+
+    // Order matters: the tables appear regular season, playoffs, college, and
+    // nothing in the markup says which is which.
+    const phases = ['regular_season', 'playoffs', 'college'] as const;
+    let phaseIndex = 0;
+
+    for (const table of tables) {
+      const headers = table.headers.map((header) => header.toLowerCase().trim());
+      if (!headers.includes('year') || !headers.includes('gp')) continue;
+
+      // The career row is labelled, not positional. Curry's regular-season
+      // table ends with an "All-Star" row rather than "Career", so taking the
+      // last row would record his All-Star averages as his career.
+      const careerRow = table.rows.find((row) => /^career$/i.test((row.cells[0] ?? '').trim()));
+      if (!careerRow) {
+        phaseIndex += 1;
+        continue;
+      }
+
+      // The career row is shorter than the header: "Career" spans the Year and
+      // Team columns, so a row of 12 cells sits under 13 headers and every
+      // value lands one column to the left. Read positionally, Curry's points
+      // average is recorded as his blocks and his shooting percentages vanish.
+      //
+      // Aligning from the right corrects it, because the trailing columns are
+      // the ones that matter and they always line up.
+      const offset = headers.length - careerRow.cells.length;
+
+      const stats: Record<string, number> = {};
+      for (const [index, header] of headers.entries()) {
+        const key = columnMap[header];
+        const raw = careerRow.cells[index - offset];
+        if (!key || !raw) continue;
+
+        const value = parseNumber(raw);
+        if (value === null) continue;
+
+        // Shooting figures are written as ".462" and read better as 46.2%.
+        stats[key] =
+          key.endsWith('_percentage') && value < 1 ? Number((value * 100).toFixed(1)) : value;
+      }
+
+      if (Object.keys(stats).length > 0) {
+        blocks.push({
+          discipline: phases[phaseIndex] ?? null,
+          stats,
+          appearances: stats.games_played ?? null,
+        });
+      }
+
+      phaseIndex += 1;
+      if (phaseIndex >= phases.length) break;
+    }
+
+    return blocks;
+  }
+
+  /**
    * A footballer's club career, from the infobox career table.
    *
    * Rendered HTML rather than wikitext: the career rows are a table inside the

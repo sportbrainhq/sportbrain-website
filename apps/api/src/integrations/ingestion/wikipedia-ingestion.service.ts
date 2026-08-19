@@ -255,6 +255,75 @@ export class WikipediaIngestionService {
   }
 
   /**
+   * Ingests basketball players' career averages, per competition phase.
+   *
+   * Wikipedia rather than the NBA's own statistics service, and the reason is
+   * licensing rather than data quality: the NBA's terms restrict its statistics
+   * to news reporting and non-commercial use, and specifically prohibit use in
+   * a service featuring a comprehensive statistics database. Wikipedia's
+   * per-season tables carry the same figures under a licence that permits
+   * storing facts.
+   */
+  async ingestBasketballStats(limit: number): Promise<{ players: number; blocks: number }> {
+    const targets = await this.targets('person', 'basketball', limit);
+
+    const [sportRow] = await this.database.db.execute<{ id: string }>(
+      sql`SELECT id FROM sport WHERE slug = 'basketball' LIMIT 1`,
+    );
+    if (!sportRow) return { players: 0, blocks: 0 };
+
+    const disciplines = await this.database.db.execute<{ id: string; key: string }>(
+      sql`SELECT d.id, d.key FROM discipline d WHERE d.sport_id = ${sportRow.id}`,
+    );
+    const byKey = new Map(disciplines.map((row) => [row.key, row.id]));
+
+    let players = 0;
+    let blocks = 0;
+
+    for (const [index, target] of targets.entries()) {
+      try {
+        const stats = await this.provider.fetchBasketballStats(target.title);
+        if (stats.length === 0) continue;
+
+        for (const block of stats) {
+          const disciplineId = block.discipline ? byKey.get(block.discipline) : null;
+          if (!disciplineId) continue;
+
+          await this.database.db.execute(sql`
+            INSERT INTO person_statistic (
+              person_id, sport_id, discipline_id, scope, appearances, stats, computed_at
+            ) VALUES (
+              ${target.id}, ${sportRow.id}, ${disciplineId}, 'career',
+              ${block.appearances ?? 0}, ${JSON.stringify(block.stats)}::jsonb, now()
+            )
+            ON CONFLICT (
+              person_id, scope,
+              coalesce(competition_id, '00000000-0000-0000-0000-000000000000'::uuid),
+              coalesce(season_id, '00000000-0000-0000-0000-000000000000'::uuid),
+              coalesce(team_id, '00000000-0000-0000-0000-000000000000'::uuid),
+              coalesce(discipline_id, '00000000-0000-0000-0000-000000000000'::uuid)
+            ) DO UPDATE SET
+              appearances = EXCLUDED.appearances,
+              stats = person_statistic.stats || EXCLUDED.stats,
+              computed_at = now()
+          `);
+          blocks += 1;
+        }
+
+        players += 1;
+      } catch (error) {
+        this.logger.warn(`Basketball stats failed for ${target.title}: ${this.message(error)}`);
+      }
+
+      if ((index + 1) % 25 === 0) {
+        this.logger.log(`  ${index + 1}/${targets.length} players, ${blocks} stat blocks`);
+      }
+    }
+
+    return { players, blocks };
+  }
+
+  /**
    * Ingests footballers' club careers into `person_team`.
    *
    * Club names are matched against teams we already hold, and spells at clubs

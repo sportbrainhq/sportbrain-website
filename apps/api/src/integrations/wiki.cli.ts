@@ -35,7 +35,7 @@ async function main(): Promise<void> {
 
   if (!command) {
     process.stderr.write(
-      'Usage: wiki <map|facts|rankings|cricket-stats|careers|all> [entityType] [sport] [limit]\n',
+      'Usage: wiki <map|facts|rankings|cricket-stats|basketball-stats|careers|all> [entityType] [sport] [limit]\n',
     );
     process.exitCode = 1;
     return;
@@ -87,6 +87,12 @@ async function main(): Promise<void> {
         break;
       }
 
+      case 'basketball-stats': {
+        const result = await ingestion.ingestBasketballStats(Number(args[0] ?? 200));
+        process.stdout.write(`${result.players} players, ${result.blocks} stat blocks\n`);
+        break;
+      }
+
       case 'cricket-stats': {
         const result = await ingestion.ingestCricketStats(Number(args[0] ?? 200));
         process.stdout.write(`${result.players} players, ${result.blocks} stat blocks\n`);
@@ -134,6 +140,11 @@ async function main(): Promise<void> {
 
         if (sportSlug === 'cricket') {
           const stats = await ingestion.ingestCricketStats(cap);
+          process.stdout.write(`  stats        ${stats.players} players, ${stats.blocks} blocks\n`);
+        }
+
+        if (sportSlug === 'basketball') {
+          const stats = await ingestion.ingestBasketballStats(cap);
           process.stdout.write(`  stats        ${stats.players} players, ${stats.blocks} blocks\n`);
         }
 
