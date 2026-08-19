@@ -126,16 +126,26 @@ export const CROSS_REFERENCE_PROPERTIES = {
  *      happily returns a team whose name is "Q1000185". Requiring a real English
  *      label drops those rather than storing visible nonsense.
  *
- * The class constraint is still needed alongside the competition one: P118
- * (league) is used on *players* as well as clubs, so without it this returns
- * footballers.
+ * Players are excluded by ruling out humans rather than by requiring a club
+ * class, and that difference is not cosmetic. Requiring "association football
+ * club" (Q476028) sounds correct and quietly drops most major clubs: FC
+ * Barcelona is classed as a men's association football team, not as a club, so
+ * the class filter excluded it entirely and the catalogue was missing one of the
+ * most-searched teams in the world. Measured across the five founding leagues,
+ * the class filter matches 105 entities while excluding humans matches 128.
+ *
+ * League membership already guarantees the entity is a club. The only thing that
+ * needs excluding is players, who carry P118 as well.
+ *
+ * The `_classQid` parameter is retained so the national-team path can keep
+ * passing one, but this query no longer uses it.
  *
  * Note that P118 is historical, so defunct clubs appear. That is correct for an
  * archive product and is what `team.isActive` exists to express.
  */
 export function teamsByCompetitionQuery(
   competitionQids: readonly string[],
-  classQid: string,
+  _classQid: string,
   limit: number,
   offset: number,
 ): string {
@@ -144,7 +154,7 @@ export function teamsByCompetitionQuery(
 SELECT ?item ?itemLabel ?inception ?countryLabel ?shortName ?logo WHERE {
   VALUES ?league { ${values} }
   ?item wdt:P118 ?league .
-  ?item wdt:P31/wdt:P279* wd:${classQid} .
+  FILTER NOT EXISTS { ?item wdt:P31 wd:${WD.HUMAN} }
   ?item rdfs:label ?itemLabel . FILTER(LANG(?itemLabel) = "en")
   OPTIONAL { ?item wdt:P571 ?inception }
   OPTIONAL { ?item wdt:P17 ?country }

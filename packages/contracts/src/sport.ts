@@ -70,6 +70,58 @@ export const sportDetailSchema = sportSchema.extend({
 });
 export type SportDetail = z.infer<typeof sportDetailSchema>;
 
+// --- Rich entity detail -----------------------------------------------------
+
+/** An ingested fact: nickname, motto, venue, coach. */
+export const entityFactSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  value: z.string(),
+  /** `identity`, `people`, `venue` or `commercial`. Groups facts on the page. */
+  category: z.string(),
+});
+export type EntityFact = z.infer<typeof entityFactSchema>;
+
+/** Authored prose about an entity: history, culture, notable eras. */
+export const entitySectionSchema = z.object({
+  kind: z.string(),
+  heading: z.string(),
+  body: z.string(),
+});
+export type EntitySection = z.infer<typeof entitySectionSchema>;
+
+/**
+ * A derived leaderboard.
+ *
+ * `confidence` is carried to the client on purpose. Several of these are
+ * aggregated from a community-edited source with partial coverage, and a table
+ * that looks authoritative while being roughly a third complete misleads. The
+ * page renders the caveat alongside the numbers.
+ */
+export const entityRankingSchema = z.object({
+  kind: z.string(),
+  label: z.string(),
+  confidence: z.enum(['high', 'partial', 'indicative']),
+  note: z.string().nullable(),
+  entries: z.array(
+    z.object({
+      rank: z.number().int(),
+      name: z.string(),
+      value: z.union([z.number(), z.string(), z.null()]),
+      detail: z.string().nullable(),
+    }),
+  ),
+});
+export type EntityRanking = z.infer<typeof entityRankingSchema>;
+
+/** The bundle that turns a thin entity page into a rich one. */
+export const entityProfileSchema = z.object({
+  facts: z.array(entityFactSchema),
+  sections: z.array(entitySectionSchema),
+  rankings: z.array(entityRankingSchema),
+});
+export type EntityProfile = z.infer<typeof entityProfileSchema>;
+
 /** A team in a list: the fields a card needs, and no more. */
 export const teamSummarySchema = z.object({
   id: z.string(),
@@ -138,6 +190,8 @@ export const teamDetailSchema = teamSummarySchema.extend({
   isActive: z.boolean(),
   honours: z.array(honourSchema),
   statistics: z.array(statisticGroupSchema),
+  /** Facts, authored prose and derived tables. Empty until the entity is enriched. */
+  profile: entityProfileSchema,
 });
 export type TeamDetail = z.infer<typeof teamDetailSchema>;
 
@@ -170,6 +224,7 @@ export const playerDetailSchema = playerSummarySchema.extend({
       endDate: z.string().nullable(),
     }),
   ),
+  profile: entityProfileSchema,
 });
 export type PlayerDetail = z.infer<typeof playerDetailSchema>;
 
@@ -223,6 +278,7 @@ export const competitionDetailSchema = competitionSummarySchema.extend({
     }),
   ),
   records: z.array(competitionRecordSchema),
+  profile: entityProfileSchema,
 });
 export type CompetitionDetail = z.infer<typeof competitionDetailSchema>;
 

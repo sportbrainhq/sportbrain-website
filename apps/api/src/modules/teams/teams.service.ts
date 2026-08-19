@@ -8,6 +8,7 @@ import {
 } from '@sportbrain/contracts';
 import { AppException } from '../../common';
 import { CacheService } from '../../infrastructure/cache/cache.service';
+import { ProfileAssembler } from '../shared/profile.assembler';
 import { StatisticsAssembler } from '../shared/statistics.assembler';
 import { TeamsRepository } from './teams.repository';
 
@@ -21,6 +22,7 @@ export class TeamsService {
     private readonly repository: TeamsRepository,
     private readonly statistics: StatisticsAssembler,
     private readonly cache: CacheService,
+    private readonly profiles: ProfileAssembler,
   ) {}
 
   async list(sportSlug: string, query: EntityListQuery): Promise<Paginated<TeamSummary>> {
@@ -47,9 +49,10 @@ export class TeamsService {
 
         // Honours and statistics in parallel: neither depends on the other, and
         // running them in sequence doubles the latency of every team page.
-        const [honours, statistics] = await Promise.all([
+        const [honours, statistics, profile] = await Promise.all([
           this.statistics.honoursFor({ teamId: row.id }),
           this.statistics.forTeam(row.id, row.sportId),
+          this.profiles.forEntity('team', row.id),
         ]);
 
         const detail: TeamDetail = {
@@ -66,6 +69,7 @@ export class TeamsService {
           sport: { slug: row.sportSlug, name: row.sportName },
           honours,
           statistics,
+          profile,
         };
 
         return detail;

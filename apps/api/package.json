@@ -20,6 +20,7 @@
     "db:studio": "drizzle-kit studio",
     "ingest": "tsx src/integrations/ingest.cli.ts",
     "seed": "tsx src/database/seed/seed.cli.ts",
+    "enrich": "tsx src/integrations/enrich.cli.ts",
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "dependencies": {

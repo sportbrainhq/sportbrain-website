@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { FactPanel, RankingPanel, SectionPanel } from '@/components/sports/entity-profile';
 import { ApiError, fetchCompetition } from '@/lib/api';
 import { buildMetadata } from '@/lib/seo';
 
@@ -58,6 +59,10 @@ export default async function CompetitionPage({
         </p>
       </header>
 
+      <FactPanel facts={competition.profile.facts} />
+
+      <SectionPanel sections={competition.profile.sections} />
+
       {competition.about && (
         <section>
           <h2 className="mb-2 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
@@ -99,6 +104,8 @@ export default async function CompetitionPage({
           </dl>
         </section>
       )}
+
+      <RankingPanel rankings={competition.profile.rankings} />
 
       {competition.seasons.length > 0 && (
         <section>

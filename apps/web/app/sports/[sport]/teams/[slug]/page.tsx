@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { FactPanel, RankingPanel, SectionPanel } from '@/components/sports/entity-profile';
 import { HonoursList } from '@/components/sports/entity-card';
 import { StatisticsPanel } from '@/components/sports/statistics-panel';
 import { ApiError, fetchTeam } from '@/lib/api';
@@ -65,6 +66,10 @@ export default async function TeamPage({
         </div>
       </header>
 
+      <FactPanel facts={team.profile.facts} />
+
+      <SectionPanel sections={team.profile.sections} />
+
       {team.about && (
         <section>
           <h2 className="mb-2 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
@@ -82,6 +87,8 @@ export default async function TeamPage({
           <HonoursList honours={team.honours} />
         </section>
       )}
+
+      <RankingPanel rankings={team.profile.rankings} />
 
       <section>
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground">

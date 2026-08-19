@@ -20,7 +20,24 @@ import {
   teamsByCompetitionQuery,
   venuesQuery,
 } from './wikidata.queries';
+import {
+  clubPeopleQuery,
+  clubPlayerTotalsQuery,
+  clubProfileQuery,
+  competitionAwardsQuery,
+  competitionEditionsQuery,
+  playerProfileQuery,
+} from './wikidata.enrichment';
 import { SPORT_SOURCES } from './wikidata.sources';
+
+/** One ingested fact, ready to be written to `entity_fact`. */
+export interface ProviderFact {
+  key: string;
+  label: string;
+  value: string;
+  category: string;
+  order: number;
+}
 
 /**
  * Wikidata adapter.
@@ -329,6 +346,180 @@ export class WikidataProvider implements SportsDataProvider {
     }
 
     return byPerson;
+  }
+
+  /**
+   * Descriptive facts about a club.
+   *
+   * Returns only what is present. Coverage between clubs varies far more than
+   * intuition suggests, so an empty result is a normal outcome rather than a
+   * failure.
+   */
+  async fetchClubProfile(teamQid: string): Promise<ProviderFact[]> {
+    const [row] = await this.runQuery(clubProfileQuery(teamQid));
+    if (!row) return [];
+
+    const facts: ProviderFact[] = [];
+    const add = (
+      key: string,
+      label: string,
+      value: string | undefined,
+      category: string,
+      order: number,
+    ) => {
+      if (value) facts.push({ key, label, value, category, order });
+    };
+
+    // Nicknames arrive concatenated to avoid row multiplication, and are split
+    // back out so each renders as its own fact.
+    if (row.nicknames) {
+      row.nicknames
+        .split(' | ')
+        .filter(Boolean)
+        .slice(0, 6)
+        .forEach((nickname, index) => {
+          facts.push({
+            key: `nickname_${index}`,
+            label: 'Nickname',
+            value: nickname,
+            category: 'identity',
+            order: 10 + index,
+          });
+        });
+    }
+
+    add('motto', 'Motto', row.motto, 'identity', 20);
+    add('anthem', 'Anthem', row.anthemLabel, 'identity', 30);
+    add('colours', 'Colours', row.colours, 'identity', 40);
+    add('mascot', 'Mascot', row.mascotLabel, 'identity', 50);
+    add('home_venue', 'Home venue', row.venueLabel, 'venue', 10);
+    add(
+      'venue_capacity',
+      'Capacity',
+      row.venueCapacity ? Number(row.venueCapacity).toLocaleString('en-GB') : undefined,
+      'venue',
+      20,
+    );
+    add('owner', 'Owner', row.ownerLabel, 'commercial', 10);
+    add(
+      'members',
+      'Members',
+      row.members ? Number(row.members).toLocaleString('en-GB') : undefined,
+      'commercial',
+      20,
+    );
+    add('website', 'Website', row.websiteUrl, 'commercial', 30);
+
+    return facts;
+  }
+
+  /**
+   * The current head coach, chairman and captain.
+   *
+   * Fetched as three separate requests. A single unioned query timed out on
+   * almost every club; see the note on `clubPeopleQuery`.
+   */
+  async fetchClubPeople(teamQid: string): Promise<ProviderFact[]> {
+    const roles = [
+      { property: 'P286' as const, key: 'head_coach', label: 'Head coach', order: 10 },
+      { property: 'P488' as const, key: 'chairman', label: 'Chairman', order: 20 },
+      { property: 'P634' as const, key: 'captain', label: 'Captain', order: 30 },
+    ];
+
+    const facts: ProviderFact[] = [];
+
+    for (const role of roles) {
+      try {
+        const [row] = await this.runQuery(clubPeopleQuery(teamQid, role.property));
+        if (row?.personLabel) {
+          facts.push({
+            key: role.key,
+            label: role.label,
+            value: row.personLabel,
+            category: 'people',
+            order: role.order,
+          });
+        }
+      } catch {
+        // One missing role must not cost the other two. Clubs frequently record
+        // a coach and no chairman, and that is not a failure.
+      }
+    }
+
+    return facts;
+  }
+
+  /**
+   * Goals and appearances per player, summed across their spells at a club.
+   *
+   * See the note on `clubPlayerTotalsQuery`: this is partial and contains known
+   * errors, and its output is labelled accordingly wherever it is displayed.
+   */
+  async fetchClubPlayerTotals(
+    teamQid: string,
+  ): Promise<{ name: string; goals: number; appearances: number }[]> {
+    const rows = await this.runQuery(clubPlayerTotalsQuery(teamQid));
+
+    return rows
+      .filter((row) => row.playerLabel)
+      .map((row) => ({
+        name: row.playerLabel!,
+        goals: Number(row.totalGoals ?? 0),
+        appearances: Number(row.totalApps ?? 0),
+      }));
+  }
+
+  /** A competition's editions, with winners and hosts. */
+  async fetchCompetitionEditions(
+    competitionQid: string,
+  ): Promise<{ label: string; year?: number; winner?: string; hosts?: string }[]> {
+    const rows = await this.runQuery(competitionEditionsQuery(competitionQid));
+
+    return rows
+      .filter((row) => row.editionLabel)
+      .map((row) => ({
+        label: row.editionLabel!,
+        // Tournaments carry a point in time; league seasons carry a start date.
+        year: this.year(row.when) ?? this.year(row.start),
+        winner: row.winnerLabel,
+        hosts: row.hosts || undefined,
+      }));
+  }
+
+  /** Per-edition individual awards: top scorer, best player, best goalkeeper. */
+  async fetchCompetitionAwards(
+    competitionQid: string,
+  ): Promise<{ person: string; criterion?: string; year?: number; value?: number }[]> {
+    const rows = await this.runQuery(competitionAwardsQuery(competitionQid));
+
+    return rows
+      .filter((row) => row.personLabel)
+      .map((row) => ({
+        person: row.personLabel!,
+        criterion: row.criterionLabel,
+        year: this.year(row.when),
+        value: row.value ? Number(row.value) : undefined,
+      }));
+  }
+
+  /** Draft and physical detail for a player. */
+  async fetchPlayerProfile(personQid: string): Promise<ProviderFact[]> {
+    const [row] = await this.runQuery(playerProfileQuery(personQid));
+    if (!row) return [];
+
+    const facts: ProviderFact[] = [];
+    const add = (key: string, label: string, value: string | undefined, order: number) => {
+      if (value) facts.push({ key, label, value, category: 'profile', order });
+    };
+
+    add('drafted_by', 'Drafted by', row.draftTeamLabel, 10);
+    add('draft_pick', 'Draft pick', row.draftPick ? `#${row.draftPick}` : undefined, 20);
+    add('draft_year', 'Draft year', row.draftYear?.slice(0, 4), 30);
+    add('height', 'Height', row.height ? `${Math.round(Number(row.height))} cm` : undefined, 40);
+    add('weight', 'Weight', row.mass ? `${Math.round(Number(row.mass))} kg` : undefined, 50);
+    add('position', 'Position', row.positionLabel, 60);
+
+    return facts;
   }
 
   // ---------------------------------------------------------------------------

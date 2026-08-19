@@ -1,4 +1,5 @@
 import { Global, Module } from '@nestjs/common';
+import { ProfileAssembler } from './profile.assembler';
 import { StatisticsAssembler } from './statistics.assembler';
 
 /**
@@ -11,7 +12,7 @@ import { StatisticsAssembler } from './statistics.assembler';
  */
 @Global()
 @Module({
-  providers: [StatisticsAssembler],
-  exports: [StatisticsAssembler],
+  providers: [StatisticsAssembler, ProfileAssembler],
+  exports: [StatisticsAssembler, ProfileAssembler],
 })
 export class SharedModule {}

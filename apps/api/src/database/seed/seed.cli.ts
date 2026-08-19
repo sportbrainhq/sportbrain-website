@@ -33,6 +33,7 @@ import postgres from 'postgres';
 import { loadConfiguration } from '../../config/configuration';
 import * as schema from '../schema';
 import { EXPLAINERS, SPORT_OVERVIEWS } from './editorial';
+import { COMPETITION_SECTIONS, TEAM_SECTIONS } from './entity-editorial';
 import { STATISTIC_REGISTRY } from './statistic-registry';
 
 for (const candidate of [resolve(process.cwd(), '../../.env'), resolve(process.cwd(), '.env')]) {
@@ -59,6 +60,9 @@ async function main(): Promise<void> {
 
     const explainers = await seedExplainers(db);
     process.stdout.write(`Content:  ${explainers} explainers published\n`);
+
+    const entitySections = await seedEntitySections(db);
+    process.stdout.write(`Content:  ${entitySections} entity sections published\n`);
   } catch (error) {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     process.exitCode = 1;
@@ -306,6 +310,52 @@ async function seedExplainers(db: Db): Promise<number> {
           updated_at = now()
       `);
       count += 1;
+    }
+  }
+
+  return count;
+}
+
+/**
+ * Publishes the authored sections for flagship entities.
+ *
+ * Written to `entity_section`, which enrichment never touches, so an ingestion
+ * run cannot overwrite a paragraph somebody wrote.
+ */
+async function seedEntitySections(db: Db): Promise<number> {
+  let count = 0;
+
+  const groups: [string, Record<string, (typeof TEAM_SECTIONS)[string]>][] = [
+    ['team', TEAM_SECTIONS],
+    ['competition', COMPETITION_SECTIONS],
+  ];
+
+  for (const [entityType, bySlug] of groups) {
+    for (const [slug, sections] of Object.entries(bySlug)) {
+      const [row] = await db.execute<{ id: string }>(
+        sql`SELECT id FROM ${sql.raw(entityType)} WHERE slug = ${slug} LIMIT 1`,
+      );
+      if (!row) {
+        process.stdout.write(`  skipped ${entityType} "${slug}": not in the database\n`);
+        continue;
+      }
+
+      for (const section of sections) {
+        await db.execute(sql`
+          INSERT INTO entity_section (
+            entity_type, entity_id, kind, heading, body, status, display_order
+          ) VALUES (
+            ${entityType}, ${row.id}, ${section.kind}, ${section.heading},
+            ${section.body}, 'published', ${section.order}
+          )
+          ON CONFLICT (entity_type, entity_id, kind) DO UPDATE SET
+            heading = EXCLUDED.heading,
+            body = EXCLUDED.body,
+            display_order = EXCLUDED.display_order,
+            updated_at = now()
+        `);
+        count += 1;
+      }
     }
   }
 

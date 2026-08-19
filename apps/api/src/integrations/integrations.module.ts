@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { EnrichmentService } from './ingestion/enrichment.service';
 import { EntityResolutionService } from './ingestion/entity-resolution.service';
 import { IngestionService } from './ingestion/ingestion.service';
 import { WikidataProvider } from './providers/wikidata/wikidata.provider';
@@ -22,7 +23,7 @@ import { WikidataProvider } from './providers/wikidata/wikidata.provider';
  * asking for data it cannot return.
  */
 @Module({
-  providers: [WikidataProvider, EntityResolutionService, IngestionService],
-  exports: [WikidataProvider, IngestionService, EntityResolutionService],
+  providers: [WikidataProvider, EntityResolutionService, IngestionService, EnrichmentService],
+  exports: [WikidataProvider, IngestionService, EntityResolutionService, EnrichmentService],
 })
 export class IntegrationsModule {}

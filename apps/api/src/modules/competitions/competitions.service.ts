@@ -11,6 +11,7 @@ import { AppException } from '../../common';
 import { DatabaseService } from '../../database/database.service';
 import { sport } from '../../database/schema';
 import { CacheService } from '../../infrastructure/cache/cache.service';
+import { ProfileAssembler } from '../shared/profile.assembler';
 import { CompetitionsRepository } from './competitions.repository';
 
 @Injectable()
@@ -22,6 +23,7 @@ export class CompetitionsService {
     private readonly repository: CompetitionsRepository,
     private readonly database: DatabaseService,
     private readonly cache: CacheService,
+    private readonly profiles: ProfileAssembler,
   ) {}
 
   async list(sportSlug: string, query: EntityListQuery): Promise<Paginated<CompetitionSummary>> {
@@ -48,9 +50,10 @@ export class CompetitionsService {
           .where(eq(sport.slug, sportSlug))
           .limit(1);
 
-        const [seasons, records] = await Promise.all([
+        const [seasons, records, profile] = await Promise.all([
           this.repository.seasonsFor(row.id),
           sportRow ? this.repository.recordsFor(row.id, sportRow.id) : Promise.resolve([]),
+          this.profiles.forEntity('competition', row.id),
         ]);
 
         const detail: CompetitionDetail = {
@@ -68,6 +71,7 @@ export class CompetitionsService {
           sport: { slug: row.sportSlug, name: row.sportName },
           seasons,
           records,
+          profile,
         };
 
         return detail;

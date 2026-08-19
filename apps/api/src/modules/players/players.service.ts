@@ -8,6 +8,7 @@ import {
 } from '@sportbrain/contracts';
 import { AppException } from '../../common';
 import { CacheService } from '../../infrastructure/cache/cache.service';
+import { ProfileAssembler } from '../shared/profile.assembler';
 import { StatisticsAssembler } from '../shared/statistics.assembler';
 import { PlayersRepository } from './players.repository';
 
@@ -20,6 +21,7 @@ export class PlayersService {
     private readonly repository: PlayersRepository,
     private readonly statistics: StatisticsAssembler,
     private readonly cache: CacheService,
+    private readonly profiles: ProfileAssembler,
   ) {}
 
   async list(sportSlug: string, query: EntityListQuery): Promise<Paginated<PlayerSummary>> {
@@ -40,10 +42,11 @@ export class PlayersService {
         const row = await this.repository.findBySlug(sportSlug, slug);
         if (!row) return null;
 
-        const [honours, statistics, teams] = await Promise.all([
+        const [honours, statistics, teams, profile] = await Promise.all([
           this.statistics.honoursFor({ personId: row.id }),
           this.statistics.forPerson(row.id, row.sportId),
           this.repository.teamsFor(row.id),
+          this.profiles.forEntity('person', row.id),
         ]);
 
         const detail: PlayerDetail = {
@@ -75,6 +78,7 @@ export class PlayersService {
             startDate: entry.startDate,
             endDate: entry.endDate,
           })),
+          profile,
         };
 
         return detail;
