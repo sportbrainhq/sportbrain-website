@@ -1,4 +1,4 @@
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 import {
   boolean,
   date,
@@ -77,6 +77,25 @@ export const personTeam = pgTable(
     index('person_team_person_idx').on(table.personId, table.startDate),
     index('person_team_team_idx').on(table.teamId, table.role),
     index('person_team_current_idx').on(table.teamId, table.endDate),
+    /**
+     * Stops the same spell being recorded twice.
+     *
+     * Ingestion used `onConflictDoNothing` with nothing to conflict against, so
+     * re-running a career import inserted a second copy of every spell rather
+     * than skipping it: 1,010 of 6,344 rows were duplicates, and they reached
+     * the API as repeated entries on a player's timeline.
+     *
+     * Dates are coalesced to sentinels because they are nullable and Postgres
+     * treats nulls as distinct, which would leave open-ended spells
+     * unconstrained. The same trap as the statistics indexes.
+     */
+    uniqueIndex('person_team_unique_idx').on(
+      table.personId,
+      table.teamId,
+      table.role,
+      sql`coalesce(${table.startDate}, '1000-01-01'::date)`,
+      sql`coalesce(${table.endDate}, '9999-12-31'::date)`,
+    ),
   ],
 );
 

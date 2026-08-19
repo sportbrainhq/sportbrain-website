@@ -348,7 +348,18 @@ export class WikipediaIngestionService {
               })}::jsonb,
               'verified'
             )
-            ON CONFLICT DO NOTHING
+            -- Targets the unique index explicitly, coalescing included. A bare
+            -- ON CONFLICT DO NOTHING matches no constraint here and therefore
+            -- does nothing at all, which is how the first run duplicated every
+            -- spell it had already written.
+            ON CONFLICT (
+              person_id, team_id, role,
+              coalesce(start_date, '1000-01-01'::date),
+              coalesce(end_date, '9999-12-31'::date)
+            ) DO UPDATE SET
+              attributes = person_team.attributes || EXCLUDED.attributes,
+              confidence = EXCLUDED.confidence,
+              updated_at = now()
           `);
           spells += 1;
         }

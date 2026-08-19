@@ -204,9 +204,20 @@ export class WikipediaProvider {
     const tables = parseTables(html);
     const rankings: WikiRanking[] = [];
 
-    const appearances = findTable(tables, ['rank', 'player'], ['total', 'league', 'apps']);
+    // `rank` is not required. Many records articles number their rows
+    // implicitly and start straight at the player column: Benfica's tables read
+    // `Player | Years | Matches | Goals` and were skipped entirely by a matcher
+    // that insisted on a rank column.
+    const appearances =
+      findTable(tables, ['player'], ['total', 'apps', 'appearances', 'matches', 'games']) ?? null;
     if (appearances) {
-      const entries = this.rowsToEntries(appearances, ['total', 'apps', 'appearances']);
+      const entries = this.rowsToEntries(appearances, [
+        'total',
+        'apps',
+        'appearances',
+        'matches',
+        'games',
+      ]);
       if (entries.length > 0) {
         rankings.push({
           kind: 'most_appearances',
@@ -221,7 +232,7 @@ export class WikipediaProvider {
       }
     }
 
-    const scorers = findTable(tables, ['rank', 'player'], ['goals', 'official goals']);
+    const scorers = findTable(tables, ['player'], ['goals', 'official goals']);
     if (scorers && scorers !== appearances) {
       const entries = this.rowsToEntries(scorers, ['goals', 'official goals', 'total']);
       if (entries.length > 0) {
@@ -453,19 +464,43 @@ export class WikipediaProvider {
     const normalise = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
     const headers = table.headers.map(normalise);
 
+    // Combined columns such as "League Games/Goals" hold two numbers in one
+    // cell and cannot be read as a single value, so they are passed over in
+    // favour of a column that holds one.
+    const isCombined = (header: string) => header.includes('games') && header.includes('goals');
+
     const valueIndex = valueHeaders
-      .map((header) => headers.findIndex((candidate) => candidate.includes(normalise(header))))
+      .map((header) =>
+        headers.findIndex(
+          (candidate) => candidate.includes(normalise(header)) && !isCombined(candidate),
+        ),
+      )
       .find((index) => index >= 0);
 
     const nameIndex = headers.findIndex((header) => header.includes('player'));
-    if (nameIndex < 0 || valueIndex === undefined) return [];
+    if (nameIndex < 0) return [];
+
+    // Falling back to a combined column when no plain one exists. Arsenal's
+    // records article offers only "League Games/Goals" style columns, whose
+    // cells read "406/0", and skipping them left the club with no tables at
+    // all. Which half to take depends on what is being ranked.
+    const combinedIndex =
+      valueIndex === undefined ? headers.findIndex((header) => isCombined(header)) : -1;
+    if (valueIndex === undefined && combinedIndex < 0) return [];
+
+    const wantsGoals = valueHeaders.some((header) => header.includes('goal'));
 
     const entries: WikiRankingEntry[] = [];
 
     for (const row of table.rows) {
       const name = row.cells[nameIndex];
-      const rawValue = row.cells[valueIndex];
-      if (!name || !rawValue) continue;
+      const rawCell = row.cells[valueIndex ?? combinedIndex];
+      if (!name || !rawCell) continue;
+
+      // A combined cell reads "406/0": appearances before the slash, goals
+      // after it.
+      const rawValue =
+        valueIndex === undefined ? (rawCell.split('/')[wantsGoals ? 1 : 0] ?? '') : rawCell;
 
       const value = parseNumber(rawValue);
       if (value === null) continue;
@@ -475,7 +510,16 @@ export class WikipediaProvider {
       // first link is therefore a country.
       const link = row.cellLinks[nameIndex]?.[0];
 
+      // A name that is purely numeric means the columns were misidentified and
+      // the rank column is being read as both name and value. Hearts' tables
+      // came back as "1, 2, 3" against values "1, 2, 3" for exactly that
+      // reason, which is worse than no table at all.
+      if (/^\d+$/.test(name.trim())) continue;
+
       entries.push({
+        // Derived from position rather than read from a column, because a rank
+        // column is optional and, where present, is often blank on rows that
+        // share a position.
         rank: entries.length + 1,
         name,
         value,
@@ -485,6 +529,17 @@ export class WikipediaProvider {
 
       if (entries.length >= 25) break;
     }
+
+    // Sorted and renumbered rather than trusted as read. Not every records
+    // article lists its rows in order: Fortaleza's goalscorers arrived with 0
+    // ranked above 29, because the page sorts by a different column than the
+    // one being extracted.
+    entries.sort((a, b) => Number(b.value ?? 0) - Number(a.value ?? 0));
+    for (const [index, entry] of entries.entries()) entry.rank = index + 1;
+
+    // A leaderboard whose top value is zero was not a leaderboard for the thing
+    // being asked about.
+    if (entries.length === 0 || Number(entries[0]?.value ?? 0) <= 0) return [];
 
     return entries;
   }
