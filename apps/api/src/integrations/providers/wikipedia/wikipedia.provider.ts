@@ -146,7 +146,22 @@ export class WikipediaProvider {
       ['top goalscorer', 'Top scorer', 'records', 70],
       ['tv', 'Broadcasters', 'commercial', 90],
       ['broadcasters', 'Broadcasters', 'commercial', 90],
+      ['broadcaster', 'Broadcasters', 'commercial', 90],
       ['website', 'Website', 'commercial', 100],
+
+      // Leagues rather than tournaments: the NBA names its commissioner, its
+      // team count and its most successful franchise under different keys from
+      // the cup competitions the map was built for.
+      ['commissioner', 'Commissioner', 'governance', 12],
+      ['ceo', 'Chief executive', 'governance', 13],
+      ['president', 'President', 'governance', 14],
+      ['teams', 'Teams', 'format', 40],
+      ['countries', 'Countries', 'format', 45],
+      ['continent', 'Region', 'format', 46],
+      ['headquarters', 'Headquarters', 'governance', 15],
+      ['most_titles', 'Most titles', 'honours', 60],
+      ['champion', 'Current champions', 'honours', 50],
+      ['upcoming_season', 'Current season', 'format', 48],
     ];
 
     return this.factsFrom(box, map);
@@ -240,6 +255,22 @@ export class WikipediaProvider {
       ['title1wins', 'Titles won', 'honours', 51],
       ['title2', 'Second competition', 'honours', 52],
       ['title2wins', 'Second competition titles', 'honours', 53],
+
+      // Basketball franchises are organised by conference and division rather
+      // than by league alone, and record their titles under `league_champs`.
+      ['conference', 'Conference', 'competition', 71],
+      ['division', 'Division', 'competition', 72],
+      ['arena', 'Arena', 'venue', 40],
+      ['location', 'Location', 'identity', 28],
+      ['colors', 'Colours', 'identity', 26],
+      ['league_champs', 'Championships', 'honours', 50],
+      ['conf_champs', 'Conference titles', 'honours', 54],
+      ['div_champs', 'Division titles', 'honours', 56],
+      ['gm', 'General manager', 'people', 67],
+      ['ceo', 'Chief executive', 'people', 68],
+      ['president', 'President', 'people', 69],
+      ['affiliation', 'Affiliate', 'competition', 76],
+      ['sponsor', 'Sponsor', 'commercial', 82],
     ];
 
     return this.factsFrom(box, map);
