@@ -5,6 +5,7 @@ import { FactPanel, RankingPanel, SectionPanel } from '@/components/sports/entit
 import { HonoursList } from '@/components/sports/entity-card';
 import { StatisticsPanel } from '@/components/sports/statistics-panel';
 import { ApiError, fetchTeam } from '@/lib/api';
+import { imageUrl } from '@/lib/image';
 import { buildMetadata } from '@/lib/seo';
 
 export async function generateMetadata({
@@ -45,7 +46,13 @@ export default async function TeamPage({
       <header className="flex flex-wrap items-start gap-4">
         {team.logoUrl && (
           // eslint-disable-next-line @next/next/no-img-element -- third-party host
-          <img src={team.logoUrl} alt="" className="size-20 rounded-lg object-contain" />
+          <img
+            src={imageUrl(team.logoUrl, 160) ?? undefined}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            className="size-20 rounded-lg object-contain"
+          />
         )}
         <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">

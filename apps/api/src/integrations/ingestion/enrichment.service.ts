@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { sql } from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
 import { entityFact, entityRanking } from '../../database/schema';
 import { WikidataProvider } from '../providers/wikidata/wikidata.provider';
@@ -71,7 +72,10 @@ export class EnrichmentService {
         // incorrect. The note below carries that caveat to the reader.
         await this.writeRanking('team', teamId, {
           kind: 'top_scorers',
-          label: 'Notable scorers',
+          // Same label as the parsed table, because the reader is looking for
+          // the same thing either way. The `partial` confidence and the note
+          // below are what say the figures are incomplete, not the heading.
+          label: 'Top scorers',
           entries: scorers,
           confidence: 'partial',
           note: 'Aggregated from community-maintained records. Coverage is incomplete and figures may differ from official club records.',
@@ -93,7 +97,7 @@ export class EnrichmentService {
       if (appearances.length > 0) {
         await this.writeRanking('team', teamId, {
           kind: 'most_appearances',
-          label: 'Notable appearance makers',
+          label: 'Most appearances',
           entries: appearances,
           confidence: 'partial',
           note: 'Aggregated from community-maintained records. Coverage is incomplete.',
@@ -275,6 +279,14 @@ export class EnrichmentService {
           note: ranking.note,
           updatedAt: new Date(),
         },
+        // A partial aggregation must never replace a table parsed from the
+        // club's records article. Both write the same key, so without this the
+        // winner was whichever ran last: Barcelona's page showed Josep Samitier
+        // as its leading scorer on 333, where the records article says Messi on
+        // 672. The aggregate is built from about a third of the club's player
+        // spells, so it is a fallback for clubs with no parsable article and
+        // nothing more.
+        setWhere: sql`${entityRanking.confidence} <> 'high' OR ${ranking.confidence} = 'high'`,
       });
   }
 

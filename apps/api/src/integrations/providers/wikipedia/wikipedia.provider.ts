@@ -1,13 +1,39 @@
 import { Injectable } from '@nestjs/common';
 import { WikipediaClient } from './wikipedia.client';
 import {
-  findTable,
+  findTableByHeading,
   parseInfobox,
   parseNumber,
   parseTables,
   type Infobox,
   type ParsedTable,
 } from './wikipedia.parser';
+
+/**
+ * Drops a parenthetical from a table cell.
+ *
+ * Records tables routinely carry two numbers in one cell: "450 (438)" is 450
+ * goals in 438 appearances, "963 (161)" is 963 appearances of which 161 were
+ * as a substitute. Only the leading figure is the ranked value.
+ */
+function stripParenthetical(value: string): string {
+  const withoutBrackets = value.replace(/\s*\([^)]*\)/g, '').trim();
+
+  // Sort-key padding, removed before the number is read. Manchester United's
+  // tables pad both sides so the column sorts numerically in the browser:
+  // Giggs's league total is "0 74" and Charlton's overall is "758 00". Reading
+  // this naively went wrong twice over. Collapsing the whitespace turned
+  // "963 (161)" into 963161, crediting the club's record appearance holder with
+  // 75,800 games; taking the last token instead then read Charlton's "758 00"
+  // as 00 and dropped him to zero.
+  //
+  // The real figure is the longest run of digits, since padding is by
+  // definition shorter than the number it aligns.
+  const parts = withoutBrackets.split(/\s+/).filter(Boolean);
+  if (parts.length <= 1) return withoutBrackets;
+
+  return parts.reduce((longest, part) => (part.length > longest.length ? part : longest));
+}
 
 /** A fact ready to write to `entity_fact`. */
 export interface WikiFact {
@@ -291,23 +317,38 @@ export class WikipediaProvider {
     const tables = parseTables(html);
     const rankings: WikiRanking[] = [];
 
-    // `rank` is not required. Many records articles number their rows
-    // implicitly and start straight at the player column: Benfica's tables read
-    // `Player | Years | Matches | Goals` and were skipped entirely by a matcher
-    // that insisted on a rank column.
-    const appearances =
-      findTable(tables, ['player'], ['total', 'apps', 'appearances', 'matches', 'games']) ?? null;
+    // Anchored to the article's own headings before falling back to columns.
+    // These pages carry many tables with a player column and a number: Real
+    // Madrid's has nineteen tables, including by-season and by-competition
+    // lists that look identical to a column matcher. Choosing on columns alone
+    // published a by-competition table as the club's all-time top scorers,
+    // which listed Ronaldo five times and then started naming seasons.
+    //
+    // Heading terms are ordered by how specific they are, so "Most goals"
+    // beats the section-level "Goalscorers" that contains it.
+    const appearances = findTableByHeading(
+      tables,
+      ['Most appearances', 'Appearances', 'Most apps', 'All competitions'],
+      ['player'],
+      ['total', 'apps', 'appearances', 'matches', 'games'],
+    );
     if (appearances) {
       const entries = this.rowsToEntries(appearances, [
+        // "Total" first, deliberately. These tables break appearances down by
+        // competition and then total them, and any single competition column
+        // matches "apps" just as well as the total does.
         'total',
-        'apps',
         'appearances',
+        'apps',
         'matches',
         'games',
       ]);
       if (entries.length > 0) {
         rankings.push({
           kind: 'most_appearances',
+          // Fixed label rather than one derived from the article, so the same
+          // heading appears on every club whatever its page happens to call
+          // the section.
           label: 'Most appearances',
           entries,
           // Sourced from a maintained records article rather than aggregated
@@ -319,13 +360,26 @@ export class WikipediaProvider {
       }
     }
 
-    const scorers = findTable(tables, ['player'], ['goals', 'official goals']);
+    const scorers = findTableByHeading(
+      tables,
+      [
+        'Most goals',
+        'Top goalscorers',
+        'Overall scorers',
+        'Top 10 all-time scorers',
+        'All-time scorers',
+        'Goalscorers',
+        'Top scorers',
+      ],
+      ['player'],
+      ['goals', 'official goals', 'total'],
+    );
     if (scorers && scorers !== appearances) {
-      const entries = this.rowsToEntries(scorers, ['goals', 'official goals', 'total']);
+      const entries = this.rowsToEntries(scorers, ['official goals', 'total', 'goals']);
       if (entries.length > 0) {
         rankings.push({
           kind: 'top_scorers',
-          label: 'Top goalscorers',
+          label: 'Top scorers',
           entries,
           confidence: 'high',
           note: 'From the club records article on Wikipedia.',
@@ -701,13 +755,36 @@ export class WikipediaProvider {
     // favour of a column that holds one.
     const isCombined = (header: string) => header.includes('games') && header.includes('goals');
 
-    const valueIndex = valueHeaders
-      .map((header) =>
-        headers.findIndex(
-          (candidate) => candidate.includes(normalise(header)) && !isCombined(candidate),
-        ),
-      )
-      .find((index) => index >= 0);
+    // Rate columns are never the ranked value. Manchester United's scorers
+    // table ends with "Goals per game", and a substring match for "goals"
+    // found it before "Total", so the club's top scorer was published as
+    // "Tommy Taylor 0.689". Ratios are excluded outright rather than ranked
+    // lower, because no records table ranks players by one.
+    const isRate = (header: string) =>
+      header.includes('pergame') ||
+      header.includes('permatch') ||
+      header === 'ratio' ||
+      header.includes('average');
+
+    // Exact header match first, then prefix, then substring. Without the
+    // ordering a column called "Goals per game" satisfies a search for "goals"
+    // as readily as the column actually called "Goals".
+    const findColumn = (term: string): number => {
+      const wanted = normalise(term);
+      const usable = (candidate: string) => !isCombined(candidate) && !isRate(candidate);
+
+      const exact = headers.findIndex((candidate) => candidate === wanted && usable(candidate));
+      if (exact >= 0) return exact;
+
+      const prefixed = headers.findIndex(
+        (candidate) => candidate.startsWith(wanted) && usable(candidate),
+      );
+      if (prefixed >= 0) return prefixed;
+
+      return headers.findIndex((candidate) => candidate.includes(wanted) && usable(candidate));
+    };
+
+    const valueIndex = valueHeaders.map(findColumn).find((index) => index >= 0);
 
     const nameIndex = headers.findIndex((header) => header.includes('player'));
     if (nameIndex < 0) return [];
@@ -734,7 +811,14 @@ export class WikipediaProvider {
       const rawValue =
         valueIndex === undefined ? (rawCell.split('/')[wantsGoals ? 1 : 0] ?? '') : rawCell;
 
-      const value = parseNumber(rawValue);
+      // Many records tables annotate the ranked figure with a second one in
+      // parentheses: Real Madrid's scorers read "450 (438)", meaning 450 goals
+      // in 438 appearances, and Manchester United's appearances read
+      // "963 (161)" for appearances including substitutions. The bracketed
+      // figure is context, never the ranked value, so it is dropped before
+      // parsing. Without this every such row was rejected outright, which is
+      // why the two largest clubs had no scorers table at all.
+      const value = parseNumber(stripParenthetical(rawValue));
       if (value === null) continue;
 
       // The link is taken from the name's own cell rather than from the row,

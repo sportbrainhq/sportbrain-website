@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import type { CompetitionSummary, PlayerSummary, TeamSummary } from '@sportbrain/contracts';
+import { imageUrl } from '@/lib/image';
 
 /**
  * Cards for the list views.
@@ -10,7 +11,11 @@ import type { CompetitionSummary, PlayerSummary, TeamSummary } from '@sportbrain
  * taking a props bag would hide that difference behind conditionals.
  */
 
-function Avatar({ text, imageUrl }: { text: string; imageUrl?: string | null }) {
+function Avatar({ text, imageUrl: source }: { text: string; imageUrl?: string | null }) {
+  // Requested at twice the rendered size so the image is still sharp on a
+  // high-density display, and no larger.
+  const src = imageUrl(source, 80);
+
   const initials = text
     .split(/\s+/)
     .slice(0, 2)
@@ -18,14 +23,15 @@ function Avatar({ text, imageUrl }: { text: string; imageUrl?: string | null }) 
     .join('')
     .toUpperCase();
 
-  return imageUrl ? (
+  return src ? (
     // eslint-disable-next-line @next/next/no-img-element -- Remote hosts are not
     // in next.config's remotePatterns, and adding them would turn the deployment
     // into an open image proxy. These are third-party URLs we do not control.
     <img
-      src={imageUrl}
+      src={src}
       alt=""
       loading="lazy"
+      decoding="async"
       className="size-10 shrink-0 rounded-full object-cover"
     />
   ) : (

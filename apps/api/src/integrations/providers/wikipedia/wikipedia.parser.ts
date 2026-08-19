@@ -33,6 +33,14 @@ export type Infobox = Record<string, string>;
 /** A recognised table: its heading, its columns, and its rows. */
 export interface ParsedTable {
   heading: string | null;
+  /**
+   * The heading hierarchy above the table, outermost first.
+   *
+   * Needed because the nearest heading is frequently a subdivision that says
+   * nothing on its own: Barcelona's all-time scorers sit under "Top
+   * goalscorers" > "All competitions", and only the ancestor identifies them.
+   */
+  headingPath: string[];
   headers: string[];
   rows: ParsedRow[];
 }
@@ -206,12 +214,40 @@ export function cleanWikitext(value: string): string {
 export function parseTables(html: string): ParsedTable[] {
   const tables: ParsedTable[] = [];
 
-  const tableMatches = html.matchAll(
-    /<table[^>]*class="[^"]*wikitable[^"]*"[^>]*>([\s\S]*?)<\/table>/g,
-  );
+  // Headings are captured alongside the tables rather than ignored, because on
+  // a records article the heading is the only thing that distinguishes tables
+  // with identical columns. Real Madrid's page carries an all-time scorers
+  // table, a by-season one and a by-competition one, all of them "Player" plus
+  // "Goals"; without the heading there is no way to tell which is which, and
+  // choosing on columns alone published a by-competition table as the club's
+  // all-time list.
+  const sections = [
+    ...html.matchAll(
+      /<h([2-4])[^>]*>([\s\S]*?)<\/h[2-4]>|<table[^>]*class="[^"]*wikitable[^"]*"[^>]*>([\s\S]*?)<\/table>/g,
+    ),
+  ];
 
-  for (const match of tableMatches) {
-    const body = match[1] ?? '';
+  // A stack rather than a single value, because the nearest heading is often
+  // the least informative one. Barcelona files its all-time scorers under
+  // "Top goalscorers" and then subdivides it with "All competitions"; matching
+  // only the nearest heading sees "All competitions", which says nothing about
+  // what is being ranked. Keeping the ancestors lets a caller match either.
+  const stack: { level: number; text: string }[] = [];
+
+  for (const match of sections) {
+    // A heading match updates the running context and produces no table.
+    if (match[2] !== undefined) {
+      const level = Number(match[1] ?? '2');
+      const text = cleanHtml(match[2])
+        .replace(/\[edit\]/gi, '')
+        .trim();
+      if (!text) continue;
+      while (stack.length > 0 && stack[stack.length - 1]!.level >= level) stack.pop();
+      stack.push({ level, text });
+      continue;
+    }
+
+    const body = match[3] ?? '';
 
     // `<tr id="mwB74">` rather than a bare `<tr>`: the REST renderer stamps an
     // identifier on every element, and a pattern expecting bare tags matches
@@ -234,30 +270,81 @@ export function parseTables(html: string): ParsedTable[] {
 
     const rows: ParsedRow[] = [];
 
+    /**
+     * Cells still spanning down from an earlier row, keyed by column.
+     *
+     * Wikipedia merges the rank cell when players tie, and merges the player
+     * cell when someone has two spells at a club. The row underneath then has
+     * fewer cells than there are columns, and reading it positionally shifts
+     * every value one column left. That is how Manchester United's top scorers
+     * came out as year ranges: the tied rows at ranks 5 and 7 lost their rank
+     * cell, so the player column was read from the years column.
+     */
+    let carried = new Map<number, { value: string; links: string[]; remaining: number }>();
+
     for (const chunk of rowChunks.slice(1)) {
-      const cells = [...chunk.matchAll(/<t[hd][^>]*>([\s\S]*?)<\/t[hd]>/g)].map((cell) =>
-        cleanHtml(cell[1] ?? ''),
-      );
-      if (cells.length === 0) continue;
+      const rawCells = [...chunk.matchAll(/<t[hd][^>]*>([\s\S]*?)<\/t[hd]>/g)];
+      if (rawCells.length === 0) continue;
+
+      // Full attribute text per cell, so the rowspan can be read back off it.
+      const rawTags = [...chunk.matchAll(/<t[hd]([^>]*)>([\s\S]*?)<\/t[hd]>/g)];
+
+      const cells: string[] = [];
+      const cellLinks: string[][] = [];
 
       // Links are captured per cell rather than per row, because their order
       // is not the column order: many tables put a flag icon before the name,
       // so the first link in a row is a country and the player is second.
       // Keyed by cell index, the caller can ask for the link in the column it
       // actually cares about.
-      const cellLinks = [...chunk.matchAll(/<t[hd][^>]*>([\s\S]*?)<\/t[hd]>/g)].map((cell) =>
-        [...(cell[1] ?? '').matchAll(/href="\.\/([^"#]+)"/g)].map((link) =>
+      const readLinks = (inner: string) =>
+        [...inner.matchAll(/href="\.\/([^"#]+)"/g)].map((link) =>
           decodeURIComponent(link[1] ?? '').replace(/_/g, ' '),
-        ),
-      );
+        );
 
-      const links = cellLinks.flat();
+      const nextCarried = new Map<number, { value: string; links: string[]; remaining: number }>();
+      let source = 0;
 
-      rows.push({ cells, links, cellLinks });
+      for (let column = 0; column < headers.length; column += 1) {
+        const inherited = carried.get(column);
+        if (inherited) {
+          // A cell spanning into this row occupies its column without
+          // consuming one of the row's own cells.
+          cells.push(inherited.value);
+          cellLinks.push(inherited.links);
+          if (inherited.remaining > 1) {
+            nextCarried.set(column, { ...inherited, remaining: inherited.remaining - 1 });
+          }
+          continue;
+        }
+
+        const tag = rawTags[source];
+        if (!tag) break;
+        source += 1;
+
+        const value = cleanHtml(tag[2] ?? '');
+        const links = readLinks(tag[2] ?? '');
+        cells.push(value);
+        cellLinks.push(links);
+
+        const span = Number(/rowspan="?(\d+)"?/i.exec(tag[1] ?? '')?.[1] ?? '1');
+        if (span > 1) nextCarried.set(column, { value, links, remaining: span - 1 });
+      }
+
+      carried = nextCarried;
+
+      if (cells.length === 0) continue;
+
+      rows.push({ cells, links: cellLinks.flat(), cellLinks });
     }
 
     if (rows.length > 0) {
-      tables.push({ heading: null, headers, rows });
+      tables.push({
+        heading: stack.length > 0 ? stack[stack.length - 1]!.text : null,
+        headingPath: stack.map((entry) => entry.text),
+        headers,
+        rows,
+      });
     }
   }
 
@@ -330,6 +417,94 @@ export function findTable(
   }
 
   return best?.table ?? null;
+}
+
+/**
+ * Finds the table a records article files under a given heading.
+ *
+ * Header matching alone is not enough on these pages, and the failure is not
+ * subtle. Real Madrid's article carries nineteen tables, several of which have
+ * a player column and a goals column: a by-season list, a by-competition list,
+ * and the all-time list. Choosing between them on columns alone picked a
+ * by-competition table, so the club's top scorer read "Cristiano Ronaldo 61"
+ * five times over and then began listing seasons as though they were players.
+ *
+ * Wikipedia already states which table is which, in the heading above it. This
+ * matches that heading first and falls back to column matching only when no
+ * heading matches, which is what makes the same code correct on articles that
+ * happen to have exactly one candidate.
+ *
+ * `headingTerms` are tried in order, so a caller can express that "Most goals"
+ * is the wanted table and "Goalscorers" is an acceptable second choice.
+ */
+export function findTableByHeading(
+  tables: ParsedTable[],
+  headingTerms: string[],
+  required: string[],
+  optional: string[] = [],
+): ParsedTable | null {
+  const normalise = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  const satisfies = (table: ParsedTable) => {
+    const headers = table.headers.map(normalise);
+    return required.every((term) => headers.some((header) => header.includes(normalise(term))));
+  };
+
+  // Headings that qualify a table as a subset rather than the whole record.
+  // Tottenham's page carries "Top 10 European competition scorers" and
+  // Newcastle's a goalkeeping section, both of which satisfy every column test
+  // the all-time table does. Matching them produced Harry Kane with 41 goals
+  // and Newcastle's record scorer as a goalkeeper with 13.
+  const isSubset = (table: ParsedTable) =>
+    table.headingPath.some((entry) =>
+      /european|champions league|league only|domestic|in a season|by season|single season|goalkeep|clean sheet|substitute|youngest|oldest|fastest/i.test(
+        entry,
+      ),
+    );
+
+  for (const term of headingTerms) {
+    const wanted = normalise(term);
+
+    // Exact heading before partial, so "Most goals" is not beaten by
+    // "Most goals in a season" simply because that table appeared first.
+    const candidates = tables.filter(
+      (table) => table.headingPath.length > 0 && satisfies(table) && !isSubset(table),
+    );
+
+    const exact = candidates.filter((table) =>
+      table.headingPath.some((entry) => normalise(entry) === wanted),
+    );
+    if (exact.length > 0) return best(exact, wanted);
+
+    const partial = candidates.filter((table) =>
+      table.headingPath.some((entry) => normalise(entry).includes(wanted)),
+    );
+    if (partial.length > 0) return best(partial, wanted);
+  }
+
+  return findTable(tables, required, optional);
+}
+
+/**
+ * Chooses between tables that all match a heading term.
+ *
+ * Row count is deliberately not the tiebreak. A season-by-season list is longer
+ * than the all-time top ten beside it, and ranking on length picked Juventus's
+ * seasonal scorers, crediting the club's record goalscorer with 35.
+ *
+ * The table whose own nearest heading is the match wins, since a table sitting
+ * directly under "Most goals" is the one that heading refers to; anything
+ * matching only through an ancestor is a subdivision of it. Ties fall back to
+ * document order, which on these articles puts the overall table first.
+ */
+function best(tables: ParsedTable[], wanted: string): ParsedTable {
+  const normalise = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  const direct = tables.filter(
+    (table) => table.heading && normalise(table.heading).includes(wanted),
+  );
+
+  return direct[0] ?? tables[0]!;
 }
 
 /**
