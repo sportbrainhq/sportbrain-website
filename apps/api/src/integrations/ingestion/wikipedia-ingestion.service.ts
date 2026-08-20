@@ -259,7 +259,7 @@ export class WikipediaIngestionService {
         if (extracted.length === 0) continue;
 
         for (const ranking of extracted) {
-          await this.writeRanking('team', target.id, ranking);
+          await this.writeRanking('team', target.id, ranking, recordsTitle);
           rankings += 1;
         }
         teams += 1;
@@ -631,6 +631,7 @@ export class WikipediaIngestionService {
     entityType: string,
     entityId: string,
     ranking: WikiRanking,
+    sourceTitle: string | null,
   ): Promise<void> {
     await this.database.db
       .insert(entityRanking)
@@ -642,6 +643,7 @@ export class WikipediaIngestionService {
         entries: ranking.entries,
         confidence: ranking.confidence,
         note: ranking.note,
+        sourceTitle,
       })
       .onConflictDoUpdate({
         target: [entityRanking.entityType, entityRanking.entityId, entityRanking.kind],
@@ -650,6 +652,7 @@ export class WikipediaIngestionService {
           entries: ranking.entries,
           confidence: ranking.confidence,
           note: ranking.note,
+          sourceTitle,
           updatedAt: new Date(),
         },
       });

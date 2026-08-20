@@ -1,0 +1,5 @@
+ALTER TABLE "entity_ranking" ADD COLUMN "source_title" text;--> statement-breakpoint
+ALTER TABLE "public"."explainer_section" ALTER COLUMN "type" SET DATA TYPE text;--> statement-breakpoint
+DROP TYPE "public"."explainer_section_type";--> statement-breakpoint
+CREATE TYPE "public"."explainer_section_type" AS ENUM('one_sentence', 'simple_explanation', 'how_it_works', 'example', 'why_it_matters', 'common_misunderstandings', 'key_takeaways', 'the_law', 'in_practice', 'sanctions', 'edge_cases', 'basic_structure', 'in_possession', 'out_of_possession', 'strengths', 'weaknesses', 'variations', 'player_profiles', 'movement', 'responsibilities', 'what_it_measures', 'how_it_is_calculated', 'how_to_interpret', 'what_it_does_not_tell_you', 'provider_differences', 'tactical_application', 'historical_context');--> statement-breakpoint
+ALTER TABLE "public"."explainer_section" ALTER COLUMN "type" SET DATA TYPE "public"."explainer_section_type" USING "type"::"public"."explainer_section_type";

@@ -40,14 +40,29 @@ describe('WikipediaProvider.crestFileFrom', () => {
     );
   });
 
-  it('yields nothing for a linked value with a size label, rather than a wrong title', () => {
-    // A `[[File:X.svg|150px]]` value cannot be recovered here: the shared
-    // infobox parser splits fields on pipes and hands this one over as "150px",
-    // the filename already gone. Not worth reworking that parser for, since none
-    // of the articles checked use this form, but it must fail closed. The
-    // extension check is what makes it do so, and this pins that down: without
-    // it the crest URL would be built from "150px".
-    expect(provider.crestFileFrom(box('| image = [[File:Arsenal FC.svg|150px]]'))).toBeNull();
+  it('recovers a linked value carrying display parameters', () => {
+    // `[[File:X.svg|150px]]` cannot be read from the parsed field: the shared
+    // infobox parser splits on pipes and `cleanWikitext` reduces a link to its
+    // display label, so the field arrives as "150px" with the filename gone.
+    // This was previously left to fail closed on the assumption that no article
+    // used the form. Tottenham does, as `| image = [[File:Tottenham
+    // Hotspur.svg|frameless|upright=0.5|class=skin-invert]]`, and its crest was
+    // missing for that reason. The link is matched against the raw wikitext
+    // instead, ahead of the parsed field.
+    expect(provider.crestFileFrom(box('| image = [[File:Arsenal FC.svg|150px]]'))).toBe(
+      'File:Arsenal FC.svg',
+    );
+    expect(
+      provider.crestFileFrom(
+        box('| image = [[File:Tottenham Hotspur.svg|frameless|upright=0.5|class=skin-invert]]'),
+      ),
+    ).toBe('File:Tottenham Hotspur.svg');
+  });
+
+  it('still fails closed when the link names no image file', () => {
+    // The extension check is what prevents a display parameter becoming a
+    // filename, and it applies to the recovered link as well as the field.
+    expect(provider.crestFileFrom(box('| image = [[File:Something.pdf|150px]]'))).toBeNull();
   });
 
   it('strips a bare File: link with no label', () => {

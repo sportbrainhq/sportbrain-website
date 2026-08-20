@@ -245,15 +245,34 @@ export class WikipediaProvider {
     const box = parseInfobox(wikitext);
     if (!box) return null;
 
+    // A minority of articles embed a full image link rather than a bare
+    // filename: `| image = [[File:Tottenham Hotspur.svg|frameless|upright=0.5]]`.
+    // `cleanWikitext` reduces a link to its display label, which for an image is
+    // the parameter list, so by the time the field is read the filename is gone.
+    // It is recovered from the raw wikitext instead.
+    for (const field of ['image', 'logo', 'crest', 'badge']) {
+      const linked = wikitext.match(
+        new RegExp(`\\|\\s*${field}\\s*=\\s*\\[\\[\\s*(?:File|Image):([^|\\]]+)`, 'i'),
+      );
+      const file = linked?.[1]?.trim();
+      if (file && /\.(svg|png)$/i.test(file)) return `File:${file}`;
+    }
+
     for (const field of ['image', 'logo', 'crest', 'badge']) {
       const raw = box[field]?.trim();
       if (!raw) continue;
 
+      // The value arrives in two shapes. Usually it is a bare filename, but a
+      // minority of articles embed a full image link, `[[File:X.svg|frameless
+      // |upright=0.5]]`, whose display parameters are not part of the name.
+      // `cleanWikitext` has already reduced that to its parameters alone, so
+      // the link is recovered from the raw wikitext rather than from the field.
       const name = raw
         .replace(/^\[\[/, '')
         .replace(/\]\]$/, '')
         .replace(/^(?:File|Image):/i, '')
-        .trim();
+        .split('|')[0]
+        ?.trim();
 
       if (!name) continue;
       if (!/\.(svg|png)$/i.test(name)) continue;
@@ -626,7 +645,16 @@ export class WikipediaProvider {
    * different record.
    */
   private listToEntries(lists: ParsedList[], labels: string[]): WikiRankingEntry[] {
-    const normalise = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
+    // Accents decomposed before stripping, not after. Removing everything
+    // outside [a-z0-9] turns "Atlético" into "atltico", which can never match
+    // the "atletico" in its own article title, so the club was rejected from
+    // its own records page.
+    const normalise = (value: string) =>
+      value
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, '');
 
     // Qualified variants of the same record, excluded outright. A captaincy or
     // goalkeeping list is not a shorter version of the overall one.
@@ -964,7 +992,16 @@ export class WikipediaProvider {
 
     if (candidates.length === 0) return null;
 
-    const normalise = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
+    // Accents decomposed before stripping, not after. Removing everything
+    // outside [a-z0-9] turns "Atlético" into "atltico", which can never match
+    // the "atletico" in its own article title, so the club was rejected from
+    // its own records page.
+    const normalise = (value: string) =>
+      value
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, '');
 
     // Words that appear in almost every club and country article and therefore
     // prove nothing about a match. Requiring only "some word in common" let
@@ -989,6 +1026,36 @@ export class WikipediaProvider {
       'sports',
     ]);
 
+    // Legal-form words. A club's stored name is often its registered one, and
+    // its article is not: "Real Madrid Club de Fútbol" is filed as "Real Madrid
+    // CF". Requiring every word of the legal name rejected the club's own
+    // article, which is how Real Madrid ended up with no tables at all, so
+    // these are stripped before the comparison.
+    const legalForms = new Set([
+      'cf',
+      'fc',
+      'sad',
+      'sa',
+      'ac',
+      'as',
+      'ss',
+      'sc',
+      'cd',
+      'ud',
+      'rc',
+      'de',
+      'del',
+      'la',
+      'el',
+      'futbol',
+      'football',
+      'futebol',
+      'calcio',
+      'balompie',
+      'clube',
+      'sporting',
+    ]);
+
     const distinctive = teamName
       .split(/\s+/)
       .map(normalise)
@@ -996,7 +1063,7 @@ export class WikipediaProvider {
       // for the country alone, and a four-character floor drops England, whose
       // distinctive word is exactly seven but whose sibling cases include
       // shorter country names.
-      .filter((word) => word.length >= 3 && !generic.has(word));
+      .filter((word) => word.length >= 3 && !generic.has(word) && !legalForms.has(word));
 
     // Nothing distinctive to check against means the name is entirely generic,
     // and accepting the search's best guess would be a coin toss.
@@ -1100,7 +1167,16 @@ export class WikipediaProvider {
   }
 
   private rowsToEntries(table: ParsedTable, valueHeaders: string[]): WikiRankingEntry[] {
-    const normalise = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
+    // Accents decomposed before stripping, not after. Removing everything
+    // outside [a-z0-9] turns "Atlético" into "atltico", which can never match
+    // the "atletico" in its own article title, so the club was rejected from
+    // its own records page.
+    const normalise = (value: string) =>
+      value
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, '');
     const headers = table.headers.map(normalise);
 
     // Combined columns such as "League Games/Goals" hold two numbers in one

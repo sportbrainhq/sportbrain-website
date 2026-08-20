@@ -189,7 +189,11 @@ export class WikipediaClient {
       }>(url);
 
       for (const page of body.query?.pages ?? []) {
-        if (page.missing) continue;
+        // `missing` is not decisive here. A file hosted on Commons rather than
+        // on en.wikipedia is reported as missing by this endpoint and still
+        // carries a complete `imageinfo`, because the description page is what
+        // is absent, not the file. Ajax's crest is one of these. Judge on
+        // whether an image came back instead.
 
         // `thumburl` is absent for formats MediaWiki will not rasterise. The
         // original is still better than nothing for those.

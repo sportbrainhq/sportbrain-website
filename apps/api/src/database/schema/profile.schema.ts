@@ -166,6 +166,18 @@ export const entityRanking = pgTable(
     /** Shown beneath the table: what it was built from and what it omits. */
     note: text('note'),
 
+    /**
+     * The article this leaderboard was read from.
+     *
+     * Recorded because without it a wrong table is undetectable. Atlético
+     * Madrid, Real Sociedad and, absurdly, the San Antonio Spurs all held Real
+     * Madrid's footballers, and nothing on the row said where the figures came
+     * from, so the only way to find the contamination was to hash the entries
+     * and look for duplicates across teams. With the source stored, a table
+     * whose article does not name its own team is a query.
+     */
+    sourceTitle: text('source_title'),
+
     ...timestamps,
   },
   (table) => [
