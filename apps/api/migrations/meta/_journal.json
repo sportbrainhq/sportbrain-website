@@ -71,6 +71,20 @@
       "when": 1787164095551,
       "tag": "0009_add_rule_section_types",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1787206479824,
+      "tag": "0010_living_bedlam",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1787210955065,
+      "tag": "0011_needy_mandarin",
+      "breakpoints": true
     }
   ]
 }

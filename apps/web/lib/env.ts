@@ -17,6 +17,15 @@ const serverSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   /** Where server components and route handlers reach the API. */
   API_URL: z.string().url().default('http://localhost:4000'),
+  /**
+   * Shared secret for the cache revalidation endpoint.
+   *
+   * Optional, and the endpoint refuses every request when it is unset rather
+   * than falling open. An unauthenticated revalidation route is a free way for
+   * anyone to evict the whole cache repeatedly, which is a denial-of-service
+   * vector against the origin.
+   */
+  REVALIDATE_SECRET: z.string().min(16).optional(),
 });
 
 const clientSchema = z.object({
@@ -57,7 +66,14 @@ export const clientEnv = parse(
 export function serverEnv(): z.infer<typeof serverSchema> {
   return parse(
     serverSchema,
-    { NODE_ENV: process.env.NODE_ENV, API_URL: process.env.API_URL },
+    {
+      NODE_ENV: process.env.NODE_ENV,
+      API_URL: process.env.API_URL,
+      // Listed explicitly, like the others. The input object is built key by
+      // key rather than passed `process.env` wholesale, so a variable added to
+      // the schema and not to this list parses as undefined every time.
+      REVALIDATE_SECRET: process.env.REVALIDATE_SECRET,
+    },
     'server',
   );
 }

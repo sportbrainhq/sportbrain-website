@@ -62,6 +62,15 @@ export interface WikiRanking {
   entries: WikiRankingEntry[];
   confidence: 'high' | 'partial' | 'indicative';
   note: string | null;
+  /**
+   * The article the rows were read from.
+   *
+   * Carried on the ranking rather than assumed by the caller, because a team's
+   * two leaderboards can now come from two different articles: a records page
+   * for one and the team's own page for the other. Storing the wrong title
+   * would defeat the check this column exists for.
+   */
+  sourceTitle?: string;
 }
 
 /** A person's statistics for one discipline, keyed to the registry. */
@@ -69,6 +78,45 @@ export interface WikiStatBlock {
   discipline: string | null;
   stats: Record<string, number>;
   appearances: number | null;
+}
+
+/**
+ * A footballer's career appearances and goals.
+ *
+ * Either is null when the article does not state it, which is different from
+ * zero and must stay distinguishable: a page renders a dash for the first and a
+ * real "0" for the second. Trophies, the third headline tile, are counted from
+ * our own honours table rather than fetched.
+ */
+/**
+ * A count of the team trophies an article credits a player with.
+ *
+ * `groups` is kept alongside the total as a sanity check: a page whose Honours
+ * section parsed into zero groups has a shape this reader does not understand,
+ * which is different from a player who has genuinely won nothing.
+ */
+export interface WikiHonourCount {
+  won: number | null;
+  groups: number;
+}
+
+/**
+ * Honours groups that are not team trophies won as a player.
+ *
+ * Two kinds are excluded. "Records" matters most among the first: it holds
+ * lines like "Second-most appearances in the UEFA Champions League: 177", whose
+ * number is an appearance count and would otherwise be added to a trophy total.
+ *
+ * "Manager" is the second kind, and a subtler error. Zidane's article lists his
+ * playing honours and his managerial ones under sibling headings, so counting
+ * both credited a player's tile with trophies he won from the touchline.
+ */
+const EXCLUDED_HONOUR_GROUPS =
+  /^(individual|records?|orders?|decorations?|awards?|other|see also|notes?|references?|state honours|honours and awards|personal|manager|managerial|as a manager|head coach|coach)\b/i;
+
+export interface WikiCareerTotals {
+  games: number | null;
+  goals: number | null;
 }
 
 /**
@@ -245,15 +293,34 @@ export class WikipediaProvider {
     const box = parseInfobox(wikitext);
     if (!box) return null;
 
+    // A minority of articles embed a full image link rather than a bare
+    // filename: `| image = [[File:Tottenham Hotspur.svg|frameless|upright=0.5]]`.
+    // `cleanWikitext` reduces a link to its display label, which for an image is
+    // the parameter list, so by the time the field is read the filename is gone.
+    // It is recovered from the raw wikitext instead.
+    for (const field of ['image', 'logo', 'crest', 'badge']) {
+      const linked = wikitext.match(
+        new RegExp(`\\|\\s*${field}\\s*=\\s*\\[\\[\\s*(?:File|Image):([^|\\]]+)`, 'i'),
+      );
+      const file = linked?.[1]?.trim();
+      if (file && /\.(svg|png)$/i.test(file)) return `File:${file}`;
+    }
+
     for (const field of ['image', 'logo', 'crest', 'badge']) {
       const raw = box[field]?.trim();
       if (!raw) continue;
 
+      // The value arrives in two shapes. Usually it is a bare filename, but a
+      // minority of articles embed a full image link, `[[File:X.svg|frameless
+      // |upright=0.5]]`, whose display parameters are not part of the name.
+      // `cleanWikitext` has already reduced that to its parameters alone, so
+      // the link is recovered from the raw wikitext rather than from the field.
       const name = raw
         .replace(/^\[\[/, '')
         .replace(/\]\]$/, '')
         .replace(/^(?:File|Image):/i, '')
-        .trim();
+        .split('|')[0]
+        ?.trim();
 
       if (!name) continue;
       if (!/\.(svg|png)$/i.test(name)) continue;
@@ -377,14 +444,59 @@ export class WikipediaProvider {
    * the clubs tried have a records article in a shape this recognises, and the
    * rest simply render without these tables.
    */
-  async fetchTeamRankings(recordsTitle: string | null, teamName?: string): Promise<WikiRanking[]> {
-    // A missing records article is not the end of the attempt. Two thirds of
-    // countries have none: Poland, Ghana and Egypt among them, and Poland's
-    // list of internationals carries the same two leaderboards.
-    const html = recordsTitle ? await this.client.fetchHtml(recordsTitle) : null;
-    if (!html) {
-      return teamName ? this.fetchInternationalsRankings(teamName) : [];
+  async fetchTeamRankings(
+    recordsTitle: string | null,
+    teamName?: string,
+    teamTitle?: string,
+  ): Promise<WikiRanking[]> {
+    // Three sources, tried in order of how authoritative they are.
+    //
+    // The records article first, where one exists. Then the team's own article,
+    // which for most sides without a records article carries the same two
+    // tables under "Player records": Ghana, Egypt, Serbia, Sevilla, Atlético
+    // Madrid and Boca Juniors all publish their leaderboards there and nowhere
+    // else, and reading only the records article left every one of them empty.
+    // The list of internationals last, being the thinnest of the three.
+    const rankings: WikiRanking[] = [];
+
+    for (const title of [recordsTitle, teamTitle]) {
+      if (!title) continue;
+
+      const found = await this.rankingsFromArticle(title);
+      for (const ranking of found) {
+        if (rankings.some((existing) => existing.kind === ranking.kind)) continue;
+        rankings.push({ ...ranking, sourceTitle: title });
+      }
+
+      if (rankings.length >= 2) break;
     }
+
+    // A ranking with a single entry is a record holder, not a leaderboard, so it
+    // counts as a gap: France's article states its record scorer in prose and
+    // lists nobody else.
+    const thin = (kind: string) =>
+      (rankings.find((ranking) => ranking.kind === kind)?.entries.length ?? 0) < 3;
+
+    if (teamName && (thin('most_appearances') || thin('top_scorers'))) {
+      for (const derived of await this.fetchInternationalsRankings(teamName)) {
+        if (!thin(derived.kind)) continue;
+
+        // Replaces the thin ranking rather than sitting beside it: two
+        // leaderboards of the same kind on one team is not a shape the page can
+        // render.
+        const existing = rankings.findIndex((ranking) => ranking.kind === derived.kind);
+        if (existing >= 0) rankings.splice(existing, 1, derived);
+        else rankings.push(derived);
+      }
+    }
+
+    return rankings;
+  }
+
+  /** Both leaderboards as read from one article, by table then by prose list. */
+  private async rankingsFromArticle(title: string): Promise<WikiRanking[]> {
+    const html = await this.client.fetchHtml(title);
+    if (!html) return [];
 
     const tables = parseTables(html);
     const rankings: WikiRanking[] = [];
@@ -412,11 +524,12 @@ export class WikipediaProvider {
         'Appearances',
         'Appearance records',
         'Appearances (most)',
+        'All competitions appearances',
         'Most apps',
         'All competitions',
       ],
       ['player|name'],
-      ['total', 'apps', 'appearances', 'matches', 'games', 'caps'],
+      ['total', 'apps', 'app', 'appearances', 'matches', 'games', 'caps'],
     );
     if (appearances) {
       const entries = this.rowsToEntries(appearances, [
@@ -427,6 +540,9 @@ export class WikipediaProvider {
         'caps',
         'appearances',
         'apps',
+        // "App." with the full stop, which Boca Juniors uses and which no
+        // longer spelling matches.
+        'app',
         'matches',
         'games',
       ]);
@@ -442,7 +558,7 @@ export class WikipediaProvider {
           // from scattered statements, so unlike the Wikidata equivalent this
           // matches the club's own published figures.
           confidence: 'high',
-          note: 'From the club records article on Wikipedia.',
+          note: 'From the records tables on Wikipedia.',
         });
       }
     }
@@ -460,6 +576,7 @@ export class WikipediaProvider {
         'Goalscoring records',
         'Goal scorers',
         'Goals scored',
+        'Top all-time goalscorers',
         // Bare "Goals", last because it is the least specific term available.
         // England's article heads the section with it and nothing else, so
         // without this the heading match failed entirely and the column
@@ -478,7 +595,7 @@ export class WikipediaProvider {
           label: 'Top scorers',
           entries,
           confidence: 'high',
-          note: 'From the club records article on Wikipedia.',
+          note: 'From the records tables on Wikipedia.',
         });
       }
     }
@@ -496,7 +613,7 @@ export class WikipediaProvider {
           label: 'Most appearances',
           entries,
           confidence: 'high',
-          note: 'From the club records article on Wikipedia.',
+          note: 'From the records tables on Wikipedia.',
         });
       }
     }
@@ -509,31 +626,8 @@ export class WikipediaProvider {
           label: 'Top scorers',
           entries,
           confidence: 'high',
-          note: 'From the club records article on Wikipedia.',
+          note: 'From the records tables on Wikipedia.',
         });
-      }
-    }
-
-    // Last resort for national sides: the squad list. France's records article
-    // names only the single record holder for goals, so a leaderboard has to be
-    // derived from "List of France international footballers", which tabulates
-    // caps and goals for every capped player.
-    // A ranking with a single entry is a record holder, not a leaderboard, so
-    // it counts as a gap: France's article states its record scorer in prose
-    // and lists nobody else.
-    const thin = (kind: string) =>
-      (rankings.find((ranking) => ranking.kind === kind)?.entries.length ?? 0) < 3;
-
-    if (teamName && (thin('most_appearances') || thin('top_scorers'))) {
-      for (const derived of await this.fetchInternationalsRankings(teamName)) {
-        if (!thin(derived.kind)) continue;
-
-        // Replaces the thin ranking rather than sitting beside it: two
-        // leaderboards of the same kind on one team is not a shape the page can
-        // render.
-        const existing = rankings.findIndex((ranking) => ranking.kind === derived.kind);
-        if (existing >= 0) rankings.splice(existing, 1, derived);
-        else rankings.push(derived);
       }
     }
 
@@ -592,6 +686,7 @@ export class WikipediaProvider {
     const rankings: WikiRanking[] = [];
 
     const note = `Derived from the list of ${country} internationals on Wikipedia.`;
+    const sourceTitle = title;
 
     const appearances = this.rowsToEntries(table, ['caps']);
     if (appearances.length > 0) {
@@ -601,6 +696,7 @@ export class WikipediaProvider {
         entries: appearances,
         confidence: 'partial',
         note,
+        sourceTitle,
       });
     }
 
@@ -612,6 +708,7 @@ export class WikipediaProvider {
         entries: scorers,
         confidence: 'partial',
         note,
+        sourceTitle,
       });
     }
 
@@ -626,7 +723,16 @@ export class WikipediaProvider {
    * different record.
    */
   private listToEntries(lists: ParsedList[], labels: string[]): WikiRankingEntry[] {
-    const normalise = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
+    // Accents decomposed before stripping, not after. Removing everything
+    // outside [a-z0-9] turns "Atlético" into "atltico", which can never match
+    // the "atletico" in its own article title, so the club was rejected from
+    // its own records page.
+    const normalise = (value: string) =>
+      value
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, '');
 
     // Qualified variants of the same record, excluded outright. A captaincy or
     // goalkeeping list is not a shorter version of the overall one.
@@ -859,6 +965,171 @@ export class WikipediaProvider {
   }
 
   /**
+   * A footballer's career appearances and goals: two of the three headline
+   * tiles on a player page, the third being trophies counted from our honours.
+   *
+   * Football only. Other sports count a career in their own terms and get their
+   * own extraction when their data is worked through; a shared "games and
+   * goals" reader would only invite one sport's vocabulary onto another's page.
+   *
+   * Wikipedia's football infoboxes no longer carry a "Total" row: Ronaldo's and
+   * Messi's both end at the last club and leave the arithmetic to the reader.
+   * So the senior rows are summed here.
+   *
+   * Summing the infobox rather than our own `person_team` rows is the point of
+   * re-fetching: career ingestion skips spells at clubs outside our catalogue,
+   * so a stored sum undercounts, while every club a player served appears here
+   * whether we hold it or not.
+   *
+   * Rows without an appearance figure are youth spells and are skipped, as are
+   * reserve, B and age-group sides, whose figures would otherwise be counted
+   * twice over. Senior international caps are included: 855 for Messi and 991
+   * for Ronaldo are the club-plus-country figures a reader recognises, and the
+   * page said 855 beside a stale 1,100 until the two agreed.
+   */
+  async fetchFootballCareerTotals(title: string): Promise<WikiCareerTotals> {
+    const career = await this.fetchFootballCareer(title);
+    if (career.length === 0) return { games: null, goals: null };
+
+    let games: number | null = null;
+    let goals: number | null = null;
+
+    for (const row of career) {
+      if (row.apps === null) continue;
+      if (/\b(b|c|ii|iii|u\d{2}|reserves?|youth|academy|junior)\b\s*$/i.test(row.team.trim())) {
+        continue;
+      }
+
+      games = (games ?? 0) + row.apps;
+      if (row.goals !== null) goals = (goals ?? 0) + row.goals;
+    }
+
+    return { games, goals };
+  }
+
+  /**
+   * The team trophies a player's article credits them with.
+   *
+   * The reason this exists: honours reached the database from Wikidata's "award
+   * received" statements, which are close to empty for footballers. Pel\u00e9,
+   * Maradona, Zidane, Cruyff, Ronaldo and Buffon all held zero, so their pages
+   * reported no trophies at all. Wikipedia's own Honours section lists them in
+   * full, grouped by club and country.
+   *
+   * **Team trophies only**: competitions won with a club or a national side. An
+   * individual award is a different kind of thing from a league title, and a
+   * count that adds a magazine's Team of the Year selection to a World Cup is
+   * not a number anybody can check. Those groups are still shown in full in the
+   * honours list on the same page; they are simply not totalled here.
+   *
+   * Counting rules, because a naive count of the section is wrong three times:
+   *
+   *   - **Individual, Records, Orders and Decorations groups are excluded.**
+   *     The Records group is the worst offender: "Second-most appearances in
+   *     the UEFA Champions League: 177" contributes a number that is not a
+   *     trophy at all.
+   *   - **Runner-up lines do not count.** "UEFA Champions League runner-up:
+   *     1996\u201397, 1997\u201398" is a record of losing two finals. Where a line
+   *     carries both ("FIFA World Cup: 1998; runner-up: 2006"), only the part
+   *     before the runner-up clause counts.
+   *   - **Each year is one trophy.** "Serie A: 1996\u201397, 1997\u201398" is two
+   *     league titles on one line, and counting lines would report one.
+   */
+  async fetchFootballHonours(title: string): Promise<WikiHonourCount> {
+    const html = await this.client.fetchHtml(title);
+    if (!html) return { won: null, groups: 0 };
+
+    // The section runs from its own heading to the next top-level one. Anchored
+    // on the heading id rather than its text, which varies.
+    const heading = /id="(Honours|Honors|Career_honours|Honours_and_awards)"/.exec(html);
+    if (!heading) return { won: null, groups: 0 };
+
+    const rest = html.slice(heading.index);
+    const nextSection = rest.search(/<h2\b/);
+    const section = nextSection > 0 ? rest.slice(0, nextSection) : rest;
+
+    let won = 0;
+    let groups = 0;
+
+    // Two levels of suppression, because the two kinds of label nest. A
+    // heading ("Manager") governs everything down to the next heading, while a
+    // bold or plain label ("Individual") governs only the list right after it.
+    // Tracking one flag conflated them: Guardiola's managerial honours sit under
+    // an h3 whose first club label re-enabled counting, and his tile credited a
+    // player with 59 trophies won from the touchline.
+    let sectionExcluded = false;
+    let labelExcluded = false;
+
+    // Walked in document order, because a label applies to the lists that
+    // follow it. Articles label their groups inconsistently: some use headings
+    // ("Player", "Records") and some a bold or plain paragraph ("Real Madrid",
+    // "Individual"), so all of them are treated as labels.
+    const tokens = section.matchAll(
+      /<(b|p|h[345])\b[^>]*>([\s\S]{0,200}?)<\/\1>|<li\b[^>]*>([\s\S]*?)<\/li>/g,
+    );
+
+    for (const token of tokens) {
+      const tag = token[1];
+      const label = token[2];
+      const item = token[3];
+
+      if (tag !== undefined && label !== undefined) {
+        const text = this.plainText(label);
+        // Short, because a group label is a name and not a sentence: a
+        // paragraph of prose inside the section is not a heading.
+        if (!text || text.length >= 60) continue;
+
+        const excluded = EXCLUDED_HONOUR_GROUPS.test(text);
+
+        if (tag.startsWith('h')) {
+          sectionExcluded = excluded;
+          labelExcluded = false;
+        } else {
+          labelExcluded = excluded;
+        }
+
+        if (!sectionExcluded && !labelExcluded) groups += 1;
+        continue;
+      }
+
+      if (sectionExcluded || labelExcluded || item === undefined) continue;
+
+      const text = this.plainText(item);
+      if (!text) continue;
+
+      // Everything from a runner-up, third-place or losing-finalist clause
+      // onwards is a record of not winning.
+      const winning = text.split(/\b(?:runners?-up|runner up|third place|finalist)\b/i)[0] ?? '';
+
+      // Only what follows the colon, so a competition whose name carries a year
+      // ("Copa Am\u00e9rica 2021") is not itself counted as a win.
+      if (!winning.includes(':')) continue;
+
+      const years = winning.slice(winning.indexOf(':') + 1).match(/\d{4}(?:[\u2013-]\d{2,4})?/g);
+      if (!years) continue;
+
+      won += years.length;
+    }
+
+    return { won, groups };
+  }
+
+  /** An HTML fragment as displayable text, references and markup removed. */
+  private plainText(fragment: string): string {
+    return (
+      fragment
+        // Reference markers carry years of their own and would be counted.
+        .replace(/<sup[\s\S]*?<\/sup>/g, '')
+        .replace(/<style[\s\S]*?<\/style>/g, '')
+        .replace(/<[^>]+>/g, '')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&amp;/g, '&')
+        .replace(/\s+/g, ' ')
+        .trim()
+    );
+  }
+
+  /**
    * A footballer's club career, from the infobox career table.
    *
    * Rendered HTML rather than wikitext: the career rows are a table inside the
@@ -885,17 +1156,7 @@ export class WikipediaProvider {
     const career: { years: string; team: string; apps: number | null; goals: number | null }[] = [];
 
     for (const chunk of infobox[0].split(/<tr[^>]*>/)) {
-      const cells = [...chunk.matchAll(/<t[hd][^>]*>([\s\S]*?)<\/t[hd]>/g)].map((cell) =>
-        cell[1]!
-          .replace(/<sup[\s\S]*?<\/sup>/g, '')
-          .replace(/<style[\s\S]*?<\/style>/g, '')
-          .replace(/\sdata-mw='[^']*'/g, '')
-          .replace(/<[^>]+>/g, ' ')
-          .replace(/&nbsp;/g, ' ')
-          .replace(/&amp;/g, '&')
-          .replace(/\s+/g, ' ')
-          .trim(),
-      );
+      const cells = stripCells(chunk);
 
       const [years, team, apps, goals] = cells;
 
@@ -964,7 +1225,16 @@ export class WikipediaProvider {
 
     if (candidates.length === 0) return null;
 
-    const normalise = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
+    // Accents decomposed before stripping, not after. Removing everything
+    // outside [a-z0-9] turns "Atlético" into "atltico", which can never match
+    // the "atletico" in its own article title, so the club was rejected from
+    // its own records page.
+    const normalise = (value: string) =>
+      value
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, '');
 
     // Words that appear in almost every club and country article and therefore
     // prove nothing about a match. Requiring only "some word in common" let
@@ -989,6 +1259,36 @@ export class WikipediaProvider {
       'sports',
     ]);
 
+    // Legal-form words. A club's stored name is often its registered one, and
+    // its article is not: "Real Madrid Club de Fútbol" is filed as "Real Madrid
+    // CF". Requiring every word of the legal name rejected the club's own
+    // article, which is how Real Madrid ended up with no tables at all, so
+    // these are stripped before the comparison.
+    const legalForms = new Set([
+      'cf',
+      'fc',
+      'sad',
+      'sa',
+      'ac',
+      'as',
+      'ss',
+      'sc',
+      'cd',
+      'ud',
+      'rc',
+      'de',
+      'del',
+      'la',
+      'el',
+      'futbol',
+      'football',
+      'futebol',
+      'calcio',
+      'balompie',
+      'clube',
+      'sporting',
+    ]);
+
     const distinctive = teamName
       .split(/\s+/)
       .map(normalise)
@@ -996,7 +1296,7 @@ export class WikipediaProvider {
       // for the country alone, and a four-character floor drops England, whose
       // distinctive word is exactly seven but whose sibling cases include
       // shorter country names.
-      .filter((word) => word.length >= 3 && !generic.has(word));
+      .filter((word) => word.length >= 3 && !generic.has(word) && !legalForms.has(word));
 
     // Nothing distinctive to check against means the name is entirely generic,
     // and accepting the search's best guess would be a coin toss.
@@ -1100,7 +1400,16 @@ export class WikipediaProvider {
   }
 
   private rowsToEntries(table: ParsedTable, valueHeaders: string[]): WikiRankingEntry[] {
-    const normalise = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
+    // Accents decomposed before stripping, not after. Removing everything
+    // outside [a-z0-9] turns "Atlético" into "atltico", which can never match
+    // the "atletico" in its own article title, so the club was rejected from
+    // its own records page.
+    const normalise = (value: string) =>
+      value
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, '');
     const headers = table.headers.map(normalise);
 
     // Combined columns such as "League Games/Goals" hold two numbers in one
@@ -1175,9 +1484,34 @@ export class WikipediaProvider {
 
     const entries: WikiRankingEntry[] = [];
 
+    // Some tables carry a rank column the header row does not declare. Roma's
+    // appearance table heads four columns "Player | Position | Appearances |
+    // Goals" and then writes five cells a row, the first being the rank, and the
+    // renderer drops the surplus. Read positionally, "Player" lands on the rank
+    // and every row was rejected for having a numeric name.
+    //
+    // Detected from the data rather than the width, because the widths match:
+    // the name column reads as a bare number on every row while the column
+    // after it does not.
+    const numeric = (value: string | undefined) =>
+      value !== undefined && /^\d+$/.test(value.trim());
+
+    const offset =
+      table.rows.length > 0 &&
+      table.rows.every((row) => numeric(row.cells[nameIndex]) && !numeric(row.cells[nameIndex + 1]))
+        ? 1
+        : 0;
+
+    const widest = table.rows.reduce((most, row) => Math.max(most, row.cells.length), 0);
+
     for (const row of table.rows) {
-      const rawName = row.cells[nameIndex];
-      const rawCell = row.cells[valueIndex ?? combinedIndex];
+      // A row narrower than the widest keeps its own indexing. Merged cells are
+      // already resolved by the parser, so a short row is malformed rather than
+      // offset.
+      const shift = row.cells.length >= widest ? offset : 0;
+
+      const rawName = row.cells[nameIndex + shift];
+      const rawCell = row.cells[(valueIndex ?? combinedIndex) + shift];
       if (!rawName || !rawCell) continue;
 
       // Several countries' tables append a link to a per-player match list, so
@@ -1223,7 +1557,13 @@ export class WikipediaProvider {
       // linking to "Manuel Sanchís Hontiyuelo", falling back would attach the
       // flag's country link instead, and a row that quietly navigates to Spain
       // is worse than a row that does not navigate at all.
-      const candidates = row.cellLinks[nameIndex] ?? [];
+      // Redlinks and non-article hrefs are not entities. Wikipedia renders a
+      // link to a page that does not exist as "Title?action=edit&redlink=1",
+      // and carrying that through produced ranking rows pointing at an edit
+      // form.
+      const candidates = (row.cellLinks[nameIndex + shift] ?? []).filter(
+        (candidate) => !candidate.includes('?') && !candidate.includes('action=edit'),
+      );
       const simplify = (value: string) =>
         value
           .replace(/\s*\([^)]*\)\s*$/, '')
@@ -1289,4 +1629,25 @@ export class WikipediaProvider {
     // folded into an international format they are not comparable with.
     return null;
   }
+}
+
+/**
+ * The text of every cell in one table row, markup and references removed.
+ *
+ * Shared by the infobox readers, which parse rows by hand rather than through
+ * `parseTables`: an infobox has no header row, so the table parser returns
+ * nothing for it.
+ */
+function stripCells(row: string): string[] {
+  return [...row.matchAll(/<t[hd][^>]*>([\s\S]*?)<\/t[hd]>/g)].map((cell) =>
+    cell[1]!
+      .replace(/<sup[\s\S]*?<\/sup>/g, '')
+      .replace(/<style[\s\S]*?<\/style>/g, '')
+      .replace(/\sdata-mw='[^']*'/g, '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/\s+/g, ' ')
+      .trim(),
+  );
 }

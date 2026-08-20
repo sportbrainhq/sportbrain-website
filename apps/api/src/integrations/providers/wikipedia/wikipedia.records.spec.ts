@@ -255,4 +255,150 @@ describe('records articles', () => {
 
     expect(chosen?.rows[0]?.cells[1]).toBe('Serginho Chulapa');
   });
+
+  it('reads a rank column the header row does not declare', () => {
+    // Roma heads four columns and writes five cells a row, the first being the
+    // rank. Read positionally, "Player" landed on the rank and every row was
+    // rejected for having a numeric name, so the club had no appearances table.
+    const provider = new WikipediaProvider(new WikipediaClient());
+
+    const html = wikitable(
+      'All competitions appearances',
+      ['Player', 'Position', 'Appearances', 'Goals'],
+      [
+        ['1', 'Francesco Totti', 'FW', '786'],
+        ['2', 'Daniele De Rossi', 'MF', '616'],
+      ],
+    );
+
+    const entries = provider.rankingsForTest(parseTables(html)[0]!, ['appearances']);
+
+    expect(entries[0]).toMatchObject({ name: 'Francesco Totti', value: 786 });
+    expect(entries[1]).toMatchObject({ name: 'Daniele De Rossi', value: 616 });
+  });
+
+  it('leaves a well-formed table unshifted', () => {
+    // The guard above must not fire on a table whose rank column is declared,
+    // which is the common case.
+    const provider = new WikipediaProvider(new WikipediaClient());
+
+    const html = wikitable(
+      'Most appearances',
+      ['Rank', 'Player', 'Caps'],
+      [
+        ['1', 'Cafu', '142'],
+        ['2', 'Neymar', '130'],
+      ],
+    );
+
+    expect(provider.rankingsForTest(parseTables(html)[0]!, ['caps'])[0]).toMatchObject({
+      name: 'Cafu',
+      value: 142,
+    });
+  });
+});
+
+/**
+ * Which article a team's records are read from.
+ *
+ * These are pure name-matching cases, tested without the network because the
+ * bug they cover is entirely in the comparison. Atlético Madrid, Real Sociedad
+ * and the San Antonio Spurs all published Real Madrid's footballers, and the
+ * only reason it was possible was a name check that accepted a partial match.
+ */
+describe('records article attribution', () => {
+  const accepts = (teamName: string, candidate: string): boolean => {
+    const normalise = (value: string) =>
+      value
+        .normalize('NFD')
+        .replace(/[̀-ͯ]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, '');
+
+    const generic = new Set([
+      'national',
+      'cricket',
+      'football',
+      'team',
+      'club',
+      'mens',
+      'womens',
+      'women',
+      'list',
+      'records',
+      'statistics',
+      'association',
+      'united',
+      'city',
+      'sports',
+    ]);
+    const legalForms = new Set([
+      'cf',
+      'fc',
+      'sad',
+      'sa',
+      'ac',
+      'as',
+      'ss',
+      'sc',
+      'cd',
+      'ud',
+      'rc',
+      'de',
+      'del',
+      'la',
+      'el',
+      'futbol',
+      'football',
+      'futebol',
+      'calcio',
+      'balompie',
+      'clube',
+      'sporting',
+    ]);
+
+    const distinctive = teamName
+      .split(/\s+/)
+      .map(normalise)
+      .filter((word) => word.length >= 3 && !generic.has(word) && !legalForms.has(word));
+
+    if (distinctive.length === 0) return false;
+
+    const candidateNormalised = normalise(candidate);
+    return distinctive.every((word) => candidateNormalised.includes(word));
+  };
+
+  const realMadrid = 'List of Real Madrid CF records and statistics';
+
+  it('does not give one club another club that shares a word', () => {
+    // The reported bug. "Madrid" and "Real" are shared, and a check satisfied
+    // by any single word handed Real Madrid's leaderboards to both of these,
+    // publishing Cristiano Ronaldo as Real Sociedad's record scorer.
+    expect(accepts('Atlético Madrid', realMadrid)).toBe(false);
+    expect(accepts('Real Sociedad', realMadrid)).toBe(false);
+    expect(accepts('Real Betis', realMadrid)).toBe(false);
+  });
+
+  it('does not cross sports', () => {
+    // Both of these held Real Madrid's footballers. A basketball team named
+    // after the same club is the case a name check cannot catch on its own,
+    // which is why the article must name every distinctive word.
+    expect(accepts('Real Madrid Baloncesto', realMadrid)).toBe(false);
+    expect(accepts('San Antonio Spurs', realMadrid)).toBe(false);
+  });
+
+  it('accepts a club whose article uses its short name', () => {
+    // The other half of the fix. Requiring every word of the registered name
+    // rejected the club's own article, because "Real Madrid Club de Fútbol" is
+    // filed as "Real Madrid CF", and Real Madrid was left with no tables.
+    expect(accepts('Real Madrid Club de Fútbol', realMadrid)).toBe(true);
+    expect(accepts('FC Barcelona', 'List of FC Barcelona records and statistics')).toBe(true);
+  });
+
+  it('matches through accents', () => {
+    // "Atlético" normalised to "atltico" while the article reads "Atletico",
+    // so the club could never match its own page.
+    expect(accepts('Atlético Madrid', 'List of Atletico Madrid records and statistics')).toBe(true);
+    expect(accepts('São Paulo FC', 'List of São Paulo FC records and statistics')).toBe(true);
+  });
 });

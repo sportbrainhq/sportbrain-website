@@ -1,6 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { and, asc, eq, isNull, or, sql } from 'drizzle-orm';
-import type { Honour, StatisticGroup, StatisticValue } from '@sportbrain/contracts';
+import type {
+  CareerSummaryEntry,
+  Honour,
+  StatisticGroup,
+  StatisticValue,
+} from '@sportbrain/contracts';
 import { DatabaseService } from '../../database/database.service';
 import {
   discipline,
@@ -9,6 +14,30 @@ import {
   statisticDefinition,
   teamStatistic,
 } from '../../database/schema';
+
+/**
+ * The headline statistics a player page shows above its detailed blocks, in
+ * render order.
+ *
+ * Fixed here rather than read from the registry's `is_headline` flag, because
+ * the page's promise is these three specifically: a sport that later marks a
+ * fourth statistic as a headline must not silently change the layout.
+ *
+ * A sport opts in by declaring these keys in the registry. Only football does
+ * so today: the other sports count a career in their own terms and will get
+ * their own trio, so a page whose sport has not declared them renders no
+ * headline panel at all rather than three empty tiles.
+ */
+const CAREER_SUMMARY_KEYS = ['career_games', 'career_goals', 'career_trophies'] as const;
+
+/**
+ * Keys the detailed blocks must not render.
+ *
+ * The three headline keys, because they lead the section already, plus
+ * `honours_won`: it counts the same trophies as `career_trophies` and showed up
+ * beside it as a second, differently named tile.
+ */
+const SUPPRESSED_KEYS = new Set<string>([...CAREER_SUMMARY_KEYS, 'honours_won']);
 
 /**
  * Turns stored statistics into something a page can render.
@@ -71,6 +100,54 @@ export class StatisticsAssembler {
       appearances: row.appearances,
       statistics: this.render(row.stats as Record<string, unknown>, definitions, row.disciplineId),
     }));
+  }
+
+  /**
+   * The headline tiles for a player page, in a fixed order.
+   *
+   * Uniform within a sport, which is the point: every footballer shows games,
+   * goals and trophies, in that order, whatever has been ingested for them. A
+   * player missing a figure gets a tile with a dash rather than one fewer tile,
+   * because a profile that changes shape from player to player reads as broken
+   * rather than as incomplete.
+   *
+   * Empty for a sport that has not declared these keys, so nothing renders.
+   * Labels come from the registry rather than from here, so a sport can name
+   * its own without a change to this code.
+   */
+  async careerSummaryFor(personId: string, sportId: string): Promise<CareerSummaryEntry[]> {
+    const [rows, definitions] = await Promise.all([
+      this.database.db
+        .select({ stats: personStatistic.stats })
+        .from(personStatistic)
+        .where(
+          and(
+            eq(personStatistic.personId, personId),
+            eq(personStatistic.scope, 'career'),
+            isNull(personStatistic.disciplineId),
+          ),
+        ),
+      this.definitionsForSport(sportId, 'player'),
+    ]);
+
+    const stats = (rows[0]?.stats ?? {}) as Record<string, unknown>;
+    const byKey = new Map(definitions.map((definition) => [definition.key, definition]));
+
+    // Every key or none. A sport that declares two of the three has a registry
+    // error, and rendering a two-tile panel would hide it.
+    if (CAREER_SUMMARY_KEYS.some((key) => !byKey.has(key))) return [];
+
+    return CAREER_SUMMARY_KEYS.map((key) => {
+      const definition = byKey.get(key)!;
+      const raw = stats[key];
+
+      return {
+        key,
+        label: definition.label,
+        value: typeof raw === 'number' ? raw : null,
+        description: definition.description,
+      };
+    });
   }
 
   /** Statistics for one team. Same structure, team-scoped registry entries. */
@@ -202,6 +279,10 @@ export class StatisticsAssembler {
     const values: StatisticValue[] = [];
 
     for (const [key, definition] of byKey) {
+      // The sport's fixed set leads the statistics section already. Leaving
+      // these in here as well printed each number twice on the page.
+      if (SUPPRESSED_KEYS.has(key)) continue;
+
       const raw = stats[key];
       // Undefined means the statistic was never recorded, which is different
       // from a recorded zero and must not render as one.

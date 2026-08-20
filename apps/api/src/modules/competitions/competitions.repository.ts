@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { and, asc, count, desc, eq, ilike, sql, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, sql, type SQL } from 'drizzle-orm';
 import type { CompetitionRecord, CompetitionSummary, EntityListQuery } from '@sportbrain/contracts';
 import { DatabaseService } from '../../database/database.service';
+import { nameSearch } from '../shared/name-search';
 import {
   competition,
   competitionStatistic,
@@ -25,7 +26,10 @@ export class CompetitionsRepository {
     // `kind` separates international from domestic, matching the tab grouping.
     if (query.kind) predicates.push(eq(competition.kind, query.kind as never));
     if (query.country) predicates.push(eq(competition.country, query.country));
-    if (query.q) predicates.push(ilike(competition.name, `%${query.q}%`));
+    if (query.q) {
+      const match = nameSearch(query.q, [competition.name], { aliases: competition.aliases });
+      if (match) predicates.push(match);
+    }
 
     const where = and(...predicates);
 

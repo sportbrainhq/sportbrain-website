@@ -32,6 +32,7 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { loadConfiguration } from '../../config/configuration';
 import * as schema from '../schema';
+import { MANUAL_RANKING_SOURCE } from '../schema';
 import { EXPLAINERS, SPORT_OVERVIEWS } from './editorial';
 import { COMPETITION_SECTIONS, TEAM_SECTIONS } from './entity-editorial';
 import {
@@ -47,6 +48,7 @@ import {
 import { FOOTBALL_EXPLAINERS, FOOTBALL_EXPLAINER_SOURCES } from './football-explainers';
 import { seedExplainerLibrary } from './seed-explainers';
 import { STATISTIC_REGISTRY } from './statistic-registry';
+import { TEAM_RANKING_SEEDS } from './team-rankings';
 
 for (const candidate of [resolve(process.cwd(), '../../.env'), resolve(process.cwd(), '.env')]) {
   if (existsSync(candidate)) loadDotenv({ path: candidate });
@@ -67,6 +69,9 @@ async function main(): Promise<void> {
     const spans = await deriveCareerSpans(db);
     process.stdout.write(`Derived:  ${spans} career spans written\n`);
 
+    const ranked = await derivePersonPriority(db);
+    process.stdout.write(`Derived:  ${ranked} people re-prioritised\n`);
+
     const overviews = await seedOverviews(db);
     process.stdout.write(`Content:  ${overviews} sport overviews written\n`);
 
@@ -75,6 +80,12 @@ async function main(): Promise<void> {
 
     const entitySections = await seedEntitySections(db);
     process.stdout.write(`Content:  ${entitySections} entity sections published\n`);
+
+    const seededRankings = await seedTeamRankings(db);
+    process.stdout.write(
+      `Rankings: ${seededRankings.written} hand-entered leaderboards, ` +
+        `${seededRankings.skipped} teams not in the database\n`,
+    );
 
     const overview = await seedFootballOverview(db);
     process.stdout.write(
@@ -250,6 +261,73 @@ async function deriveHonourCounts(db: Db): Promise<number> {
  * career span is biographical rather than statistical: it is not a quantity
  * anybody aggregates or ranks by.
  */
+/**
+ * Scores people for list ordering.
+ *
+ * Two things have to be balanced. Sitelinks measure how well known a person is
+ * across languages, which is close to what a reader means by "important" but
+ * includes people notable for something other than the sport. Career evidence
+ * in our own tables proves the person is a real player, but is a measure of our
+ * coverage as much as of them.
+ *
+ * The first version leaned on career evidence and got the balance badly wrong.
+ * Appearing in a club's records table was worth 400 points, so Zlatan
+ * Ibrahimović outranked Messi purely by having played for more clubs whose
+ * records articles we happen to have parsed, and Pelé finished below two
+ * hundred players because Santos has no records article at all. That scores our
+ * parsing coverage, not the footballer.
+ *
+ * So sitelinks are the base, scaled to dominate, and the rest are modifiers:
+ *
+ *   - **Sitelinks, squared-ish.** Multiplied by 20, so the gap between Pelé at
+ *     182 and a journeyman at 20 is decisive rather than marginal.
+ *   - **Honours, uncapped.** Messi has 119 recorded honours and Ibrahimović 11;
+ *     the old cap of 12 treated those as equal, which is absurd. Weighted
+ *     modestly per honour because the counts are wildly incomplete.
+ *   - **Career evidence as a small bonus.** Enough to lift a real player above
+ *     a politician with a similar article count, not enough to reorder players
+ *     among themselves.
+ *
+ * Reads `sitelinks` and writes `notability`, which are now separate columns.
+ * They were the same one, so this function consumed its own output and the raw
+ * signal was destroyed on the first run.
+ */
+async function derivePersonPriority(db: Db): Promise<number> {
+  const rows = await db.execute<{ count: string }>(sql`
+    WITH evidence AS (
+      SELECT
+        p.id,
+        p.sitelinks,
+        (SELECT count(*) FROM honour h WHERE h.person_id = p.id) AS honours,
+        (SELECT count(DISTINCT pt.team_id) FROM person_team pt WHERE pt.person_id = p.id) AS clubs,
+        EXISTS (
+          SELECT 1
+          FROM entity_ranking r
+          CROSS JOIN LATERAL jsonb_array_elements(r.entries) e
+          JOIN external_mapping m
+            ON m.entity_id = p.id AND m.entity_type = 'person' AND m.provider = 'wikipedia'
+          WHERE r.entity_type = 'team' AND e->>'link' = m.external_id
+        ) AS ranked
+      FROM person p
+    )
+    UPDATE person p SET
+      notability =
+        evidence.sitelinks * 20
+        + least(evidence.honours, 150) * 12
+        -- Flat bonuses, not multipliers. Being in a records table at all says
+        -- "verified footballer"; being in four says our coverage is good.
+        + CASE WHEN evidence.ranked THEN 250 ELSE 0 END
+        + least(evidence.clubs, 6) * 25,
+      updated_at = now()
+    FROM evidence
+    WHERE evidence.id = p.id
+      AND p.confidence <> 'curated'
+    RETURNING 1 AS count
+  `);
+
+  return rows.length;
+}
+
 async function deriveCareerSpans(db: Db): Promise<number> {
   const rows = await db.execute<{ count: string }>(sql`
     WITH spans AS (
@@ -346,6 +424,71 @@ async function seedExplainers(db: Db): Promise<number> {
   }
 
   return count;
+}
+
+/**
+ * Publishes hand-entered appearance and goalscoring leaderboards.
+ *
+ * Written with `MANUAL_RANKING_SOURCE` as the source title, which the Wikipedia
+ * ingestion upsert refuses to overwrite. That is the whole point of the marker:
+ * these teams have no article a crawler can read, so a later run must not
+ * replace a curated table with nothing, and if one of them ever does gain a
+ * records article the marker has to be cleared deliberately.
+ *
+ * A team named here that is not in the database is reported rather than
+ * inserted. Slugs change when a name is corrected upstream, and a silent miss
+ * would leave the page empty with nothing to explain why.
+ */
+async function seedTeamRankings(db: Db): Promise<{ written: number; skipped: number }> {
+  let written = 0;
+  let skipped = 0;
+
+  for (const [slug, rankings] of Object.entries(TEAM_RANKING_SEEDS)) {
+    const [team] = await db.execute<{ id: string }>(
+      sql`SELECT id FROM team WHERE slug = ${slug} LIMIT 1`,
+    );
+    if (!team) {
+      process.stdout.write(`  skipped team "${slug}": not in the database\n`);
+      skipped += 1;
+      continue;
+    }
+
+    for (const ranking of rankings) {
+      const entries = ranking.entries
+        .slice()
+        .sort((first, second) => second.value - first.value)
+        .map((entry, index) => ({
+          rank: index + 1,
+          name: entry.name,
+          value: entry.value,
+          detail: entry.detail ?? null,
+        }));
+
+      // The note carries the source and the date the figures were true, because
+      // an appearance total for a serving player is only correct on the day it
+      // was read.
+      const note = `Compiled from ${ranking.source}, correct as of ${ranking.asOf}.`;
+
+      await db.execute(sql`
+        INSERT INTO entity_ranking (
+          entity_type, entity_id, kind, label, entries, confidence, note, source_title
+        ) VALUES (
+          'team', ${team.id}, ${ranking.kind}, ${ranking.label},
+          ${JSON.stringify(entries)}::jsonb, 'partial', ${note}, ${MANUAL_RANKING_SOURCE}
+        )
+        ON CONFLICT (entity_type, entity_id, kind) DO UPDATE SET
+          label = EXCLUDED.label,
+          entries = EXCLUDED.entries,
+          confidence = EXCLUDED.confidence,
+          note = EXCLUDED.note,
+          source_title = EXCLUDED.source_title,
+          updated_at = now()
+      `);
+      written += 1;
+    }
+  }
+
+  return { written, skipped };
 }
 
 /**

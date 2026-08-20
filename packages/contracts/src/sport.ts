@@ -185,6 +185,28 @@ export const statisticGroupSchema = z.object({
 });
 export type StatisticGroup = z.infer<typeof statisticGroupSchema>;
 
+/**
+ * A player's headline career numbers, uniform across every player of a sport.
+ *
+ * Separate from `statistics` on purpose. The registry-driven blocks vary by how
+ * much has been ingested, so the panel they render changes shape from player to
+ * player. These tiles do not: every footballer shows games, goals and trophies,
+ * in that order, so one profile reads like the next.
+ *
+ * Empty for a sport that has not declared its own trio. Only football has so
+ * far; the others count a career in their own terms and are worked through one
+ * at a time. `label` therefore travels with the value rather than being fixed
+ * by the key. A null `value` renders as an em dash: not yet ingested, rather
+ * than zero.
+ */
+export const careerSummaryEntrySchema = z.object({
+  key: z.enum(['career_games', 'career_goals', 'career_trophies']),
+  label: z.string(),
+  value: z.number().nullable(),
+  description: z.string().nullable(),
+});
+export type CareerSummaryEntry = z.infer<typeof careerSummaryEntrySchema>;
+
 /** A trophy, award or record. Fills the panel above the statistics. */
 export const honourSchema = z.object({
   id: z.string(),
@@ -225,6 +247,8 @@ export const playerDetailSchema = playerSummarySchema.extend({
   dateOfDeath: z.string().nullable(),
   biography: z.string().nullable(),
   honours: z.array(honourSchema),
+  /** Three entries in a fixed order, or empty where the sport declares none. */
+  careerSummary: z.array(careerSummaryEntrySchema),
   statistics: z.array(statisticGroupSchema),
   /** Clubs and national sides, most recent first. */
   teams: z.array(

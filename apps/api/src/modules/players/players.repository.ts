@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { and, asc, count, desc, eq, ilike, sql, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, sql, type SQL } from 'drizzle-orm';
 import type { EntityListQuery, PlayerSummary } from '@sportbrain/contracts';
 import { DatabaseService } from '../../database/database.service';
+import { nameSearch } from '../shared/name-search';
 import { person, personTeam, sport, team } from '../../database/schema';
 
 @Injectable()
@@ -14,7 +15,12 @@ export class PlayersRepository {
   ): Promise<{ rows: PlayerSummary[]; total: number }> {
     const predicates: SQL[] = [eq(sport.slug, sportSlug)];
 
-    if (query.q) predicates.push(ilike(person.fullName, `%${query.q}%`));
+    if (query.q) {
+      const match = nameSearch(query.q, [person.fullName, person.displayName], {
+        aliases: person.aliases,
+      });
+      if (match) predicates.push(match);
+    }
     if (query.country) predicates.push(eq(person.nationality, query.country));
 
     const where = and(...predicates);

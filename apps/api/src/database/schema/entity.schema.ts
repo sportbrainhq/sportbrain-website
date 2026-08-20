@@ -104,7 +104,21 @@ export const person = pgTable(
      */
     imageUrl: text('image_url'),
 
-    /** See `team.notability`. Orders player lists so famous names come first. */
+    /**
+     * Sitelink count as the provider reported it.
+     *
+     * Kept separate from `notability` because the two are different things and
+     * conflating them destroyed the input: the priority derivation wrote its
+     * score into `notability`, which was also the column holding the raw
+     * sitelinks, so re-running it fed on its own output and the original signal
+     * was unrecoverable without re-fetching from Wikidata.
+     */
+    sitelinks: integer('sitelinks').notNull().default(0),
+
+    /**
+     * Ranking score for list ordering, derived from `sitelinks` and career
+     * evidence. See `derivePersonPriority`.
+     */
     notability: integer('notability').notNull().default(0),
 
     confidence: confidenceEnum('confidence').notNull().default('provisional'),

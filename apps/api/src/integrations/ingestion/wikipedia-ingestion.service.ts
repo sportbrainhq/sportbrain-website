@@ -1,7 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
-import { discipline, entityFact, entityRanking, externalMapping } from '../../database/schema';
+import { CacheService } from '../../infrastructure/cache/cache.service';
+import {
+  discipline,
+  entityFact,
+  entityRanking,
+  externalMapping,
+  MANUAL_RANKING_SOURCE,
+} from '../../database/schema';
 import {
   WikipediaProvider,
   type WikiFact,
@@ -26,6 +33,7 @@ export class WikipediaIngestionService {
   constructor(
     private readonly database: DatabaseService,
     private readonly provider: WikipediaProvider,
+    private readonly cache: CacheService,
   ) {}
 
   /**
@@ -255,11 +263,17 @@ export class WikipediaIngestionService {
         // Poland's and Ecuador's leaderboards come from.
         const recordsTitle = await this.provider.findRecordsArticle(target.name, sportSlug);
 
-        const extracted = await this.provider.fetchTeamRankings(recordsTitle, target.name);
+        // The team's own article is passed as a second source: most sides
+        // without a records article publish the same two tables there.
+        const extracted = await this.provider.fetchTeamRankings(
+          recordsTitle,
+          target.name,
+          target.title,
+        );
         if (extracted.length === 0) continue;
 
         for (const ranking of extracted) {
-          await this.writeRanking('team', target.id, ranking);
+          await this.writeRanking('team', target.id, ranking, ranking.sourceTitle ?? recordsTitle);
           rankings += 1;
         }
         teams += 1;
@@ -272,7 +286,57 @@ export class WikipediaIngestionService {
       }
     }
 
+    // The cache is evicted here rather than left to expire. Cache tags were
+    // declared on every page fetch and nothing ever invalidated them, so a
+    // corrected figure waited out the full hour: Atlético Madrid went on
+    // showing Real Madrid's leaderboards long after the rows were deleted, and
+    // the only reliable fix was rebuilding the web server.
+    await this.revalidate([`sport:${sportSlug}`]);
+
     return { teams, rankings };
+  }
+
+  /**
+   * Asks the web app to drop cached pages for a set of tags.
+   *
+   * Best effort by design: ingestion having succeeded is the valuable outcome,
+   * and a web app that is not running, or not configured with the shared
+   * secret, must not fail the run. The failure is logged so a stale page is
+   * traceable to a missed revalidation rather than looking like bad data.
+   */
+  private async revalidate(tags: string[]): Promise<void> {
+    // The API's own cache first. Revalidating only the web app left it fetching
+    // fresh pages from a stale API, which is how the Players tab went on
+    // listing countries after they had been deleted: both layers hold the same
+    // response, and clearing one changes nothing.
+    try {
+      await this.cache.deleteByPrefix('players:');
+      await this.cache.deleteByPrefix('teams:');
+      await this.cache.deleteByPrefix('competitions:');
+      await this.cache.deleteByPrefix('content:');
+    } catch (error) {
+      this.logger.warn(`Clearing the API cache failed: ${this.message(error)}`);
+    }
+
+    const url = process.env.WEB_URL;
+    const secret = process.env.REVALIDATE_SECRET;
+    if (!url || !secret) return;
+
+    try {
+      const response = await fetch(new URL('/api/revalidate', url), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${secret}` },
+        body: JSON.stringify({ tags }),
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!response.ok) {
+        this.logger.warn(`Revalidation returned ${response.status}; pages may serve stale data`);
+        return;
+      }
+      this.logger.log(`  revalidated ${tags.join(', ')}`);
+    } catch (error) {
+      this.logger.warn(`Revalidation failed: ${this.message(error)}`);
+    }
   }
 
   /**
@@ -545,6 +609,197 @@ export class WikipediaIngestionService {
     return { players, spells };
   }
 
+  /**
+   * Ingests footballers' headline career numbers: appearances, goals, trophies.
+   *
+   * Football only. Each sport counts a career in its own terms, so each gets
+   * its own pass rather than one reader guessing at five vocabularies.
+   *
+   * All three come from the player's own article, in one pass, so a page's
+   * numbers are always read from the same revision. Trophies used to be counted
+   * from our honour table instead, and that was the wrong source: the honours
+   * there arrive from Wikidata's "award received" statements, which are close to
+   * empty for footballers, so Pel\u00e9, Maradona, Zidane, Cruyff and Buffon all
+   * reported zero trophies.
+   *
+   * Values are merged into the existing career row, never replacing it, so the
+   * detailed per-discipline statistics survive.
+   */
+  async ingestFootballCareerTotals(limit: number): Promise<{ players: number; written: number }> {
+    const [sportRow] = await this.database.db.execute<{ id: string }>(
+      sql`SELECT id FROM sport WHERE slug = 'football' LIMIT 1`,
+    );
+    if (!sportRow) return { players: 0, written: 0 };
+
+    const targets = await this.targets('person', 'football', limit);
+    this.logger.log(`football: ${targets.length} players`);
+
+    let written = 0;
+
+    for (const [index, target] of targets.entries()) {
+      try {
+        const [totals, honours] = await Promise.all([
+          this.provider.fetchFootballCareerTotals(target.title),
+          this.provider.fetchFootballHonours(target.title),
+        ]);
+
+        // A null is "the article does not say", which must not be written as a
+        // zero: the page renders a dash for the former and a real figure for
+        // the latter, and a stored zero is indistinguishable afterwards.
+        const payload: Record<string, number> = {};
+        if (totals.games !== null) payload.career_games = totals.games;
+        if (totals.goals !== null) payload.career_goals = totals.goals;
+
+        // `groups` guards against a silent zero: an article whose honours
+        // section this reader does not recognise parses into no groups at all,
+        // which is a parsing failure rather than a trophyless career.
+        if (honours.won !== null && honours.groups > 0) {
+          payload.career_trophies = honours.won;
+        }
+
+        if (Object.keys(payload).length === 0) continue;
+
+        await this.database.db.execute(sql`
+          INSERT INTO person_statistic (
+            person_id, sport_id, discipline_id, scope, stats, computed_at
+          ) VALUES (
+            ${target.id}, ${sportRow.id}, NULL, 'career',
+            ${JSON.stringify(payload)}::jsonb, now()
+          )
+          ON CONFLICT (
+            person_id, scope,
+            coalesce(competition_id, '00000000-0000-0000-0000-000000000000'::uuid),
+            coalesce(season_id, '00000000-0000-0000-0000-000000000000'::uuid),
+            coalesce(team_id, '00000000-0000-0000-0000-000000000000'::uuid),
+            coalesce(discipline_id, '00000000-0000-0000-0000-000000000000'::uuid)
+          ) DO UPDATE SET
+            stats = person_statistic.stats || EXCLUDED.stats,
+            computed_at = now()
+        `);
+        written += 1;
+      } catch (error) {
+        this.logger.warn(`Career totals failed for ${target.title}: ${this.message(error)}`);
+      }
+
+      if ((index + 1) % 25 === 0) {
+        this.logger.log(`  ${index + 1}/${targets.length} players, ${written} written`);
+      }
+    }
+
+    // `sport:football`, not `players`: the website tags its player pages by
+    // sport, so a `players` tag matches nothing and the corrected figures sat
+    // behind the cache until the hour-long window expired on its own.
+    await this.revalidate(['sport:football']);
+
+    return { players: targets.length, written };
+  }
+
+  /**
+   * Reads the headline numbers for the most notable footballers and reports
+   * them, without writing anything.
+   *
+   * A review tool rather than a pipeline step. The three tiles are the most
+   * visible numbers on the site, and a wrong one is embarrassing in a way a
+   * missing statistic is not: Casillas showing zero trophies was noticed
+   * immediately. This prints the values so they can be read against what the
+   * articles say, and flags the shapes that are suspicious on their face.
+   */
+  async scanFootballCareerTotals(limit: number): Promise<ScanRow[]> {
+    // Its own query rather than `targets`, for two reasons: the player's
+    // recorded position is needed to judge a goals figure, and one person can
+    // hold two Wikipedia mappings, which `targets` returns as two rows. Raúl
+    // appeared twice in the first scan for exactly that reason.
+    const targets = await this.database.db.execute<{
+      title: string;
+      name: string;
+      position: string | null;
+    }>(sql`
+      SELECT DISTINCT ON (p.id)
+             em.external_id AS title,
+             p.full_name AS name,
+             p.attributes->>'position' AS position
+      FROM person p
+      JOIN sport s ON s.id = p.primary_sport_id AND s.slug = 'football'
+      JOIN external_mapping em
+        ON em.entity_id = p.id AND em.provider = 'wikipedia' AND em.entity_type = 'person'
+      ORDER BY p.id, em.external_id
+      LIMIT ${limit * 3}
+    `);
+
+    // Notability drives the order, and `DISTINCT ON` requires it to lead the
+    // sort, so the ranking is applied after de-duplication rather than in SQL.
+    const ranked = await this.database.db.execute<{ title: string }>(sql`
+      SELECT em.external_id AS title
+      FROM person p
+      JOIN sport s ON s.id = p.primary_sport_id AND s.slug = 'football'
+      JOIN external_mapping em
+        ON em.entity_id = p.id AND em.provider = 'wikipedia' AND em.entity_type = 'person'
+      ORDER BY p.notability DESC
+    `);
+
+    const order = new Map(ranked.map((row, index) => [row.title, index]));
+    const shortlist = targets
+      .sort((a, b) => (order.get(a.title) ?? Infinity) - (order.get(b.title) ?? Infinity))
+      .slice(0, limit);
+
+    const rows: ScanRow[] = [];
+
+    for (const [index, target] of shortlist.entries()) {
+      try {
+        const [totals, honours] = await Promise.all([
+          this.provider.fetchFootballCareerTotals(target.title),
+          this.provider.fetchFootballHonours(target.title),
+        ]);
+
+        // A goalkeeper who scored nothing is the normal case, so the position
+        // decides whether a zero is a finding: flagging Buffon, Casillas, Neuer
+        // and Yashin as broken buried the real problems in the first scan.
+        const keeper = /goal ?keeper|goalie/i.test(target.position ?? '');
+
+        const warnings: string[] = [];
+        if (totals.games === null) warnings.push('no appearances');
+        if (totals.goals === null) warnings.push('no goals');
+        if (honours.won === null || honours.groups === 0) warnings.push('no honours section');
+        if (!keeper && totals.goals === 0 && (totals.games ?? 0) > 200) {
+          warnings.push('outfielder with no goals');
+        }
+        if (honours.won === 0 && honours.groups > 0) warnings.push('zero trophies');
+        // Nobody has played 1,500 senior matches; a figure that large means two
+        // numbers have been added that should not have been.
+        if ((totals.games ?? 0) > 1_500) warnings.push('implausible appearances');
+        // Puskás genuinely scored more than he played, so this is a prompt to
+        // look rather than proof of an error.
+        if ((totals.goals ?? 0) > (totals.games ?? 0)) warnings.push('goals exceed games');
+
+        rows.push({
+          name: target.name,
+          title: target.title,
+          position: target.position,
+          games: totals.games,
+          goals: totals.goals,
+          trophies: honours.won,
+          warnings,
+        });
+      } catch (error) {
+        rows.push({
+          name: target.name,
+          title: target.title,
+          position: target.position,
+          games: null,
+          goals: null,
+          trophies: null,
+          warnings: [`failed: ${this.message(error)}`],
+        });
+      }
+
+      if ((index + 1) % 25 === 0) {
+        this.logger.log(`  scanned ${index + 1}/${shortlist.length}`);
+      }
+    }
+
+    return rows;
+  }
+
   // ---------------------------------------------------------------------------
 
   /**
@@ -631,6 +886,7 @@ export class WikipediaIngestionService {
     entityType: string,
     entityId: string,
     ranking: WikiRanking,
+    sourceTitle: string | null,
   ): Promise<void> {
     await this.database.db
       .insert(entityRanking)
@@ -642,6 +898,7 @@ export class WikipediaIngestionService {
         entries: ranking.entries,
         confidence: ranking.confidence,
         note: ranking.note,
+        sourceTitle,
       })
       .onConflictDoUpdate({
         target: [entityRanking.entityType, entityRanking.entityId, entityRanking.kind],
@@ -650,12 +907,32 @@ export class WikipediaIngestionService {
           entries: ranking.entries,
           confidence: ranking.confidence,
           note: ranking.note,
+          sourceTitle,
           updatedAt: new Date(),
         },
+        // Hand-curated rows survive ingestion. Around a hundred notable teams
+        // have no records article Wikipedia can be read from at all, so their
+        // leaderboards are seeded by hand; without this guard the next crawl
+        // would either overwrite them with a worse table or, for a team the
+        // parser still cannot read, leave them intact only by luck.
+        setWhere: sql`${entityRanking.sourceTitle} IS DISTINCT FROM ${MANUAL_RANKING_SOURCE}`,
       });
   }
 
   private message(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
   }
+}
+
+/** One player's headline numbers, as read for review rather than for writing. */
+export interface ScanRow {
+  name: string;
+  title: string;
+  /** Decides whether a goals figure of zero is a finding or a goalkeeper. */
+  position: string | null;
+  games: number | null;
+  goals: number | null;
+  trophies: number | null;
+  /** Shapes worth a human look: a zero that should not be, a figure too large. */
+  warnings: string[];
 }

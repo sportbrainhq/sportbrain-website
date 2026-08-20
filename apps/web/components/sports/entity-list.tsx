@@ -7,6 +7,8 @@ export function EntityListShell({
   pagination,
   basePath,
   toolbar,
+  search,
+  emptyMessage,
   children,
 }: {
   title: string;
@@ -15,22 +17,35 @@ export function EntityListShell({
   basePath: string;
   /** Filters or other controls, shown under the heading. */
   toolbar?: React.ReactNode;
+  /**
+   * A search field, placed on the heading row rather than above the grid.
+   *
+   * Kept separate from `toolbar` because the two want different positions: a
+   * filter row reads as a row, while a lone search box on its own line looks
+   * stranded and pushes the results down for no reason.
+   */
+  search?: React.ReactNode;
+  /** Shown instead of the grid when nothing matches. */
+  emptyMessage?: string;
   children: React.ReactNode;
 }) {
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-baseline justify-between gap-2">
-        <h1 className="text-2xl font-black tracking-tight sm:text-3xl">{title}</h1>
-        <p className="text-sm text-muted-foreground">
-          {pagination.total.toLocaleString('en-GB')} total
-        </p>
+      <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+        <div className="flex flex-wrap items-baseline gap-x-3">
+          <h1 className="text-2xl font-black tracking-tight sm:text-3xl">{title}</h1>
+          <p className="text-sm text-muted-foreground">
+            {pagination.total.toLocaleString('en-GB')} total
+          </p>
+        </div>
+        {search}
       </header>
 
       {toolbar}
 
       {pagination.total === 0 ? (
         <p className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-          Nothing here yet.
+          {emptyMessage ?? 'Nothing here yet.'}
         </p>
       ) : (
         <>

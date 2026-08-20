@@ -1,6 +1,6 @@
 {
-  "id": "70cb7d01-ac87-4591-9daf-52d91d5ce214",
-  "prevId": "10b514b9-1ec8-4d60-8f15-7a4c8857a3a1",
+  "id": "a0f0046b-3842-44f8-9b11-e8c3b21cf7cb",
+  "prevId": "e8bf8ae5-ed9b-4d50-84e6-2e6d4526fd01",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -676,6 +676,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "sitelinks": {
+          "name": "sitelinks",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         },
         "notability": {
           "name": "notability",
@@ -3517,6 +3524,12 @@
         },
         "note": {
           "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_title": {
+          "name": "source_title",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -6460,8 +6473,6 @@
         "key_takeaways",
         "the_law",
         "in_practice",
-        "sanctions",
-        "edge_cases",
         "sanctions",
         "edge_cases",
         "basic_structure",

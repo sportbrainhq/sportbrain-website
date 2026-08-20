@@ -9,6 +9,8 @@
  * pnpm --filter @sportbrain/api wiki rankings football 60
  * pnpm --filter @sportbrain/api wiki cricket-stats 300
  * pnpm --filter @sportbrain/api wiki careers 300
+ * pnpm --filter @sportbrain/api wiki career-totals 400
+ * pnpm --filter @sportbrain/api wiki scan-totals 100
  * pnpm --filter @sportbrain/api wiki all football 200
  * ```
  *
@@ -24,6 +26,7 @@ import postgres from 'postgres';
 import { loadConfiguration } from '../config/configuration';
 import type { DatabaseService } from '../database/database.service';
 import * as schema from '../database/schema';
+import { InMemoryCacheService } from '../infrastructure/cache/cache.service';
 import { WikipediaIngestionService } from './ingestion/wikipedia-ingestion.service';
 import { WikipediaClient } from './providers/wikipedia/wikipedia.client';
 import { WikipediaProvider } from './providers/wikipedia/wikipedia.provider';
@@ -37,7 +40,7 @@ async function main(): Promise<void> {
 
   if (!command) {
     process.stderr.write(
-      'Usage: wiki <map|facts|crests|rankings|cricket-stats|basketball-stats|careers|all> [entityType] [sport] [limit]\n',
+      'Usage: wiki <map|facts|crests|rankings|cricket-stats|basketball-stats|careers|career-totals|scan-totals|all> [entityType] [sport] [limit]\n',
     );
     process.exitCode = 1;
     return;
@@ -46,9 +49,16 @@ async function main(): Promise<void> {
   const config = loadConfiguration();
   const client = postgres(config.database.url, { max: 2, onnotice: () => {} });
   const database = { db: drizzle(client, { schema }) } as unknown as DatabaseService;
+  // A no-op cache, deliberately. This CLI is its own process, so the running
+  // API's in-memory cache is not reachable from here and clearing a local one
+  // would be theatre. The web revalidation call below is what makes the change
+  // visible; an API served from a long-lived process still needs restarting or
+  // its own invalidation endpoint, which is why the cache TTLs are short.
+  const cache = new InMemoryCacheService();
   const ingestion = new WikipediaIngestionService(
     database,
     new WikipediaProvider(new WikipediaClient()),
+    cache,
   );
 
   const startedAt = Date.now();
@@ -114,6 +124,44 @@ async function main(): Promise<void> {
         break;
       }
 
+      /**
+       * Football's three headline tiles: appearances, goals, trophies.
+       *
+       * Football only, matching the registry. Other sports count a career in
+       * their own terms and get their own command when their data is done.
+       */
+      case 'career-totals': {
+        const result = await ingestion.ingestFootballCareerTotals(Number(args[0] ?? 200));
+        process.stdout.write(`${result.players} players examined, ${result.written} written\n`);
+        break;
+      }
+
+      /**
+       * Reads the headline numbers for the most notable footballers and prints
+       * them, writing nothing.
+       *
+       * For checking the three tiles against the articles before a run, which
+       * is how the zero-trophy players were found.
+       */
+      case 'scan-totals': {
+        const rows = await ingestion.scanFootballCareerTotals(Number(args[0] ?? 100));
+
+        const flagged = rows.filter((row) => row.warnings.length > 0);
+
+        for (const row of rows) {
+          process.stdout.write(
+            `${row.name.slice(0, 26).padEnd(27)}` +
+              `${String(row.games ?? '-').padStart(6)}` +
+              `${String(row.goals ?? '-').padStart(6)}` +
+              `${String(row.trophies ?? '-').padStart(6)}` +
+              `${row.warnings.length > 0 ? `  ${row.warnings.join(', ')}` : ''}\n`,
+          );
+        }
+
+        process.stdout.write(`\n${rows.length} scanned, ${flagged.length} flagged for review\n`);
+        break;
+      }
+
       case 'careers': {
         const result = await ingestion.ingestFootballCareers(Number(args[0] ?? 200));
         process.stdout.write(`${result.players} players, ${result.spells} club spells\n`);
@@ -172,6 +220,13 @@ async function main(): Promise<void> {
           const careers = await ingestion.ingestFootballCareers(cap);
           process.stdout.write(
             `  careers      ${careers.players} players, ${careers.spells} spells\n`,
+          );
+
+          // Last, because the trophy count reads the honours the fact passes
+          // above have just written.
+          const totals = await ingestion.ingestFootballCareerTotals(cap);
+          process.stdout.write(
+            `  headline     ${totals.written}/${totals.players} players with career totals\n`,
           );
         }
         break;

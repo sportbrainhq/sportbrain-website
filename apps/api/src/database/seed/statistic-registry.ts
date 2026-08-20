@@ -84,6 +84,61 @@ const UNIVERSAL: StatisticDefinitionSeed[] = [
   },
 ];
 
+/**
+ * The three headline statistics a football player page always shows.
+ *
+ * Football only, deliberately. Every sport counts a career differently: runs
+ * and wickets are not goals, a driver has no games played, and printing one
+ * sport's vocabulary over another's numbers would be a lie rather than a
+ * simplification. Each sport gets its own trio when its data is worked through.
+ *
+ * Separate from football's detailed definitions below because those are a
+ * complete statistical vocabulary awaiting a feed, while these three are what a
+ * Wikipedia infobox reliably carries today, which is why they are the ones the
+ * page can promise for every player.
+ */
+const FOOTBALL_CAREER_HEADLINES: StatisticDefinitionSeed[] = [
+  {
+    key: 'career_games',
+    label: 'Games played',
+    shortLabel: 'Games',
+    appliesTo: 'player',
+    category: 'Career',
+    aggregation: 'sum',
+    format: 'integer',
+    isHeadline: true,
+    displayOrder: -3,
+    description:
+      'Senior appearances for clubs and country over a career, read from the player\u2019s own article rather than summed from the spells we hold, so clubs outside our catalogue still count.',
+  },
+  {
+    key: 'career_goals',
+    label: 'Goals',
+    shortLabel: 'Goals',
+    appliesTo: 'player',
+    category: 'Career',
+    aggregation: 'sum',
+    format: 'integer',
+    isHeadline: true,
+    displayOrder: -2,
+    description:
+      'Career goals in senior football, for clubs and country. Youth and reserve-team goals are not included.',
+  },
+  {
+    key: 'career_trophies',
+    label: 'Trophies',
+    shortLabel: 'Trophies',
+    appliesTo: 'player',
+    category: 'Career',
+    aggregation: 'sum',
+    format: 'integer',
+    isHeadline: true,
+    displayOrder: -1,
+    description:
+      'Competitions won with a club or a national side, counted from the honours list on the player\u2019s article. Individual awards are listed there in full but are not totalled here.',
+  },
+];
+
 const SPORT_DEFINITIONS: Record<string, StatisticDefinitionSeed[]> = {
   // ---------------------------------------------------------------------------
   // FOOTBALL
@@ -869,6 +924,6 @@ const SPORT_DEFINITIONS: Record<string, StatisticDefinitionSeed[]> = {
 export const STATISTIC_REGISTRY: Record<string, StatisticDefinitionSeed[]> = Object.fromEntries(
   Object.entries(SPORT_DEFINITIONS).map(([sport, definitions]) => [
     sport,
-    [...definitions, ...UNIVERSAL],
+    [...definitions, ...UNIVERSAL, ...(sport === 'football' ? FOOTBALL_CAREER_HEADLINES : [])],
   ]),
 );

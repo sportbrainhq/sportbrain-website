@@ -1,0 +1,1 @@
+ALTER TABLE "person" ADD COLUMN "sitelinks" integer DEFAULT 0 NOT NULL;
