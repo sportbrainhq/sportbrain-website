@@ -49,3 +49,11 @@ Thumbs.db
 # rather than useful. Nothing in the source reads them.
 rankings-needed.json
 *-needed.json
+
+# scratch scripts
+#
+# Ad-hoc diagnostic scripts written beside the app while debugging. They read
+# DATABASE_URL directly and are not part of the build, so they must never be
+# committed; two slipped in before this pattern existed.
+*.tmp.mjs
+*.tmp.ts
