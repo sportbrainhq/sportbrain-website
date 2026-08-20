@@ -118,8 +118,18 @@ export default async function PlayerPage({
             Career
           </h2>
           <ul className="space-y-1.5">
-            {player.teams.map((entry) => (
-              <li key={`${entry.team.id}-${entry.startDate ?? ''}`} className="flex gap-3 text-sm">
+            {player.teams.map((entry, index) => (
+              // Keyed by index as well as identity: a club and a start date do
+              // not identify a spell, because the same spell can be held twice
+              // with different end-date precision (Carragher's Liverpool years
+              // end both 2013-01-01 and 2013-12-31). Role and end date are in
+              // the database's own unique index and would be enough here, but
+              // the index keeps the key stable even if a further duplicate slips
+              // through, since a duplicate key breaks rendering outright.
+              <li
+                key={`${entry.team.id}-${entry.role ?? ''}-${entry.startDate ?? ''}-${entry.endDate ?? ''}-${index}`}
+                className="flex gap-3 text-sm"
+              >
                 <Link
                   href={`/sports/${sportSlug}/teams/${entry.team.slug}`}
                   className="font-medium hover:underline"
