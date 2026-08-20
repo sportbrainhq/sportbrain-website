@@ -653,7 +653,25 @@ export class WikipediaIngestionService {
         // `groups` guards against a silent zero: an article whose honours
         // section this reader does not recognise parses into no groups at all,
         // which is a parsing failure rather than a trophyless career.
-        if (honours.won !== null && honours.groups > 0) {
+        //
+        // The second guard catches a different error: club officials and
+        // federations are held in the person table, and their articles carry
+        // the *club's* honours rather than a playing record. Santiago Bernabéu,
+        // a president with 52 appearances, was credited with Real Madrid's 102
+        // trophies, and the Royal Spanish Football Federation with 77.
+        //
+        // A flat ceiling rather than a ratio, because the obvious ratios reject
+        // real records: a threshold on appearances would strip Kobbie Mainoo's
+        // two trophies at 92 games, and requiring trophies to be a small
+        // fraction of games would strip Aitana Bonmat\u00ed's 33 in 300 and Presnel
+        // Kimpembe's 28 in 202, all of which are correct. Players at the
+        // dominant clubs genuinely win in bunches.
+        //
+        // 60 sits well above the most decorated actual career on the site
+        // (Messi, 46) and well below a club's total, so it separates the two
+        // populations without touching any real player.
+        const plausible = honours.won !== null && honours.won <= 60;
+        if (honours.won !== null && honours.groups > 0 && plausible) {
           payload.career_trophies = honours.won;
         }
 
@@ -692,6 +710,68 @@ export class WikipediaIngestionService {
     await this.revalidate(['sport:football']);
 
     return { players: targets.length, written };
+  }
+
+  /**
+   * Ingests football clubs' and national sides' title counts.
+   *
+   * The team equivalent of the players' pass, and it exists for the same
+   * reason: titles were counted from our honour table, which holds honours for
+   * 400 of the 1,005 football teams, so the rest showed nothing at all. A
+   * club's article states its count directly in its honours table.
+   *
+   * Written to the sport-wide career row, since a title belongs to a club
+   * rather than to a format, and merged so nothing else in the payload is lost.
+   */
+  async ingestFootballTitles(limit: number): Promise<{ teams: number; written: number }> {
+    const [sportRow] = await this.database.db.execute<{ id: string }>(
+      sql`SELECT id FROM sport WHERE slug = 'football' LIMIT 1`,
+    );
+    if (!sportRow) return { teams: 0, written: 0 };
+
+    const targets = await this.targets('team', 'football', limit);
+    this.logger.log(`football: ${targets.length} teams`);
+
+    let written = 0;
+
+    for (const [index, target] of targets.entries()) {
+      try {
+        const counted = await this.provider.fetchClubTitles(target.title);
+
+        // `competitions` guards against a silent zero: an honours table this
+        // reader does not recognise yields none, which is a parsing failure
+        // rather than a club that has won nothing.
+        if (counted.titles === null || counted.competitions === 0) continue;
+
+        await this.database.db.execute(sql`
+          INSERT INTO team_statistic (
+            team_id, sport_id, discipline_id, scope, stats, computed_at
+          ) VALUES (
+            ${target.id}, ${sportRow.id}, NULL, 'career',
+            ${JSON.stringify({ titles_won: counted.titles })}::jsonb, now()
+          )
+          ON CONFLICT (
+            team_id, scope,
+            coalesce(competition_id, '00000000-0000-0000-0000-000000000000'::uuid),
+            coalesce(season_id, '00000000-0000-0000-0000-000000000000'::uuid),
+            coalesce(discipline_id, '00000000-0000-0000-0000-000000000000'::uuid)
+          ) DO UPDATE SET
+            stats = team_statistic.stats || EXCLUDED.stats,
+            computed_at = now()
+        `);
+        written += 1;
+      } catch (error) {
+        this.logger.warn(`Titles failed for ${target.title}: ${this.message(error)}`);
+      }
+
+      if ((index + 1) % 25 === 0) {
+        this.logger.log(`  ${index + 1}/${targets.length} teams, ${written} written`);
+      }
+    }
+
+    await this.revalidate(['sport:football']);
+
+    return { teams: targets.length, written };
   }
 
   /**

@@ -111,8 +111,39 @@ export interface WikiHonourCount {
  * playing honours and his managerial ones under sibling headings, so counting
  * both credited a player's tile with trophies he won from the touchline.
  */
+/**
+ * Honours groups that are not titles anybody counts.
+ *
+ * Regional and friendly competitions: Real Madrid lists 27 of them, none of
+ * which appear in any published tally of the club's honours.
+ */
+const EXCLUDED_TITLE_TYPES = /^(regional|friendly|friendlies|other|minor|youth|reserve|women)/i;
+
+/**
+ * Competitions that are invitational or regional whatever group they sit under.
+ *
+ * The group label is not always there to be excluded. Celta Vigo lists its
+ * pre-season trophies as plain honours lines \u2014 "Trofeo Cidade de Vigo Winners
+ * (21)", "Trofeo Memorial Quinocho Winners (21)" \u2014 which took the club to 83
+ * titles, more than Bayern. A summer friendly is not a title.
+ */
+const EXCLUDED_COMPETITIONS =
+  /\b(trofeo|troph[e\u00e9]e|memorial|cidade|ciudad|copa galicia|championship \(|regional|amistoso|pre-?season|testimonial|charity|cup winners \(shared\))\b/i;
+
 const EXCLUDED_HONOUR_GROUPS =
   /^(individual|records?|orders?|decorations?|awards?|other|see also|notes?|references?|state honours|honours and awards|personal|manager|managerial|as a manager|head coach|coach)\b/i;
+
+/**
+ * A count of the titles a club's article credits it with.
+ *
+ * `competitions` is the number of table rows counted, kept as a sanity check: a
+ * club page whose honours table this reader does not recognise yields zero of
+ * them, which is different from a club that has won nothing.
+ */
+export interface WikiTitleCount {
+  titles: number | null;
+  competitions: number;
+}
 
 export interface WikiCareerTotals {
   games: number | null;
@@ -1127,6 +1158,119 @@ export class WikipediaProvider {
         .replace(/\s+/g, ' ')
         .trim()
     );
+  }
+
+  /**
+   * The titles a club's article credits it with.
+   *
+   * A different shape from a player's honours and so a different reader. A
+   * player writes a bulleted list of years; a club states a count, and does so
+   * in one of two layouts, both handled here:
+   *
+   *   - a table, Competition | Titles | Seasons, whose Titles column holds the
+   *     figure (Real Madrid, Liverpool, Bayern);
+   *   - a list reading "Serie A Winners (3): 1941\u201342, ..." with the
+   *     runners-up on their own line (Roma, Tottenham, Aston Villa).
+   *
+   * The stated count is taken rather than the years listed beside it. The two
+   * should agree, and where they do not \u2014 pages marking shared titles \u2014 the
+   * count is what the article is actually asserting.
+   *
+   * Regional titles are excluded. Real Madrid's table closes with 27 regional
+   * and friendly trophies which no published count of its honours includes, and
+   * adding them produced a total a reader could not reconcile with anything.
+   */
+  async fetchClubTitles(title: string): Promise<WikiTitleCount> {
+    const html = await this.client.fetchHtml(title);
+    if (!html) return { titles: null, competitions: 0 };
+
+    const heading = /id="(Honours|Honors|Achievements|Honours_and_achievements)"/.exec(html);
+    if (!heading) return { titles: null, competitions: 0 };
+
+    const rest = html.slice(heading.index);
+    const nextSection = rest.search(/<h2\b/);
+    const section = nextSection > 0 ? rest.slice(0, nextSection) : rest;
+
+    let titles = 0;
+    let competitions = 0;
+    // The type is written once, in the first row of its group, and the rows
+    // beneath it carry only a competition. So it persists until replaced.
+    let type = '';
+
+    for (const table of section.matchAll(/<table[\s\S]*?<\/table>/g)) {
+      // Only a table that says it counts titles. The Honours heading is often
+      // followed by a European-record table of matches played, won and drawn,
+      // and summing its Won column gave Leverkusen 534 titles.
+      if (!/>\s*(?:Titles|Winners|Wins|Trophies)\b/i.test(table[0])) continue;
+      if (/Matches played|\bPld\b|Goal difference|\bGF\b/i.test(table[0])) continue;
+
+      for (const row of table[0].split(/<tr[^>]*>/)) {
+        const cells = stripCells(row);
+        if (cells.length < 2) continue;
+
+        // A row is either [type, competition, count, seasons] where its group
+        // begins, or [competition, count, seasons] where it continues. The
+        // count is the first cell that is a bare integer.
+        const countIndex = cells.findIndex((cell) => /^\d{1,3}$/.test(cell));
+        if (countIndex < 1) continue;
+
+        if (countIndex >= 2) type = cells[countIndex - 2] ?? type;
+
+        if (EXCLUDED_TITLE_TYPES.test(type)) continue;
+
+        const count = parseNumber(cells[countIndex]!);
+        if (count === null) continue;
+
+        titles += count;
+        competitions += 1;
+      }
+    }
+
+    // The second shape, and the more common one: a list rather than a table,
+    // written "Serie A Winners (3): 1941\u201342, 1982\u201383, 2000\u201301" with the
+    // runners-up on a line of their own. Roma, Lazio, Tottenham, Aston Villa,
+    // Newcastle and Fiorentina all use it, and a table-only reader skipped 67
+    // of the first 150 clubs.
+    if (competitions === 0) {
+      for (const item of section.matchAll(/<li\b[^>]*>([\s\S]*?)<\/li>/g)) {
+        const text = this.plainText(item[1]!);
+        if (!text) continue;
+
+        // A losing record, however it is phrased. Checked before the winners
+        // pattern because "Runners-up: (14)" also carries a bracketed count.
+        if (/\b(runners?-up|runner up|third place|finalist)\b/i.test(text)) continue;
+        if (EXCLUDED_TITLE_TYPES.test(text)) continue;
+        if (EXCLUDED_COMPETITIONS.test(text)) continue;
+
+        // A winning line at all: "Winners", "Winner" or "Champions".
+        if (!/\b(winners?|champions?)\b/i.test(text)) continue;
+
+        // Where the count is stated in brackets \u2014 "Serie A Winners (3)" \u2014 take
+        // it. The years after the colon confirm it and are not counted as well,
+        // since the two disagree on pages marking shared titles.
+        const stated = /\b(?:winners?|champions?)\b[^(:]*\((\d{1,3})\)/i.exec(text);
+
+        if (stated) {
+          const count = parseNumber(stated[1]!);
+          if (count === null) continue;
+
+          titles += count;
+          competitions += 1;
+          continue;
+        }
+
+        // Otherwise the years are the only count there is: Newcastle writes
+        // "FA Cup Winners: 1909\u201310, 1923\u201324, ..." with no figure at all, and
+        // a reader demanding brackets scored the club zero.
+        const years = text.slice(text.indexOf(':') + 1).match(/\d{4}(?:[\u2013-]\d{2,4})?/g);
+        if (!text.includes(':') || !years) continue;
+
+        titles += years.length;
+        competitions += 1;
+      }
+    }
+
+    return { titles, competitions };
   }
 
   /**

@@ -105,6 +105,20 @@ export const person = pgTable(
     imageUrl: text('image_url'),
 
     /**
+     * Whether the person is still competing.
+     *
+     * `active`, `retired`, or null where the evidence does not say. Null is a
+     * real state and not a placeholder: the page shows no badge at all rather
+     * than guessing, because a wrong "Active" on someone who retired twenty
+     * years ago is worse than no badge.
+     *
+     * Derived from a career end year, the end of a final club spell, or a date
+     * of death, all of which come from the provider rather than from inference
+     * about age.
+     */
+    careerStatus: text('career_status'),
+
+    /**
      * Sitelink count as the provider reported it.
      *
      * Kept separate from `notability` because the two are different things and

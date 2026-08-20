@@ -47,6 +47,7 @@ import {
 } from './football-explainer-taxonomy';
 import { FOOTBALL_EXPLAINERS, FOOTBALL_EXPLAINER_SOURCES } from './football-explainers';
 import { seedExplainerLibrary } from './seed-explainers';
+import { honourTier } from './football-honour-tiers';
 import { STATISTIC_REGISTRY } from './statistic-registry';
 import { TEAM_RANKING_SEEDS } from './team-rankings';
 
@@ -71,6 +72,12 @@ async function main(): Promise<void> {
 
     const ranked = await derivePersonPriority(db);
     process.stdout.write(`Derived:  ${ranked} people re-prioritised\n`);
+
+    const tiered = await deriveHonourPrestige(db);
+    process.stdout.write(`Derived:  ${tiered} honours tiered\n`);
+
+    const statuses = await derivePersonStatus(db);
+    process.stdout.write(`Derived:  ${statuses} career statuses set\n`);
 
     const overviews = await seedOverviews(db);
     process.stdout.write(`Content:  ${overviews} sport overviews written\n`);
@@ -205,10 +212,20 @@ async function seedRegistry(db: Db): Promise<number> {
  */
 async function deriveHonourCounts(db: Db): Promise<number> {
   const people = await db.execute<{ count: string }>(sql`
+    -- Grouped by person alone, not by person and sport. The conflict target
+    -- below does not include the sport, so a person holding honours under two
+    -- sports produced two rows aiming at one key and Postgres rejected the whole
+    -- statement with "ON CONFLICT DO UPDATE command cannot affect row a second
+    -- time". One dual-code footballer was enough to fail the entire seed.
+    --
+    -- The person's primary sport is used for the row, which is what the rest of
+    -- the schema treats as their sport.
     WITH counts AS (
-      SELECT person_id, sport_id, count(*) AS honours
-      FROM honour WHERE person_id IS NOT NULL
-      GROUP BY person_id, sport_id
+      SELECT h.person_id, p.primary_sport_id AS sport_id, count(*) AS honours
+      FROM honour h
+      JOIN person p ON p.id = h.person_id
+      WHERE h.person_id IS NOT NULL
+      GROUP BY h.person_id, p.primary_sport_id
     )
     INSERT INTO person_statistic (person_id, sport_id, scope, discipline_id, stats, computed_at)
     SELECT person_id, sport_id, 'career', NULL,
@@ -326,6 +343,106 @@ async function derivePersonPriority(db: Db): Promise<number> {
   `);
 
   return rows.length;
+}
+
+/**
+ * Assigns a prestige tier to every football honour.
+ *
+ * Applied here rather than at ingestion so the curated list can be revised and
+ * re-applied without re-fetching anything. Recomputed from the title each run,
+ * so an honour that moves tier moves everywhere.
+ */
+async function deriveHonourPrestige(db: Db): Promise<number> {
+  const rows = await db.execute<{ id: string; title: string }>(sql`
+    SELECT h.id, h.title
+    FROM honour h
+    JOIN sport s ON s.id = h.sport_id
+    WHERE s.slug = 'football'
+  `);
+
+  // Grouped by tier so the update is one statement per tier rather than per
+  // honour: there are thousands of honours and four tiers.
+  const byTier = new Map<number, string[]>();
+  for (const row of rows) {
+    const tier = honourTier(row.title);
+    if (tier === null) continue;
+    byTier.set(tier, [...(byTier.get(tier) ?? []), row.id]);
+  }
+
+  let updated = 0;
+  for (const [tier, ids] of byTier) {
+    for (let index = 0; index < ids.length; index += 500) {
+      const batch = ids.slice(index, index + 500);
+      await db.execute(sql`
+        UPDATE honour SET prestige = ${tier}, updated_at = now()
+        WHERE id = ANY(${sql.raw(pgUuidArray(batch))})
+      `);
+      updated += batch.length;
+    }
+  }
+
+  return updated;
+}
+
+/**
+ * Works out whether each person is still competing.
+ *
+ * From evidence rather than inference about age. Three signals, in order of how
+ * conclusive they are:
+ *
+ *   1. A date of death. Conclusive.
+ *   2. A career end year in `attributes`, which Wikidata carries for most
+ *      retired players.
+ *   3. Club spells: a person whose every recorded spell has an end date has
+ *      left their last club, and one with an open-ended current spell has not.
+ *
+ * Left null when none of those apply, and the profile shows no badge rather
+ * than guessing. That matters more than it sounds: Zidane's page said "Current
+ * club: Juventus FC", a club he left in 2001, because a stale attribute was
+ * being rendered as current fact.
+ */
+async function derivePersonStatus(db: Db): Promise<number> {
+  const rows = await db.execute<{ count: string }>(sql`
+    WITH evidence AS (
+      SELECT
+        p.id,
+        p.date_of_death,
+        (p.attributes->>'careerEnd') AS career_end,
+        (SELECT count(*) FROM person_team pt WHERE pt.person_id = p.id) AS spells,
+        (SELECT count(*) FROM person_team pt
+          WHERE pt.person_id = p.id AND pt.end_date IS NULL) AS open_spells,
+        (SELECT max(extract(year FROM pt.end_date)) FROM person_team pt
+          WHERE pt.person_id = p.id) AS last_end_year
+      FROM person p
+    )
+    UPDATE person p SET
+      career_status = CASE
+        WHEN evidence.date_of_death IS NOT NULL THEN 'retired'
+        -- A career-end year in the past is decisive; one in the future is a
+        -- contract end rather than a retirement, so it says nothing.
+        WHEN evidence.career_end ~ '^[0-9]{4}$'
+             AND evidence.career_end::int < extract(year FROM now()) THEN 'retired'
+        WHEN evidence.open_spells > 0 THEN 'active'
+        -- Every spell closed, and the last one closed a while ago. Two years of
+        -- slack, because a spell ending last season usually means a transfer
+        -- that has not been ingested rather than a retirement.
+        WHEN evidence.spells > 0
+             AND evidence.last_end_year IS NOT NULL
+             AND evidence.last_end_year < extract(year FROM now()) - 2 THEN 'retired'
+        ELSE NULL
+      END,
+      updated_at = now()
+    FROM evidence
+    WHERE evidence.id = p.id AND p.confidence <> 'curated'
+    RETURNING 1 AS count
+  `);
+
+  return rows.length;
+}
+
+/** Renders a uuid list as a Postgres array literal. Values are ids we read. */
+function pgUuidArray(ids: string[]): string {
+  return `ARRAY[${ids.map((id) => `'${id}'`).join(', ')}]::uuid[]`;
 }
 
 async function deriveCareerSpans(db: Db): Promise<number> {

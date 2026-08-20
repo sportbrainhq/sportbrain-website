@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { FactPanel, RankingPanel, SectionPanel } from '@/components/sports/entity-profile';
-import { HonoursList } from '@/components/sports/entity-card';
+import { CareerStatusBadge, HonoursPanel } from '@/components/sports/player-profile';
 import { Avatar } from '@/components/sports/avatar';
 import { StatisticsPanel } from '@/components/sports/statistics-panel';
 import { ApiError, fetchPlayer } from '@/lib/api';
@@ -68,9 +68,10 @@ export default async function PlayerPage({
               {player.sport.name} player
             </Link>
           </p>
-          <h1 className="mt-1.5 text-3xl font-black tracking-tight sm:text-4xl">
-            {player.fullName}
-          </h1>
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-2">
+            <h1 className="text-3xl font-black tracking-tight sm:text-4xl">{player.fullName}</h1>
+            <CareerStatusBadge status={player.careerStatus} />
+          </div>
           <p className="mt-1 text-sm text-muted-foreground">
             {[player.nationality, player.dateOfBirth && `born ${formatDate(player.dateOfBirth)}`]
               .filter(Boolean)
@@ -90,7 +91,10 @@ export default async function PlayerPage({
         </dl>
       )}
 
-      <FactPanel facts={player.profile.facts} />
+      <FactPanel
+        facts={player.profile.facts}
+        suppressCurrentClub={player.careerStatus === 'retired'}
+      />
 
       <SectionPanel sections={player.profile.sections} />
 
@@ -108,7 +112,7 @@ export default async function PlayerPage({
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
             Honours
           </h2>
-          <HonoursList honours={player.honours} />
+          <HonoursPanel honours={player.honours} />
         </section>
       )}
 

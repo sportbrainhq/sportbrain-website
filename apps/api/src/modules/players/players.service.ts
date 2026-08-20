@@ -61,6 +61,13 @@ export class PlayersService {
           imageUrl: row.imageUrl,
           biography: row.biography,
           attributes: (row.attributes ?? {}) as Record<string, unknown>,
+          // Narrowed at the boundary rather than trusted: the column is text so
+          // it can gain a state without a migration, and an unexpected value
+          // must render as no badge rather than fail validation.
+          careerStatus:
+            row.careerStatus === 'active' || row.careerStatus === 'retired'
+              ? row.careerStatus
+              : null,
           sport: { slug: row.sportSlug, name: row.sportName },
           honours,
           careerSummary,

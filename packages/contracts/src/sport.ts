@@ -214,6 +214,12 @@ export const honourSchema = z.object({
   title: z.string(),
   year: z.number().int().nullable(),
   note: z.string().nullable(),
+  /**
+   * Prestige tier, 1 (highest) to 4, or null where the sport's list does not
+   * cover the honour. Carried to the client so the page can lead with what a
+   * career is remembered for instead of with whatever happened most recently.
+   */
+  prestige: z.number().int().nullable(),
 });
 export type Honour = z.infer<typeof honourSchema>;
 
@@ -245,6 +251,14 @@ export type PlayerSummary = z.infer<typeof playerSummarySchema>;
 export const playerDetailSchema = playerSummarySchema.extend({
   sport: z.object({ slug: z.string(), name: z.string() }),
   dateOfDeath: z.string().nullable(),
+  /**
+   * `active`, `retired`, or null where the evidence does not say.
+   *
+   * Null is a real state rather than a gap to fill in: the page shows no badge
+   * at all, because labelling someone Active who retired twenty years ago is
+   * worse than labelling them nothing.
+   */
+  careerStatus: z.enum(['active', 'retired']).nullable(),
   biography: z.string().nullable(),
   honours: z.array(honourSchema),
   /** Three entries in a fixed order, or empty where the sport declares none. */

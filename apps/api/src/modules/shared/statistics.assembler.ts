@@ -202,13 +202,25 @@ export class StatisticsAssembler {
         title: honour.title,
         year: honour.year,
         note: honour.note,
+        prestige: honour.prestige,
       })
       .from(honour)
       .where(predicate)
-      // Undated honours sort last rather than first: a null year is missing
-      // information, not an ancient one.
-      .orderBy(sql`${honour.year} desc nulls last`)
-      .limit(100);
+      // Prestige first, then recency. Ordered by year alone, Messi's profile
+      // led with a ceremonial award and buried eight Ballons d'Or below it,
+      // because the newest thing is rarely the most important one.
+      //
+      // Unranked honours sort after every tier rather than before: null means
+      // the sport's list does not cover it, which is not a claim that it is
+      // significant. Undated honours likewise sort last within their tier,
+      // since a null year is missing information and not an ancient one.
+      .orderBy(sql`${honour.prestige} asc nulls last`, sql`${honour.year} desc nulls last`)
+      // Raised from 100 because the cap was cutting the part that matters.
+      // Messi has 200 recorded honours, and truncating at 100 removed four of
+      // his eight Ballons d'Or, so the page counted the award twice at four
+      // each. Ordered by prestige the important rows come first, but the count
+      // of repeats is only right if the whole set is present.
+      .limit(400);
 
     return rows;
   }

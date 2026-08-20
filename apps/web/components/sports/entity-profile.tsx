@@ -11,11 +11,28 @@ import type { EntityProfile, EntityRanking } from '@sportbrain/contracts';
  */
 
 /** Ingested facts, grouped by category. */
-export function FactPanel({ facts }: { facts: EntityProfile['facts'] }) {
-  if (facts.length === 0) return null;
+export function FactPanel({
+  facts,
+  suppressCurrentClub = false,
+}: {
+  facts: EntityProfile['facts'];
+  /**
+   * Drops the current-club fact.
+   *
+   * Set for a retired competitor, because the provider records the last club a
+   * person played for and the page presented it as present tense: Zidane's
+   * profile read "Current club: Juventus FC", a club he left in 2001, and the
+   * club history immediately below it said so. The history is the honest
+   * rendering of the same fact.
+   */
+  suppressCurrentClub?: boolean;
+}) {
+  const visible = suppressCurrentClub ? facts.filter((fact) => fact.key !== 'current_club') : facts;
 
-  const byCategory = new Map<string, typeof facts>();
-  for (const fact of facts) {
+  if (visible.length === 0) return null;
+
+  const byCategory = new Map<string, typeof visible>();
+  for (const fact of visible) {
     byCategory.set(fact.category, [...(byCategory.get(fact.category) ?? []), fact]);
   }
 
@@ -25,6 +42,11 @@ export function FactPanel({ facts }: { facts: EntityProfile['facts'] }) {
     venue: 'Home',
     commercial: 'Club',
     profile: 'Profile',
+    // Named explicitly, because the fallback rendered the raw category and a
+    // player's page carried two headings called "Career": this block, which
+    // holds only the current club, and the club history below it. The two are
+    // different things and now say so.
+    career: 'Current club',
   };
 
   return (

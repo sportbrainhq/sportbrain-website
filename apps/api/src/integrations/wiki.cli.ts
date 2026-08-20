@@ -11,6 +11,7 @@
  * pnpm --filter @sportbrain/api wiki careers 300
  * pnpm --filter @sportbrain/api wiki career-totals 400
  * pnpm --filter @sportbrain/api wiki scan-totals 100
+ * pnpm --filter @sportbrain/api wiki titles 150
  * pnpm --filter @sportbrain/api wiki all football 200
  * ```
  *
@@ -40,7 +41,7 @@ async function main(): Promise<void> {
 
   if (!command) {
     process.stderr.write(
-      'Usage: wiki <map|facts|crests|rankings|cricket-stats|basketball-stats|careers|career-totals|scan-totals|all> [entityType] [sport] [limit]\n',
+      'Usage: wiki <map|facts|crests|rankings|cricket-stats|basketball-stats|careers|career-totals|scan-totals|titles|all> [entityType] [sport] [limit]\n',
     );
     process.exitCode = 1;
     return;
@@ -159,6 +160,15 @@ async function main(): Promise<void> {
         }
 
         process.stdout.write(`\n${rows.length} scanned, ${flagged.length} flagged for review\n`);
+        break;
+      }
+
+      /**
+       * Football clubs' title counts, read from their honours tables.
+       */
+      case 'titles': {
+        const result = await ingestion.ingestFootballTitles(Number(args[0] ?? 150));
+        process.stdout.write(`${result.teams} teams examined, ${result.written} written\n`);
         break;
       }
 

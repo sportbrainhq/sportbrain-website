@@ -23,7 +23,8 @@
     "enrich": "tsx src/integrations/enrich.cli.ts",
     "wiki": "tsx src/integrations/wiki.cli.ts",
     "clean": "rm -rf dist *.tsbuildinfo",
-    "backfill-people": "tsx src/integrations/backfill-people.cli.ts"
+    "backfill-people": "tsx src/integrations/backfill-people.cli.ts",
+    "backfill-profiles": "tsx src/integrations/backfill-profiles.cli.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.6",
