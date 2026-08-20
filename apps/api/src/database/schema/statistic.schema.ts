@@ -503,6 +503,17 @@ export const honour = pgTable(
     note: text('note'),
 
     /**
+     * Which provider supplied the row.
+     *
+     * Needed because the two sources label a season differently and neither is
+     * wrong: Wikidata records the European Golden Shoe of season 2007-08 as
+     * 2008, Wikipedia as 2007. Stored together they look like two wins, and
+     * without a source column there is no way to tell a genuine pair of
+     * consecutive victories from one win counted twice.
+     */
+    source: text('source'),
+
+    /**
      * How much the honour is worth, 1 (highest) to 4, or null if unranked.
      *
      * Wikidata says nothing about prestige, so a Ballon d'Or arrives

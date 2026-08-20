@@ -24,7 +24,8 @@
     "wiki": "tsx src/integrations/wiki.cli.ts",
     "clean": "rm -rf dist *.tsbuildinfo",
     "backfill-people": "tsx src/integrations/backfill-people.cli.ts",
-    "backfill-profiles": "tsx src/integrations/backfill-profiles.cli.ts"
+    "backfill-profiles": "tsx src/integrations/backfill-profiles.cli.ts",
+    "backfill-honours": "tsx src/integrations/backfill-honours.cli.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.6",

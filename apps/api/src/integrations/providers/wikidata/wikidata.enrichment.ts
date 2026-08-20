@@ -58,6 +58,7 @@ SELECT ?nicknames ?motto ?anthemLabel ?venueLabel ?venueCapacity ?colours
   OPTIONAL { wd:${teamQid} wdt:P127 ?owner . ?owner rdfs:label ?ownerLabel . FILTER(LANG(?ownerLabel) = "en") }
   OPTIONAL { wd:${teamQid} wdt:P822 ?mascot . ?mascot rdfs:label ?mascotLabel . FILTER(LANG(?mascotLabel) = "en") }
 }
+ORDER BY ?nicknameRank
 LIMIT 1`.trim();
 }
 
@@ -208,7 +209,7 @@ LIMIT 200`.trim();
  */
 export function playerProfileQuery(personQid: string): string {
   return `
-SELECT ?draftTeamLabel ?draftPick ?draftYear ?height ?mass ?positionLabel ?countryLabel WHERE {
+SELECT ?draftTeamLabel ?draftPick ?draftYear ?height ?mass ?positionLabel ?countryLabel ?nickname WHERE {
   OPTIONAL {
     wd:${personQid} p:P647 ?draftStatement .
     ?draftStatement ps:P647 ?draftTeam .
@@ -220,6 +221,19 @@ SELECT ?draftTeamLabel ?draftPick ?draftYear ?height ?mass ?positionLabel ?count
   OPTIONAL { wd:${personQid} wdt:P2067 ?mass }
   OPTIONAL { wd:${personQid} wdt:P413 ?position . ?position rdfs:label ?positionLabel . FILTER(LANG(?positionLabel) = "en") }
   OPTIONAL { wd:${personQid} wdt:P27 ?country . ?country rdfs:label ?countryLabel . FILTER(LANG(?countryLabel) = "en") }
+  # P1449, the nickname property, in any language.
+  #
+  # English-only returned almost nothing, which is the point: a footballer's
+  # nickname is rarely English. Filtering to it dropped Zizou, El Bicho, El Pibe
+  # de Oro and il Capitano and left 0 of the top 150 with a nickname; any
+  # language leaves 28, all of them the name the player is actually known by.
+  #
+  # Preferring English where one exists, since the reader is reading English.
+  OPTIONAL {
+    wd:${personQid} wdt:P1449 ?nickname .
+    BIND(IF(LANG(?nickname) = "en", 0, 1) AS ?nicknameRank)
+  }
 }
+ORDER BY ?nicknameRank
 LIMIT 1`.trim();
 }

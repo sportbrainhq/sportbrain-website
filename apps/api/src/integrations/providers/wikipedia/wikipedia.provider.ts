@@ -134,6 +134,20 @@ const EXCLUDED_HONOUR_GROUPS =
   /^(individual|records?|orders?|decorations?|awards?|other|see also|notes?|references?|state honours|honours and awards|personal|manager|managerial|as a manager|head coach|coach)\b/i;
 
 /**
+ * Groups to skip when listing a player's honours, as opposed to counting them.
+ *
+ * Much narrower than `EXCLUDED_HONOUR_GROUPS`, and deliberately so. That
+ * pattern exists to count team trophies, where "Individual" and "Awards" are
+ * correctly excluded because a Ballon d'Or is not a trophy the team won. Reusing
+ * it here dropped exactly the honours worth listing: Ronaldo's five Ballons d'Or
+ * sit under an "Individual" label and none of them was read.
+ *
+ * What still has to go is anything won in another role, or not won at all.
+ */
+const EXCLUDED_HONOUR_LIST_GROUPS =
+  /^(manager|managerial|as a manager|head coach|coach|assistant|youth|reserves?|see also|notes?|references?)\b/i;
+
+/**
  * A count of the titles a club's article credits it with.
  *
  * `competitions` is the number of table rows counted, kept as a sanity check: a
@@ -1143,6 +1157,134 @@ export class WikipediaProvider {
     }
 
     return { won, groups };
+  }
+
+  /**
+   * A player's honours as titles and years, from their Wikipedia article.
+   *
+   * Wikidata is the primary source for honours and is incomplete in a way that
+   * shows: it has three of Ronaldo's five Ballons d'Or and omits Messi's 2022
+   * World Cup Golden Ball entirely. The article's honours section has both,
+   * because it is maintained by people who follow the sport.
+   *
+   * The same walk as `fetchFootballHonours`, which counts these lines and throws
+   * the content away. This keeps it. Manager and youth sections are excluded by
+   * the same rules, since a trophy won from the touchline is not a playing
+   * honour.
+   *
+   * Deliberately conservative: a line must carry a colon and a four-digit year
+   * to be read at all, so prose inside the section produces nothing rather than
+   * a fabricated honour.
+   */
+  async fetchFootballHonourList(title: string): Promise<{ title: string; year: number | null }[]> {
+    const html = await this.client.fetchHtml(title);
+    if (!html) return [];
+
+    const heading = /id="(Honours|Honors|Career_honours|Honours_and_awards)"/.exec(html);
+    if (!heading) return [];
+
+    const rest = html.slice(heading.index);
+    const nextSection = rest.search(/<h2\b/);
+    // Figures removed before anything is read. An image caption is prose that
+    // happens to name an award and a year, and Rodri's article carries "Rodri
+    // winning the 2026 FIFA World Cup Golden Ball" beside the section, which the
+    // walk below read as an honour he has already won.
+    const section = (nextSection > 0 ? rest.slice(0, nextSection) : rest)
+      .replace(/<figure\b[\s\S]*?<\/figure>/g, ' ')
+      .replace(/<figcaption\b[\s\S]*?<\/figcaption>/g, ' ');
+
+    const honours: { title: string; year: number | null }[] = [];
+    let sectionExcluded = false;
+    let labelExcluded = false;
+
+    const tokens = section.matchAll(
+      /<(b|p|h[345])\b[^>]*>([\s\S]{0,200}?)<\/\1>|<li\b[^>]*>([\s\S]*?)<\/li>/g,
+    );
+
+    for (const token of tokens) {
+      const tag = token[1];
+      const label = token[2];
+      const item = token[3];
+
+      if (tag !== undefined && label !== undefined) {
+        const text = this.plainText(label);
+        if (!text || text.length >= 60) continue;
+
+        const excluded = EXCLUDED_HONOUR_LIST_GROUPS.test(text);
+        if (tag.startsWith('h')) {
+          sectionExcluded = excluded;
+          labelExcluded = false;
+        } else {
+          labelExcluded = excluded;
+        }
+        continue;
+      }
+
+      if (sectionExcluded || labelExcluded || item === undefined) continue;
+
+      const text = this.plainText(item);
+      if (!text) continue;
+
+      // Anything from a runner-up clause onwards records not winning.
+      const winning = text.split(/\b(?:runners?-up|runner up|third place|finalist)\b/i)[0] ?? '';
+      const colon = winning.indexOf(':');
+      if (colon < 0) continue;
+
+      const rawName = winning.slice(0, colon).trim();
+      if (!rawName || rawName.length > 160) continue;
+
+      // Season ranges are one win, not two. Articles write a season-based
+      // honour as "2007-08, 2010-11, 2013-14, 2014-15", and matching bare
+      // four-digit numbers counted each range twice: Ronaldo's four European
+      // Golden Shoes became six rows, and every league title was inflated the
+      // same way.
+      //
+      // A range is therefore matched first and reduced to its starting year,
+      // which is how the rest of the codebase labels a season.
+      const yearField = winning.slice(colon + 1);
+      const years = [...yearField.matchAll(/(\d{4})(?:\s*[\u2013\u2014-]\s*(\d{2,4}))?/g)].map(
+        (match) => match[1]!,
+      );
+      if (years.length === 0) continue;
+
+      // Articles join an award's historical names with slashes, so Messi's line
+      // reads "FIFA World Player of the Year/FIFA Ballon d'Or/The Best FIFA
+      // Men's Player". Stored whole that is one unrecognisable title; the first
+      // name is the one the award is listed under.
+      const name = (rawName.split('/')[0] ?? rawName).trim();
+      if (!name || name.length > 80) continue;
+
+      // Prose, not an honour. The section carries trivia lines in the same list
+      // markup ("One of only nine players to take part in five FIFA World
+      // Cups"), and a sentence is recognisable by starting with a word that no
+      // award title starts with.
+      if (
+        /^(one of|the only|first|second|third|holds|scored|became|most |named |set )/i.test(name)
+      ) {
+        continue;
+      }
+
+      // Aggregator selections and academic awards are not football honours.
+      if (/whoscored|opta|honorary doctor|doctorate|university of/i.test(name)) continue;
+
+      // One row per year, matching how the honour table stores repeats: eight
+      // Ballons d'Or are eight rows, not one row saying eight.
+      //
+      // Only genuinely future years are rejected. An earlier version excluded
+      // the current year as well, on the theory that an article lists a
+      // tournament a player is about to enter; that was wrong, and it dropped
+      // real honours won this year. The honours section records what has been
+      // won, and a caption promising a future one is handled by stripping
+      // figures rather than by distrusting the year.
+      const currentYear = new Date().getFullYear();
+      for (const year of years) {
+        const parsed = Number(year);
+        if (parsed > currentYear || parsed < 1850) continue;
+        honours.push({ title: name, year: parsed });
+      }
+    }
+
+    return honours;
   }
 
   /** An HTML fragment as displayable text, references and markup removed. */

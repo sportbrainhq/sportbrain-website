@@ -43,7 +43,21 @@ export default async function PlayerPage({
 
   // Only strings are rendered: `attributes` is an open JSONB payload and a
   // nested object would render as "[object Object]".
+  // `careerEnd` is a contract end date for anyone still playing, not a
+  // retirement, and 461 active football players carry one. Rendered as "Career
+  // End" it read as a retirement date on the page of a player mid-career, so it
+  // is shown only once the person is actually retired.
+  //
+  // `currentClub` goes the same way for a retired player: the provider records
+  // the last club someone played for, and the club history below says so
+  // properly with its dates.
+  const hidden = new Set<string>([
+    ...(player.careerStatus === 'active' ? ['careerEnd'] : []),
+    ...(player.careerStatus === 'retired' ? ['currentClub'] : []),
+  ]);
+
   const facts = Object.entries(player.attributes)
+    .filter(([key]) => !hidden.has(key))
     .filter(([, value]) => typeof value === 'string' || typeof value === 'number')
     .slice(0, 6);
 

@@ -371,7 +371,19 @@ export class WikidataProvider implements SportsDataProvider {
     return byTeam;
   }
 
-  /** Club spells for a batch of people, with their start and end dates. */
+  /**
+   * Club spells for a batch of people, with their start and end dates.
+   *
+   * Overlapping spells at the same club are merged into one. Wikidata records
+   * P54 as several statements per club, and their P580/P582 qualifiers disagree:
+   * Pelé's Santos spell is stated as both 1956–1974 and 1957–1974, which
+   * reached the career timeline as the same club listed twice. The unique index
+   * on `person_team` cannot catch it, because two different start dates are
+   * genuinely two different rows as far as the database is concerned.
+   *
+   * Only overlapping spans are merged, so a real second stint at a former club
+   * (disjoint dates) survives as its own entry.
+   */
   async fetchMemberships(
     personQids: readonly string[],
   ): Promise<
@@ -398,6 +410,10 @@ export class WikidataProvider implements SportsDataProvider {
         end: this.date(row.end),
       });
       byPerson.set(qid, existing);
+    }
+
+    for (const [qid, spells] of byPerson) {
+      byPerson.set(qid, mergeOverlappingSpells(spells));
     }
 
     return byPerson;
@@ -573,6 +589,7 @@ export class WikidataProvider implements SportsDataProvider {
     add('height', 'Height', row.height ? `${Math.round(Number(row.height))} cm` : undefined, 40);
     add('weight', 'Weight', row.mass ? `${Math.round(Number(row.mass))} kg` : undefined, 50);
     add('position', 'Position', row.positionLabel, 60);
+    add('nickname', 'Nickname', row.nickname, 15);
 
     return facts;
   }
@@ -736,4 +753,53 @@ export class WikidataProvider implements SportsDataProvider {
     if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
     this.lastRequestAt = Date.now();
   }
+}
+
+/** A club spell as returned by {@link WikidataProvider.fetchMemberships}. */
+interface ProviderSpell {
+  teamExternalId: string;
+  teamName: string;
+  start?: string;
+  end?: string;
+}
+
+/**
+ * Collapses overlapping spells at the same club into one span.
+ *
+ * A missing start is treated as unbounded in the past and a missing end as
+ * unbounded in the future, matching how `person_team` reads them, so an
+ * open-ended statement absorbs the dated ones rather than sitting beside them.
+ * The widest span wins: the earliest known start and the latest known end.
+ */
+export function mergeOverlappingSpells(spells: readonly ProviderSpell[]): ProviderSpell[] {
+  const merged: ProviderSpell[] = [];
+
+  // Earliest first so each spell only ever needs comparing with the run it
+  // might extend, rather than with every spell kept so far.
+  const ordered = [...spells].sort((a, b) => (a.start ?? '').localeCompare(b.start ?? ''));
+
+  for (const spell of ordered) {
+    const previous = merged.find(
+      (candidate) =>
+        candidate.teamExternalId === spell.teamExternalId &&
+        (candidate.start ?? '0000-01-01') <= (spell.end ?? '9999-12-31') &&
+        (spell.start ?? '0000-01-01') <= (candidate.end ?? '9999-12-31'),
+    );
+
+    if (!previous) {
+      merged.push({ ...spell });
+      continue;
+    }
+
+    previous.start =
+      previous.start && spell.start
+        ? previous.start < spell.start
+          ? previous.start
+          : spell.start
+        : undefined;
+    previous.end =
+      previous.end && spell.end ? (previous.end > spell.end ? previous.end : spell.end) : undefined;
+  }
+
+  return merged;
 }

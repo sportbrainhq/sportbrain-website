@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import type { Metadata } from 'next';
 import { CompetitionCard } from '@/components/sports/entity-card';
 import { EntityListShell } from '@/components/sports/entity-list';
@@ -14,35 +15,102 @@ export async function generateMetadata({
   return buildMetadata({ title: 'Competitions', path: `/sports/${slug}/competitions` });
 }
 
+/**
+ * Joins the filter and the search term into one query string.
+ *
+ * Both have to survive each other: switching to Leagues while searching should
+ * keep the search, and paging through a search should keep the filter.
+ */
+function buildQuery(parts: { kind?: string; q?: string }): string {
+  const search = new URLSearchParams();
+  if (parts.kind) search.set('kind', parts.kind);
+  if (parts.q) search.set('q', parts.q);
+  const rendered = search.toString();
+  return rendered ? `?${rendered}` : '';
+}
+
+/**
+ * The groupings a reader can filter by.
+ *
+ * Deliberately coarser than the stored `kind`. "International" covers both
+ * national-team tournaments and the continental club cups, because the World
+ * Cup and the Champions League are one idea to a reader and two values in the
+ * enum; the API expands the group rather than matching a single value.
+ */
+const KINDS = [
+  { value: '', label: 'All' },
+  { value: 'international', label: 'International' },
+  { value: 'league', label: 'Leagues' },
+] as const;
+
 export default async function CompetitionsPage({
   params,
   searchParams,
 }: {
   params: Promise<{ sport: string }>;
-  searchParams: Promise<{ page?: string; q?: string }>;
+  searchParams: Promise<{ page?: string; kind?: string; q?: string }>;
 }) {
   const [{ sport: slug }, query] = await Promise.all([params, searchParams]);
   const page = Number.parseInt(query.page ?? '1', 10) || 1;
+
+  // Validated against the known list rather than passed through, so a
+  // hand-typed value cannot reach the API as a filter it does not recognise.
+  const kind = KINDS.some((entry) => entry.value === query.kind) ? (query.kind ?? '') : '';
   const term = (query.q ?? '').trim().slice(0, 80);
 
   const [sport, result] = await Promise.all([
     fetchSport(slug),
-    fetchCompetitions(slug, { page, limit: 24, ...(term ? { q: term } : {}) }),
+    fetchCompetitions(slug, {
+      page,
+      limit: 24,
+      ...(kind ? { kind } : {}),
+      ...(term ? { q: term } : {}),
+    }),
   ]);
+
+  const title =
+    kind === 'international'
+      ? `${sport.name} international competitions`
+      : kind === 'league'
+        ? `${sport.name} leagues`
+        : `${sport.name} competitions`;
 
   return (
     <EntityListShell
-      title={`${sport.name} competitions`}
+      title={title}
       pagination={result.pagination}
-      basePath={`/sports/${slug}/competitions${term ? `?q=${encodeURIComponent(term)}` : ''}`}
+      // Carried into the pagination links, so page two of the leagues list is
+      // still the leagues list.
+      basePath={`/sports/${slug}/competitions${buildQuery({ kind, q: term })}`}
       search={
         <EntitySearch
-          basePath={`/sports/${slug}/competitions`}
+          basePath={`/sports/${slug}/competitions${kind ? `?kind=${kind}` : ''}`}
           initialValue={term}
           placeholder="Search competitions"
         />
       }
       emptyMessage={term ? `No competitions match “${term}”.` : undefined}
+      toolbar={
+        <nav aria-label="Filter competitions" className="flex gap-1">
+          {KINDS.map((entry) => {
+            const isActive = entry.value === kind;
+            return (
+              <Link
+                key={entry.value || 'all'}
+                href={`/sports/${slug}/competitions${buildQuery({ kind: entry.value, q: term })}`}
+                aria-current={isActive ? 'page' : undefined}
+                className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                  isActive
+                    ? 'border-foreground bg-foreground text-background'
+                    : 'border-border text-muted-foreground hover:border-foreground/20 hover:bg-muted/50'
+                }`}
+              >
+                {entry.label}
+              </Link>
+            );
+          })}
+        </nav>
+      }
     >
       {result.data.map((item) => (
         <CompetitionCard key={item.id} sportSlug={slug} competition={item} />

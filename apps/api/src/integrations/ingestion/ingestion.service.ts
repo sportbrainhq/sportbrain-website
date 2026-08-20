@@ -12,6 +12,7 @@ import {
   team,
   venue,
 } from '../../database/schema';
+import { FOOTBALL_CURATED_SLUGS } from '../../database/seed/football-competitions';
 import { ProviderError, type SportsDataProvider } from '../providers/provider.types';
 import { EntityResolutionService } from './entity-resolution.service';
 
@@ -238,6 +239,23 @@ export class IngestionService {
             );
             if (existing) {
               summary.written += 1;
+              continue;
+            }
+
+            // Football competitions are curated, so a provider list is a set of
+            // candidates rather than a set of rows to create. Without this the
+            // next run puts back the ~900 county leagues, third tiers and
+            // single seasons that the seed exists to remove, and the tab
+            // reverts to opening on a Belgian second division.
+            //
+            // Only football is gated: the other sports have small competition
+            // lists that no curation has been written for, and silently
+            // dropping them would empty their tabs instead of tidying them.
+            if (
+              sportSlug === 'football' &&
+              !FOOTBALL_CURATED_SLUGS.has(this.slugify(item.fields.name))
+            ) {
+              summary.queued += 1;
               continue;
             }
 

@@ -92,8 +92,8 @@ async function main(): Promise<void> {
           // rather than duplicating. Prestige is left to the seed, which applies
           // the curated tiers in one pass.
           await db.execute(sql`
-            INSERT INTO honour (sport_id, person_id, kind, title, year)
-            SELECT s.id, ${target.id}, 'award', ${entry.title}, ${entry.year ?? null}
+            INSERT INTO honour (sport_id, person_id, kind, title, year, source)
+            SELECT s.id, ${target.id}, 'award', ${entry.title}, ${entry.year ?? null}, 'wikidata'
             FROM sport s WHERE s.slug = ${sportSlug}
             ON CONFLICT (person_id, title, year) WHERE person_id IS NOT NULL
             DO NOTHING

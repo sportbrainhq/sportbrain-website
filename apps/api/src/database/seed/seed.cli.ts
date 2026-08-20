@@ -46,6 +46,7 @@ import {
   FOOTBALL_EXPLAINER_TOPICS,
 } from './football-explainer-taxonomy';
 import { FOOTBALL_EXPLAINERS, FOOTBALL_EXPLAINER_SOURCES } from './football-explainers';
+import { FOOTBALL_CURATED_COMPETITIONS, FOOTBALL_CURATED_SLUGS } from './football-competitions';
 import { seedExplainerLibrary } from './seed-explainers';
 import { honourTier } from './football-honour-tiers';
 import { STATISTIC_REGISTRY } from './statistic-registry';
@@ -61,6 +62,12 @@ async function main(): Promise<void> {
   const db = drizzle(client, { schema });
 
   try {
+    const competitions = await seedFootballCompetitions(db);
+    process.stdout.write(
+      `Competitions: ${competitions.created} created, ${competitions.updated} curated, ` +
+        `${competitions.deleted} removed\n`,
+    );
+
     const definitions = await seedRegistry(db);
     process.stdout.write(`Registry: ${definitions} definitions upserted\n`);
 
@@ -818,3 +825,107 @@ async function seedFootballOverview(db: Db): Promise<{
 }
 
 void main();
+
+/**
+ * Applies the curated competition list, and removes everything not on it.
+ *
+ * Three steps, in order. Competitions on the list are upserted with their
+ * curated `kind`, `tier`, `notability` and corrected names; the ones marked
+ * `create` are inserted because they were missing from the database entirely.
+ * Everything else in the sport is then deleted.
+ *
+ * The delete is the reason this runs as one statement set rather than three
+ * commands: a curated row that failed to insert must not be followed by a
+ * delete that removes its unfixed predecessor, leaving the competition absent
+ * altogether.
+ *
+ * Curated columns are added to `lockedFields` so the next crawl cannot undo
+ * this. Ingestion already honours that array for teams, and without it a run
+ * would reset `kind` to its country-derived guess and flatten `tier` back to
+ * the default that caused the original ordering problem.
+ */
+async function seedFootballCompetitions(
+  db: Db,
+): Promise<{ updated: number; created: number; deleted: number }> {
+  const [sportRow] = await db.execute<{ id: string }>(
+    sql`SELECT id FROM sport WHERE slug = 'football' LIMIT 1`,
+  );
+  if (!sportRow) {
+    process.stdout.write('  skipped competitions: no football sport row\n');
+    return { updated: 0, created: 0, deleted: 0 };
+  }
+
+  const sportId = sportRow.id;
+  let updated = 0;
+  let created = 0;
+
+  // The fields this file is authoritative on. Anything else about a
+  // competition stays ingestion's to fill.
+  const locked = ['kind', 'tier', 'notability', 'name', 'country', 'format'];
+
+  for (const entry of FOOTBALL_CURATED_COMPETITIONS) {
+    const rows = await db.execute<{ id: string }>(
+      sql`INSERT INTO competition (
+            sport_id, slug, name, kind, format, country,
+            founded_year, tier, notability, confidence, locked_fields
+          )
+          VALUES (
+            ${sportId}, ${entry.slug}, ${entry.name ?? entry.slug},
+            ${entry.kind}::competition_kind, ${entry.format}::competition_format,
+            ${entry.country}, ${entry.foundedYear ?? null},
+            ${entry.tier}, ${entry.notability}, 'curated', ${sql.raw(pgTextArray(locked))}
+          )
+          ON CONFLICT (sport_id, slug) DO UPDATE SET
+            name = COALESCE(${entry.name ?? null}, competition.name),
+            kind = ${entry.kind}::competition_kind,
+            format = ${entry.format}::competition_format,
+            country = ${entry.country},
+            founded_year = COALESCE(${entry.foundedYear ?? null}, competition.founded_year),
+            tier = ${entry.tier},
+            notability = ${entry.notability},
+            confidence = 'curated',
+            locked_fields = ${sql.raw(pgTextArray(locked))},
+            updated_at = now()
+          RETURNING (xmax = 0) AS id`,
+    );
+
+    // Postgres reports an insert as xmax = 0, which separates a created row
+    // from an updated one without a second query.
+    if (rows[0] && (rows[0] as unknown as { id: boolean }).id) created += 1;
+    else updated += 1;
+
+    // Enrichment reaches a competition only through its Wikidata mapping, so a
+    // created row without one can never gain facts or an `about` paragraph
+    // however often a crawl runs. The conflict target is the provider's own
+    // key, which is what makes a re-run cheap; the `entity_id` update is what
+    // repoints Serie A away from the Lega Serie A entity it was mapped to.
+    if (entry.wikidata) {
+      const [row] = await db.execute<{ id: string }>(
+        sql`SELECT id FROM competition
+            WHERE sport_id = ${sportId} AND slug = ${entry.slug} LIMIT 1`,
+      );
+      if (row) {
+        await db.execute(
+          sql`INSERT INTO external_mapping (
+                provider, entity_type, external_id, entity_id,
+                match_method, match_confidence
+              )
+              VALUES (
+                'wikidata', 'competition', ${entry.wikidata}, ${row.id}, 'manual', 1
+              )
+              ON CONFLICT (provider, entity_type, external_id) DO UPDATE SET
+                entity_id = EXCLUDED.entity_id`,
+        );
+      }
+    }
+  }
+
+  const slugs = [...FOOTBALL_CURATED_SLUGS];
+  const removed = await db.execute<{ id: string }>(
+    sql`DELETE FROM competition
+        WHERE sport_id = ${sportId} AND slug <> ALL(${sql.raw(pgTextArray(slugs))})
+        RETURNING id`,
+  );
+
+  return { updated, created, deleted: removed.length };
+}
