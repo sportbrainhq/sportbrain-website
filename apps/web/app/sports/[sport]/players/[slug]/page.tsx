@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { FactPanel, RankingPanel, SectionPanel } from '@/components/sports/entity-profile';
 import { HonoursList } from '@/components/sports/entity-card';
+import { Avatar } from '@/components/sports/avatar';
 import { StatisticsPanel } from '@/components/sports/statistics-panel';
 import { ApiError, fetchPlayer } from '@/lib/api';
 import { buildMetadata } from '@/lib/seo';
@@ -50,8 +51,16 @@ export default async function PlayerPage({
     <article className="space-y-8">
       <header className="flex flex-wrap items-start gap-4">
         {player.imageUrl && (
-          // eslint-disable-next-line @next/next/no-img-element -- third-party host, see entity-card
-          <img src={player.imageUrl} alt="" className="size-24 rounded-lg object-cover" />
+          // Through `Avatar` rather than a bare `<img>`: these are Wikimedia
+          // `Special:FilePath` URLs, which are `http://` and unsized, so a bare
+          // tag renders as a broken image. `object-cover` overrides the crest
+          // default, since a player portrait should fill the square.
+          <Avatar
+            text={player.fullName}
+            imageUrl={player.imageUrl}
+            size={96}
+            className="rounded-lg object-cover"
+          />
         )}
         <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">

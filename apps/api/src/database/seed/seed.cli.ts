@@ -256,64 +256,63 @@ async function deriveHonourCounts(db: Db): Promise<number> {
 /**
  * Scores people for list ordering.
  *
- * Sitelinks alone rank a person by fame, not by relevance to the sport, and the
- * two diverge badly at the top: Viktor Orbán and Albert Camus both carry the
- * footballer occupation and outrank Ferenc Puskás on sitelinks, because a prime
- * minister and a Nobel laureate have articles in more languages than almost any
- * player. Ordering the Players tab by sitelinks put them on page one.
+ * Two things have to be balanced. Sitelinks measure how well known a person is
+ * across languages, which is close to what a reader means by "important" but
+ * includes people notable for something other than the sport. Career evidence
+ * in our own tables proves the person is a real player, but is a measure of our
+ * coverage as much as of them.
  *
- * The fix is to prefer evidence of a career in the sport, all of which is
- * already in the database:
+ * The first version leaned on career evidence and got the balance badly wrong.
+ * Appearing in a club's records table was worth 400 points, so Zlatan
+ * Ibrahimović outranked Messi purely by having played for more clubs whose
+ * records articles we happen to have parsed, and Pelé finished below two
+ * hundred players because Santos has no records article at all. That scores our
+ * parsing coverage, not the footballer.
  *
- *   - appearing in a club's records table, the strongest signal available,
- *     since a club publishes those about its own significant players;
- *   - recorded club spells;
- *   - recorded honours.
+ * So sitelinks are the base, scaled to dominate, and the rest are modifiers:
  *
- * Sitelinks stay in the score as the tiebreaker rather than the driver, which
- * keeps the ordering sensible among people who all have career evidence.
+ *   - **Sitelinks, squared-ish.** Multiplied by 20, so the gap between Pelé at
+ *     182 and a journeyman at 20 is decisive rather than marginal.
+ *   - **Honours, uncapped.** Messi has 119 recorded honours and Ibrahimović 11;
+ *     the old cap of 12 treated those as equal, which is absurd. Weighted
+ *     modestly per honour because the counts are wildly incomplete.
+ *   - **Career evidence as a small bonus.** Enough to lift a real player above
+ *     a politician with a similar article count, not enough to reorder players
+ *     among themselves.
  *
- * Written to `notability` rather than a new column so every existing query and
- * index benefits. Ingestion overwrites it with the raw sitelink count, so this
- * runs after ingestion, and re-running is idempotent because the score is
- * recomputed from base data rather than incremented.
+ * Reads `sitelinks` and writes `notability`, which are now separate columns.
+ * They were the same one, so this function consumed its own output and the raw
+ * signal was destroyed on the first run.
  */
 async function derivePersonPriority(db: Db): Promise<number> {
   const rows = await db.execute<{ count: string }>(sql`
     WITH evidence AS (
       SELECT
         p.id,
-        -- Capped, so a long career cannot outweigh the sport itself.
-        least(count(DISTINCT pt.team_id), 8) AS clubs,
-        least(count(DISTINCT h.id), 12) AS honours,
-        count(DISTINCT lb.entity_id) AS leaderboards,
-        p.notability AS sitelinks
+        p.sitelinks,
+        (SELECT count(*) FROM honour h WHERE h.person_id = p.id) AS honours,
+        (SELECT count(DISTINCT pt.team_id) FROM person_team pt WHERE pt.person_id = p.id) AS clubs,
+        EXISTS (
+          SELECT 1
+          FROM entity_ranking r
+          CROSS JOIN LATERAL jsonb_array_elements(r.entries) e
+          JOIN external_mapping m
+            ON m.entity_id = p.id AND m.entity_type = 'person' AND m.provider = 'wikipedia'
+          WHERE r.entity_type = 'team' AND e->>'link' = m.external_id
+        ) AS ranked
       FROM person p
-      LEFT JOIN person_team pt ON pt.person_id = p.id
-      LEFT JOIN honour h ON h.person_id = p.id
-      LEFT JOIN external_mapping m
-        ON m.entity_id = p.id AND m.entity_type = 'person' AND m.provider = 'wikipedia'
-      LEFT JOIN LATERAL (
-        SELECT r.entity_id
-        FROM entity_ranking r
-        CROSS JOIN LATERAL jsonb_array_elements(r.entries) e
-        WHERE r.entity_type = 'team' AND e->>'link' = m.external_id
-      ) lb ON true
-      GROUP BY p.id, p.notability
     )
     UPDATE person p SET
-      -- Weights chosen so that any single piece of career evidence outranks a
-      -- person with none, however famous: a leaderboard appearance is worth
-      -- 400, and the largest sitelink count in the database is 205.
       notability =
-        evidence.leaderboards * 400
-        + evidence.clubs * 60
-        + evidence.honours * 40
-        + least(evidence.sitelinks, 250),
+        evidence.sitelinks * 20
+        + least(evidence.honours, 150) * 12
+        -- Flat bonuses, not multipliers. Being in a records table at all says
+        -- "verified footballer"; being in four says our coverage is good.
+        + CASE WHEN evidence.ranked THEN 250 ELSE 0 END
+        + least(evidence.clubs, 6) * 25,
       updated_at = now()
     FROM evidence
     WHERE evidence.id = p.id
-      -- A curated row keeps whatever a human decided.
       AND p.confidence <> 'curated'
     RETURNING 1 AS count
   `);
