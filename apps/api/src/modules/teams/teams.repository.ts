@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { and, asc, count, desc, eq, ilike, sql, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, sql, type SQL } from 'drizzle-orm';
 import type { EntityListQuery, TeamSummary } from '@sportbrain/contracts';
 import { DatabaseService } from '../../database/database.service';
+import { nameSearch } from '../shared/name-search';
 import { sport, team } from '../../database/schema';
 
 @Injectable()
@@ -24,7 +25,10 @@ export class TeamsRepository {
     // `kind` drives the International/Club split the Teams tab renders.
     if (query.kind) predicates.push(eq(team.kind, query.kind as never));
     if (query.country) predicates.push(eq(team.country, query.country));
-    if (query.q) predicates.push(ilike(team.name, `%${query.q}%`));
+    if (query.q) {
+      const match = nameSearch(query.q, [team.name], { aliases: team.aliases });
+      if (match) predicates.push(match);
+    }
 
     const where = and(...predicates);
 

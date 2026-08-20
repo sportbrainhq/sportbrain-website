@@ -84,6 +84,90 @@ const UNIVERSAL: StatisticDefinitionSeed[] = [
   },
 ];
 
+/**
+ * The three headline statistics carried by every player page in every sport.
+ *
+ * These exist so a profile reads the same whichever sport it belongs to: games
+ * played, a scoring total, trophies won. The keys are fixed; only the middle
+ * label changes, because "goals" in football is "runs" in cricket and "race
+ * wins" in Formula 1, and printing the football word over a cricketer's runs
+ * would be a lie rather than a simplification.
+ *
+ * Deliberately separate from the sport's own detailed definitions. Those are a
+ * complete statistical vocabulary awaiting a feed; these three are the subset
+ * a Wikipedia infobox reliably carries today, which is why they are the ones
+ * the page can promise.
+ */
+const CAREER_HEADLINE_LABELS: Record<string, { goals: string; goalsDescription: string }> = {
+  football: {
+    goals: 'Goals',
+    goalsDescription: 'Career goals in senior club and international football.',
+  },
+  cricket: {
+    goals: 'Runs',
+    goalsDescription: 'Career runs scored across all formats.',
+  },
+  basketball: {
+    goals: 'Points',
+    goalsDescription: 'Career points scored in regular-season competition.',
+  },
+  tennis: {
+    goals: 'Titles',
+    goalsDescription: 'Career singles titles won.',
+  },
+  'formula-1': {
+    goals: 'Race wins',
+    goalsDescription: 'Grands Prix won.',
+  },
+};
+
+/** The trio for one sport, with that sport's word for its scoring statistic. */
+function careerHeadlines(sport: string): StatisticDefinitionSeed[] {
+  const labels = CAREER_HEADLINE_LABELS[sport];
+  if (!labels) return [];
+
+  return [
+    {
+      key: 'career_games',
+      label: 'Games played',
+      shortLabel: 'Games',
+      appliesTo: 'player',
+      category: 'Career',
+      aggregation: 'sum',
+      format: 'integer',
+      isHeadline: true,
+      displayOrder: -3,
+      description:
+        'Total senior appearances over a career, taken from the career-total row of the player\u2019s article rather than summed from the spells we hold, so clubs outside our catalogue still count.',
+    },
+    {
+      key: 'career_goals',
+      label: labels.goals,
+      shortLabel: labels.goals,
+      appliesTo: 'player',
+      category: 'Career',
+      aggregation: 'sum',
+      format: 'integer',
+      isHeadline: true,
+      displayOrder: -2,
+      description: labels.goalsDescription,
+    },
+    {
+      key: 'career_trophies',
+      label: 'Trophies',
+      shortLabel: 'Trophies',
+      appliesTo: 'player',
+      category: 'Career',
+      aggregation: 'sum',
+      format: 'integer',
+      isHeadline: true,
+      displayOrder: -1,
+      description:
+        'Team trophies and individual awards recorded against this player, counted from the honours list.',
+    },
+  ];
+}
+
 const SPORT_DEFINITIONS: Record<string, StatisticDefinitionSeed[]> = {
   // ---------------------------------------------------------------------------
   // FOOTBALL
@@ -869,6 +953,6 @@ const SPORT_DEFINITIONS: Record<string, StatisticDefinitionSeed[]> = {
 export const STATISTIC_REGISTRY: Record<string, StatisticDefinitionSeed[]> = Object.fromEntries(
   Object.entries(SPORT_DEFINITIONS).map(([sport, definitions]) => [
     sport,
-    [...definitions, ...UNIVERSAL],
+    [...definitions, ...UNIVERSAL, ...careerHeadlines(sport)],
   ]),
 );

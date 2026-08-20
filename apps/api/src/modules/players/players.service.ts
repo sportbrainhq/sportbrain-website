@@ -42,8 +42,9 @@ export class PlayersService {
         const row = await this.repository.findBySlug(sportSlug, slug);
         if (!row) return null;
 
-        const [honours, statistics, teams, profile] = await Promise.all([
+        const [honours, careerSummary, statistics, teams, profile] = await Promise.all([
           this.statistics.honoursFor({ personId: row.id }),
+          this.statistics.careerSummaryFor(row.id, row.sportId),
           this.statistics.forPerson(row.id, row.sportId),
           this.repository.teamsFor(row.id),
           this.profiles.forEntity('person', row.id),
@@ -62,6 +63,7 @@ export class PlayersService {
           attributes: (row.attributes ?? {}) as Record<string, unknown>,
           sport: { slug: row.sportSlug, name: row.sportName },
           honours,
+          careerSummary,
           statistics,
           teams: teams.map((entry) => ({
             team: {

@@ -1,6 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { and, asc, eq, isNull, or, sql } from 'drizzle-orm';
-import type { Honour, StatisticGroup, StatisticValue } from '@sportbrain/contracts';
+import type {
+  CareerSummaryEntry,
+  Honour,
+  StatisticGroup,
+  StatisticValue,
+} from '@sportbrain/contracts';
 import { DatabaseService } from '../../database/database.service';
 import {
   discipline,
@@ -9,6 +14,22 @@ import {
   statisticDefinition,
   teamStatistic,
 } from '../../database/schema';
+
+/**
+ * The headline statistics every player page shows, in render order.
+ *
+ * Fixed here rather than read from the registry's `is_headline` flag, because
+ * the page's promise is these three specifically: a sport that later marks a
+ * fourth statistic as a headline must not silently change the layout.
+ */
+const CAREER_SUMMARY_KEYS = ['career_games', 'career_goals', 'career_trophies'] as const;
+
+/** Used only where a sport has no registry entry for a key. */
+const CAREER_SUMMARY_FALLBACK_LABELS: Record<(typeof CAREER_SUMMARY_KEYS)[number], string> = {
+  career_games: 'Games played',
+  career_goals: 'Goals',
+  career_trophies: 'Trophies',
+};
 
 /**
  * Turns stored statistics into something a page can render.
@@ -71,6 +92,49 @@ export class StatisticsAssembler {
       appearances: row.appearances,
       statistics: this.render(row.stats as Record<string, unknown>, definitions, row.disciplineId),
     }));
+  }
+
+  /**
+   * The three headline tiles for a player page, always in the same order.
+   *
+   * Always three entries, whatever has been ingested: a page that shows games,
+   * a scoring total and trophies for one player and two tiles for the next
+   * reads as broken rather than as incomplete. A missing value is null and the
+   * website renders a dash for it.
+   *
+   * Labels come from the registry, so the middle tile says "Goals" for a
+   * footballer and "Runs" for a cricketer without this code knowing the sport.
+   * Where a sport has no registry entry at all, the key's own default is used.
+   */
+  async careerSummaryFor(personId: string, sportId: string): Promise<CareerSummaryEntry[]> {
+    const [rows, definitions] = await Promise.all([
+      this.database.db
+        .select({ stats: personStatistic.stats })
+        .from(personStatistic)
+        .where(
+          and(
+            eq(personStatistic.personId, personId),
+            eq(personStatistic.scope, 'career'),
+            isNull(personStatistic.disciplineId),
+          ),
+        ),
+      this.definitionsForSport(sportId, 'player'),
+    ]);
+
+    const stats = (rows[0]?.stats ?? {}) as Record<string, unknown>;
+    const byKey = new Map(definitions.map((definition) => [definition.key, definition]));
+
+    return CAREER_SUMMARY_KEYS.map((key) => {
+      const definition = byKey.get(key);
+      const raw = stats[key];
+
+      return {
+        key,
+        label: definition?.label ?? CAREER_SUMMARY_FALLBACK_LABELS[key],
+        value: typeof raw === 'number' ? raw : null,
+        description: definition?.description ?? null,
+      };
+    });
   }
 
   /** Statistics for one team. Same structure, team-scoped registry entries. */
@@ -202,6 +266,10 @@ export class StatisticsAssembler {
     const values: StatisticValue[] = [];
 
     for (const [key, definition] of byKey) {
+      // The headline trio renders in its own fixed panel above. Leaving it in
+      // here as well printed each number twice on the page.
+      if (CAREER_SUMMARY_KEYS.includes(key as (typeof CAREER_SUMMARY_KEYS)[number])) continue;
+
       const raw = stats[key];
       // Undefined means the statistic was never recorded, which is different
       // from a recorded zero and must not render as one.

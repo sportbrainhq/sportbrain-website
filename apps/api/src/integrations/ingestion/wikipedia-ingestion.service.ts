@@ -609,6 +609,123 @@ export class WikipediaIngestionService {
     return { players, spells };
   }
 
+  /**
+   * Ingests the three headline career numbers for every player of a sport.
+   *
+   * These are the tiles the player page always shows, so this runs across every
+   * sport rather than per sport like the detailed statistics passes: a profile
+   * that promises games, a scoring total and trophies has to be able to keep
+   * that promise for a cricketer and a driver as much as a footballer.
+   *
+   * Trophies are counted from our own honours table rather than fetched, in the
+   * same pass, so a page's three numbers are always computed from the same
+   * moment. Values are merged into the existing career row, never replacing it,
+   * so the detailed per-discipline statistics survive.
+   */
+  async ingestCareerTotals(
+    sportSlug: string | null,
+    limit: number,
+  ): Promise<{ players: number; written: number }> {
+    const sports = sportSlug
+      ? [sportSlug]
+      : ['football', 'cricket', 'basketball', 'tennis', 'formula-1'];
+
+    let players = 0;
+    let written = 0;
+
+    for (const sport of sports) {
+      const [sportRow] = await this.database.db.execute<{ id: string }>(
+        sql`SELECT id FROM sport WHERE slug = ${sport} LIMIT 1`,
+      );
+      if (!sportRow) continue;
+
+      const targets = await this.targets('person', sport, limit);
+      this.logger.log(`${sport}: ${targets.length} players`);
+
+      for (const [index, target] of targets.entries()) {
+        players += 1;
+
+        try {
+          const totals = await this.provider.fetchCareerTotals(target.title, sport);
+
+          // A null is "the article does not say", which must not be written as
+          // a zero: the page renders a dash for the former and a real figure
+          // for the latter, and a stored zero is indistinguishable afterwards.
+          const payload: Record<string, number> = {};
+          if (totals.games !== null) payload.career_games = totals.games;
+          if (totals.goals !== null) payload.career_goals = totals.goals;
+
+          if (Object.keys(payload).length === 0) continue;
+
+          await this.database.db.execute(sql`
+            INSERT INTO person_statistic (
+              person_id, sport_id, discipline_id, scope, stats, computed_at
+            ) VALUES (
+              ${target.id}, ${sportRow.id}, NULL, 'career',
+              ${JSON.stringify(payload)}::jsonb, now()
+            )
+            ON CONFLICT (
+              person_id, scope,
+              coalesce(competition_id, '00000000-0000-0000-0000-000000000000'::uuid),
+              coalesce(season_id, '00000000-0000-0000-0000-000000000000'::uuid),
+              coalesce(team_id, '00000000-0000-0000-0000-000000000000'::uuid),
+              coalesce(discipline_id, '00000000-0000-0000-0000-000000000000'::uuid)
+            ) DO UPDATE SET
+              stats = person_statistic.stats || EXCLUDED.stats,
+              computed_at = now()
+          `);
+          written += 1;
+        } catch (error) {
+          this.logger.warn(`Career totals failed for ${target.title}: ${this.message(error)}`);
+        }
+
+        if ((index + 1) % 25 === 0) {
+          this.logger.log(`  ${index + 1}/${targets.length} players, ${written} written`);
+        }
+      }
+    }
+
+    const trophies = await this.deriveTrophyCounts();
+    this.logger.log(`${trophies} players' trophy counts refreshed`);
+
+    await this.revalidate(['players']);
+
+    return { players, written };
+  }
+
+  /**
+   * Counts each player's honours into `career_trophies`.
+   *
+   * A count rather than a fetch: the honours are already ingested and counting
+   * them here means the tile can never disagree with the honours list rendered
+   * directly above it on the same page.
+   */
+  private async deriveTrophyCounts(): Promise<number> {
+    const rows = await this.database.db.execute<{ person_id: string }>(sql`
+      WITH counts AS (
+        SELECT person_id, sport_id, count(*) AS trophies
+        FROM honour WHERE person_id IS NOT NULL
+        GROUP BY person_id, sport_id
+      )
+      INSERT INTO person_statistic (person_id, sport_id, scope, discipline_id, stats, computed_at)
+      SELECT person_id, sport_id, 'career', NULL,
+             jsonb_build_object('career_trophies', trophies), now()
+      FROM counts
+      ON CONFLICT (
+        person_id, scope,
+        coalesce(competition_id, '00000000-0000-0000-0000-000000000000'::uuid),
+        coalesce(season_id, '00000000-0000-0000-0000-000000000000'::uuid),
+        coalesce(team_id, '00000000-0000-0000-0000-000000000000'::uuid),
+        coalesce(discipline_id, '00000000-0000-0000-0000-000000000000'::uuid)
+      ) DO UPDATE SET
+        stats = person_statistic.stats || EXCLUDED.stats,
+        computed_at = now()
+      RETURNING person_id
+    `);
+
+    return rows.length;
+  }
+
   // ---------------------------------------------------------------------------
 
   /**

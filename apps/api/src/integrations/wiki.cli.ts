@@ -9,6 +9,7 @@
  * pnpm --filter @sportbrain/api wiki rankings football 60
  * pnpm --filter @sportbrain/api wiki cricket-stats 300
  * pnpm --filter @sportbrain/api wiki careers 300
+ * pnpm --filter @sportbrain/api wiki career-totals all 400
  * pnpm --filter @sportbrain/api wiki all football 200
  * ```
  *
@@ -38,7 +39,7 @@ async function main(): Promise<void> {
 
   if (!command) {
     process.stderr.write(
-      'Usage: wiki <map|facts|crests|rankings|cricket-stats|basketball-stats|careers|all> [entityType] [sport] [limit]\n',
+      'Usage: wiki <map|facts|crests|rankings|cricket-stats|basketball-stats|careers|career-totals|all> [entityType] [sport] [limit]\n',
     );
     process.exitCode = 1;
     return;
@@ -122,6 +123,22 @@ async function main(): Promise<void> {
         break;
       }
 
+      /**
+       * The three headline tiles, for one sport or for every sport.
+       *
+       * `career-totals all 400` is the run that fills the player pages; a sport
+       * slug narrows it when only one needs redoing.
+       */
+      case 'career-totals': {
+        const [sport, limit] = args;
+        const result = await ingestion.ingestCareerTotals(
+          !sport || sport === 'all' ? null : sport,
+          Number(limit ?? 200),
+        );
+        process.stdout.write(`${result.players} players examined, ${result.written} written\n`);
+        break;
+      }
+
       case 'careers': {
         const result = await ingestion.ingestFootballCareers(Number(args[0] ?? 200));
         process.stdout.write(`${result.players} players, ${result.spells} club spells\n`);
@@ -182,6 +199,13 @@ async function main(): Promise<void> {
             `  careers      ${careers.players} players, ${careers.spells} spells\n`,
           );
         }
+
+        // Last, because the trophy count reads the honours the fact passes
+        // above have just written.
+        const totals = await ingestion.ingestCareerTotals(sportSlug, cap);
+        process.stdout.write(
+          `  headline     ${totals.written}/${totals.players} players with career totals\n`,
+        );
         break;
       }
 

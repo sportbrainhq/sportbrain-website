@@ -185,6 +185,28 @@ export const statisticGroupSchema = z.object({
 });
 export type StatisticGroup = z.infer<typeof statisticGroupSchema>;
 
+/**
+ * The three headline numbers every player page shows, in every sport.
+ *
+ * Separate from `statistics` on purpose. The registry-driven blocks vary by
+ * sport and by how much has been ingested, so the panel they render changes
+ * shape from player to player. These three tiles do not: a page always shows
+ * games, a scoring total and trophies, in that order, so the profile reads the
+ * same for a footballer and a Formula 1 driver.
+ *
+ * `label` travels with the value because the middle tile is the same idea under
+ * a different name per sport (goals, runs, points, race wins) and mislabelling
+ * it would be worse than leaving it blank. A null `value` renders as an em
+ * dash: not yet ingested, rather than zero.
+ */
+export const careerSummaryEntrySchema = z.object({
+  key: z.enum(['career_games', 'career_goals', 'career_trophies']),
+  label: z.string(),
+  value: z.number().nullable(),
+  description: z.string().nullable(),
+});
+export type CareerSummaryEntry = z.infer<typeof careerSummaryEntrySchema>;
+
 /** A trophy, award or record. Fills the panel above the statistics. */
 export const honourSchema = z.object({
   id: z.string(),
@@ -225,6 +247,8 @@ export const playerDetailSchema = playerSummarySchema.extend({
   dateOfDeath: z.string().nullable(),
   biography: z.string().nullable(),
   honours: z.array(honourSchema),
+  /** Always three entries, always in the same order. Never empty. */
+  careerSummary: z.array(careerSummaryEntrySchema),
   statistics: z.array(statisticGroupSchema),
   /** Clubs and national sides, most recent first. */
   teams: z.array(
