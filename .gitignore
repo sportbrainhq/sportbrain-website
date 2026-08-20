@@ -40,3 +40,12 @@ Thumbs.db
 # misc
 *.pem
 .cache/
+
+# generated data worklists
+#
+# Snapshots of what the database is currently missing, written to the repository
+# root by ad-hoc scripts. They are derived entirely from live table state and go
+# stale the moment more data is ingested, so a committed copy is misleading
+# rather than useful. Nothing in the source reads them.
+rankings-needed.json
+*-needed.json
