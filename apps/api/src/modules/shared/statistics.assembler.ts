@@ -16,20 +16,19 @@ import {
 } from '../../database/schema';
 
 /**
- * The headline statistics every player page shows, in render order.
+ * The headline statistics a player page shows above its detailed blocks, in
+ * render order.
  *
  * Fixed here rather than read from the registry's `is_headline` flag, because
  * the page's promise is these three specifically: a sport that later marks a
  * fourth statistic as a headline must not silently change the layout.
+ *
+ * A sport opts in by declaring these keys in the registry. Only football does
+ * so today: the other sports count a career in their own terms and will get
+ * their own trio, so a page whose sport has not declared them renders no
+ * headline panel at all rather than three empty tiles.
  */
 const CAREER_SUMMARY_KEYS = ['career_games', 'career_goals', 'career_trophies'] as const;
-
-/** Used only where a sport has no registry entry for a key. */
-const CAREER_SUMMARY_FALLBACK_LABELS: Record<(typeof CAREER_SUMMARY_KEYS)[number], string> = {
-  career_games: 'Games played',
-  career_goals: 'Goals',
-  career_trophies: 'Trophies',
-};
 
 /**
  * Turns stored statistics into something a page can render.
@@ -95,16 +94,17 @@ export class StatisticsAssembler {
   }
 
   /**
-   * The three headline tiles for a player page, always in the same order.
+   * The headline tiles for a player page, in a fixed order.
    *
-   * Always three entries, whatever has been ingested: a page that shows games,
-   * a scoring total and trophies for one player and two tiles for the next
-   * reads as broken rather than as incomplete. A missing value is null and the
-   * website renders a dash for it.
+   * Uniform within a sport, which is the point: every footballer shows games,
+   * goals and trophies, in that order, whatever has been ingested for them. A
+   * player missing a figure gets a tile with a dash rather than one fewer tile,
+   * because a profile that changes shape from player to player reads as broken
+   * rather than as incomplete.
    *
-   * Labels come from the registry, so the middle tile says "Goals" for a
-   * footballer and "Runs" for a cricketer without this code knowing the sport.
-   * Where a sport has no registry entry at all, the key's own default is used.
+   * Empty for a sport that has not declared these keys, so nothing renders.
+   * Labels come from the registry rather than from here, so a sport can name
+   * its own without a change to this code.
    */
   async careerSummaryFor(personId: string, sportId: string): Promise<CareerSummaryEntry[]> {
     const [rows, definitions] = await Promise.all([
@@ -124,15 +124,19 @@ export class StatisticsAssembler {
     const stats = (rows[0]?.stats ?? {}) as Record<string, unknown>;
     const byKey = new Map(definitions.map((definition) => [definition.key, definition]));
 
+    // Every key or none. A sport that declares two of the three has a registry
+    // error, and rendering a two-tile panel would hide it.
+    if (CAREER_SUMMARY_KEYS.some((key) => !byKey.has(key))) return [];
+
     return CAREER_SUMMARY_KEYS.map((key) => {
-      const definition = byKey.get(key);
+      const definition = byKey.get(key)!;
       const raw = stats[key];
 
       return {
         key,
-        label: definition?.label ?? CAREER_SUMMARY_FALLBACK_LABELS[key],
+        label: definition.label,
         value: typeof raw === 'number' ? raw : null,
-        description: definition?.description ?? null,
+        description: definition.description,
       };
     });
   }

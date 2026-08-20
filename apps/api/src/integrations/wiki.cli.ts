@@ -9,7 +9,7 @@
  * pnpm --filter @sportbrain/api wiki rankings football 60
  * pnpm --filter @sportbrain/api wiki cricket-stats 300
  * pnpm --filter @sportbrain/api wiki careers 300
- * pnpm --filter @sportbrain/api wiki career-totals all 400
+ * pnpm --filter @sportbrain/api wiki career-totals 400
  * pnpm --filter @sportbrain/api wiki all football 200
  * ```
  *
@@ -124,17 +124,13 @@ async function main(): Promise<void> {
       }
 
       /**
-       * The three headline tiles, for one sport or for every sport.
+       * Football's three headline tiles: appearances, goals, trophies.
        *
-       * `career-totals all 400` is the run that fills the player pages; a sport
-       * slug narrows it when only one needs redoing.
+       * Football only, matching the registry. Other sports count a career in
+       * their own terms and get their own command when their data is done.
        */
       case 'career-totals': {
-        const [sport, limit] = args;
-        const result = await ingestion.ingestCareerTotals(
-          !sport || sport === 'all' ? null : sport,
-          Number(limit ?? 200),
-        );
+        const result = await ingestion.ingestFootballCareerTotals(Number(args[0] ?? 200));
         process.stdout.write(`${result.players} players examined, ${result.written} written\n`);
         break;
       }
@@ -198,14 +194,14 @@ async function main(): Promise<void> {
           process.stdout.write(
             `  careers      ${careers.players} players, ${careers.spells} spells\n`,
           );
-        }
 
-        // Last, because the trophy count reads the honours the fact passes
-        // above have just written.
-        const totals = await ingestion.ingestCareerTotals(sportSlug, cap);
-        process.stdout.write(
-          `  headline     ${totals.written}/${totals.players} players with career totals\n`,
-        );
+          // Last, because the trophy count reads the honours the fact passes
+          // above have just written.
+          const totals = await ingestion.ingestFootballCareerTotals(cap);
+          process.stdout.write(
+            `  headline     ${totals.written}/${totals.players} players with career totals\n`,
+          );
+        }
         break;
       }
 

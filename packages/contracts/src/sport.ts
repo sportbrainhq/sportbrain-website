@@ -186,18 +186,18 @@ export const statisticGroupSchema = z.object({
 export type StatisticGroup = z.infer<typeof statisticGroupSchema>;
 
 /**
- * The three headline numbers every player page shows, in every sport.
+ * A player's headline career numbers, uniform across every player of a sport.
  *
- * Separate from `statistics` on purpose. The registry-driven blocks vary by
- * sport and by how much has been ingested, so the panel they render changes
- * shape from player to player. These three tiles do not: a page always shows
- * games, a scoring total and trophies, in that order, so the profile reads the
- * same for a footballer and a Formula 1 driver.
+ * Separate from `statistics` on purpose. The registry-driven blocks vary by how
+ * much has been ingested, so the panel they render changes shape from player to
+ * player. These tiles do not: every footballer shows games, goals and trophies,
+ * in that order, so one profile reads like the next.
  *
- * `label` travels with the value because the middle tile is the same idea under
- * a different name per sport (goals, runs, points, race wins) and mislabelling
- * it would be worse than leaving it blank. A null `value` renders as an em
- * dash: not yet ingested, rather than zero.
+ * Empty for a sport that has not declared its own trio. Only football has so
+ * far; the others count a career in their own terms and are worked through one
+ * at a time. `label` therefore travels with the value rather than being fixed
+ * by the key. A null `value` renders as an em dash: not yet ingested, rather
+ * than zero.
  */
 export const careerSummaryEntrySchema = z.object({
   key: z.enum(['career_games', 'career_goals', 'career_trophies']),
@@ -247,7 +247,7 @@ export const playerDetailSchema = playerSummarySchema.extend({
   dateOfDeath: z.string().nullable(),
   biography: z.string().nullable(),
   honours: z.array(honourSchema),
-  /** Always three entries, always in the same order. Never empty. */
+  /** Three entries in a fixed order, or empty where the sport declares none. */
   careerSummary: z.array(careerSummaryEntrySchema),
   statistics: z.array(statisticGroupSchema),
   /** Clubs and national sides, most recent first. */

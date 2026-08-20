@@ -255,6 +255,47 @@ describe('records articles', () => {
 
     expect(chosen?.rows[0]?.cells[1]).toBe('Serginho Chulapa');
   });
+
+  it('reads a rank column the header row does not declare', () => {
+    // Roma heads four columns and writes five cells a row, the first being the
+    // rank. Read positionally, "Player" landed on the rank and every row was
+    // rejected for having a numeric name, so the club had no appearances table.
+    const provider = new WikipediaProvider(new WikipediaClient());
+
+    const html = wikitable(
+      'All competitions appearances',
+      ['Player', 'Position', 'Appearances', 'Goals'],
+      [
+        ['1', 'Francesco Totti', 'FW', '786'],
+        ['2', 'Daniele De Rossi', 'MF', '616'],
+      ],
+    );
+
+    const entries = provider.rankingsForTest(parseTables(html)[0]!, ['appearances']);
+
+    expect(entries[0]).toMatchObject({ name: 'Francesco Totti', value: 786 });
+    expect(entries[1]).toMatchObject({ name: 'Daniele De Rossi', value: 616 });
+  });
+
+  it('leaves a well-formed table unshifted', () => {
+    // The guard above must not fire on a table whose rank column is declared,
+    // which is the common case.
+    const provider = new WikipediaProvider(new WikipediaClient());
+
+    const html = wikitable(
+      'Most appearances',
+      ['Rank', 'Player', 'Caps'],
+      [
+        ['1', 'Cafu', '142'],
+        ['2', 'Neymar', '130'],
+      ],
+    );
+
+    expect(provider.rankingsForTest(parseTables(html)[0]!, ['caps'])[0]).toMatchObject({
+      name: 'Cafu',
+      value: 142,
+    });
+  });
 });
 
 /**

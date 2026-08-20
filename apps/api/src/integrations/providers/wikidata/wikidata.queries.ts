@@ -312,7 +312,7 @@ export function peopleDetailQuery(personQids: readonly string[]): string {
 SELECT ?item
        (SAMPLE(?birth) AS ?birthDate)
        (SAMPLE(?death) AS ?deathDate)
-       (SAMPLE(?natLabel) AS ?nationality)
+       (MIN(?natLabel) AS ?nationality)
        (SAMPLE(?image) AS ?imageUrl)
        (SAMPLE(?posLabel) AS ?position)
        (SAMPLE(?clubLabel) AS ?currentClub)
@@ -326,7 +326,25 @@ WHERE {
   VALUES ?item { ${values} }
   OPTIONAL { ?item wdt:P569 ?birth }
   OPTIONAL { ?item wdt:P570 ?death }
-  OPTIONAL { ?item wdt:P27 ?nationalityItem .
+  # MIN rather than SAMPLE on the label: a minority of players carry several
+  # P1532 values (Ryan Giggs has both United Kingdom and Wales) and SAMPLE
+  # returns an arbitrary one, which is the flaw that made this field wrong in
+  # the first place. MIN is at least deterministic, so a re-ingest cannot
+  # silently change a published value. Genuinely ambiguous players are resolved
+  # from cap counts and article text out of band, not here.
+  #
+  # P1532 (country for sport), not P27 (citizenship). The question a profile
+  # answers is who the player represented, and citizenship does not answer it:
+  # Messi holds Argentine, Italian and Spanish citizenship, Klose German and
+  # Polish, Kaká Brazilian and Italian, and with SAMPLE over P27 the three of
+  # them were published as Spain, Poland and Italy. P1532 also distinguishes
+  # England, Scotland, Wales and Northern Ireland, which citizenship reports as
+  # a single "United Kingdom" despite there being four national teams.
+  #
+  # P27 is deliberately not a fallback. It produced Ben Stokes as New Zealand
+  # for being born there and Mario Andretti as Italy, so where P1532 is absent
+  # the field is left unset rather than filled with a guess.
+  OPTIONAL { ?item wdt:P1532 ?nationalityItem .
              ?nationalityItem rdfs:label ?natLabel . FILTER(LANG(?natLabel) = "en") }
   OPTIONAL { ?item wdt:P18 ?image }
   OPTIONAL { ?item wdt:P413 ?positionItem .

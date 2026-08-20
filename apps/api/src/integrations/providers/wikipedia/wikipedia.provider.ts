@@ -81,12 +81,12 @@ export interface WikiStatBlock {
 }
 
 /**
- * The three headline career numbers a player page always shows.
+ * A footballer's career appearances and goals.
  *
- * `games` and `goals` are null when the article does not state them, which is
- * different from zero and must stay distinguishable: a page renders a dash for
- * the first and a real "0" for the second. Trophies are counted from our own
- * honours table rather than here.
+ * Either is null when the article does not state it, which is different from
+ * zero and must stay distinguishable: a page renders a dash for the first and a
+ * real "0" for the second. Trophies, the third headline tile, are counted from
+ * our own honours table rather than fetched.
  */
 export interface WikiCareerTotals {
   games: number | null;
@@ -498,6 +498,7 @@ export class WikipediaProvider {
         'Appearances',
         'Appearance records',
         'Appearances (most)',
+        'All competitions appearances',
         'Most apps',
         'All competitions',
       ],
@@ -549,6 +550,7 @@ export class WikipediaProvider {
         'Goalscoring records',
         'Goal scorers',
         'Goals scored',
+        'Top all-time goalscorers',
         // Bare "Goals", last because it is the least specific term available.
         // England's article heads the section with it and nothing else, so
         // without this the heading match failed entirely and the column
@@ -937,50 +939,28 @@ export class WikipediaProvider {
   }
 
   /**
-   * The career totals behind the three headline tiles, for any sport.
+   * A footballer's career appearances and goals: two of the three headline
+   * tiles on a player page, the third being trophies counted from our honours.
    *
-   * One method rather than five because the caller wants the same two numbers
-   * whatever the sport; only where they are written differs. Each branch reads
-   * the figure the sport's own infobox states, and states null when it does
-   * not, rather than reconstructing a total from the spells we happen to hold.
-   * That is the whole point of re-fetching: summing our own `person_team` rows
-   * undercounts every player who spent time at a club outside our catalogue.
-   */
-  async fetchCareerTotals(title: string, sportSlug: string): Promise<WikiCareerTotals> {
-    switch (sportSlug) {
-      case 'football':
-        return this.footballCareerTotals(title);
-      case 'cricket':
-        return this.cricketCareerTotals(title);
-      case 'basketball':
-        return this.basketballCareerTotals(title);
-      case 'tennis':
-        return this.tennisCareerTotals(title);
-      case 'formula-1':
-        return this.motorsportCareerTotals(title);
-      default:
-        return { games: null, goals: null };
-    }
-  }
-
-  /**
-   * A footballer's career appearances and goals, summed from the infobox.
+   * Football only. Other sports count a career in their own terms and get their
+   * own extraction when their data is worked through; a shared "games and
+   * goals" reader would only invite one sport's vocabulary onto another's page.
    *
    * Wikipedia's football infoboxes no longer carry a "Total" row: Ronaldo's and
    * Messi's both end at the last club and leave the arithmetic to the reader.
    * So the senior rows are summed here.
    *
-   * Summing the infobox rather than our own `person_team` rows is still the
-   * point of re-fetching: career ingestion skips spells at clubs outside our
-   * catalogue, so a stored sum undercounts, while every club a player served
-   * appears here whether we hold it or not.
+   * Summing the infobox rather than our own `person_team` rows is the point of
+   * re-fetching: career ingestion skips spells at clubs outside our catalogue,
+   * so a stored sum undercounts, while every club a player served appears here
+   * whether we hold it or not.
    *
    * Rows without an appearance figure are youth spells and are skipped, as are
    * reserve and B sides, whose figures would otherwise be added to the senior
    * career twice over. International caps are excluded: they sit in their own
    * block, and a combined figure matches no published record.
    */
-  private async footballCareerTotals(title: string): Promise<WikiCareerTotals> {
+  async fetchFootballCareerTotals(title: string): Promise<WikiCareerTotals> {
     const career = await this.fetchFootballCareer(title);
     if (career.length === 0) return { games: null, goals: null };
 
@@ -998,171 +978,6 @@ export class WikipediaProvider {
     }
 
     return { games, goals };
-  }
-
-  /**
-   * A cricketer's career matches and runs, summed across formats.
-   *
-   * Summing is correct here in a way it is not for averages: matches and runs
-   * are counts, and a player's Test, ODI and T20I appearances are disjoint. The
-   * per-format blocks stay available separately through `fetchCricketStats`;
-   * this is the one number that answers "how much cricket did they play".
-   */
-  private async cricketCareerTotals(title: string): Promise<WikiCareerTotals> {
-    const blocks = await this.fetchCricketStats(title);
-    if (blocks.length === 0) return { games: null, goals: null };
-
-    let games: number | null = null;
-    let runs: number | null = null;
-
-    for (const block of blocks) {
-      if (typeof block.stats.matches === 'number') games = (games ?? 0) + block.stats.matches;
-      if (typeof block.stats.runs === 'number') runs = (runs ?? 0) + block.stats.runs;
-    }
-
-    return { games, goals: runs };
-  }
-
-  /**
-   * A basketball player's regular-season games and career points.
-   *
-   * Wikipedia's tables carry points *per game*, not a career total, so the
-   * total is games times average. That is arithmetic on two sourced figures
-   * rather than an estimate, but it is rounded and will differ from an official
-   * total by a point or two where the published average is itself rounded.
-   * Accepted: the alternative is an empty tile on every basketball page.
-   *
-   * Playoff and college blocks are excluded, so this is a career in the sense a
-   * reader means it.
-   */
-  private async basketballCareerTotals(title: string): Promise<WikiCareerTotals> {
-    const blocks = await this.fetchBasketballStats(title);
-    const regular = blocks.find((block) => block.discipline === 'regular_season');
-    if (!regular) return { games: null, goals: null };
-
-    const games = regular.stats.games_played ?? null;
-    const perGame = regular.stats.points_per_game ?? null;
-
-    return {
-      games,
-      goals: games !== null && perGame !== null ? Math.round(games * perGame) : null,
-    };
-  }
-
-  /**
-   * A tennis player's career matches and singles titles.
-   *
-   * `singlesrecord` arrives as "1274-275", which is wins and losses; their sum
-   * is matches played. Doubles are left out, for the same reason football caps
-   * are: a combined figure matches no published record.
-   */
-  private async tennisCareerTotals(title: string): Promise<WikiCareerTotals> {
-    const wikitext = await this.client.fetchWikitext(title);
-    if (!wikitext) return { games: null, goals: null };
-
-    const box = parseInfobox(wikitext);
-    if (!box) return { games: null, goals: null };
-
-    // Read from the raw wikitext first, because the value is usually a
-    // template whose numbers live in its parameters, and template stripping
-    // leaves the cleaned field empty. Three spellings are in use across
-    // articles: `{{tennis record|won=|lost=}}`,
-    // `{{tennis win loss percentage|W=|L=}}` and a plain "1274-275".
-    const template = /\|\s*singlesrecord\s*=\s*\{\{([^}]*)\}\}/i.exec(wikitext);
-
-    if (template) {
-      const parameters = template[1]!;
-      const won = /\b(?:won|w)\s*=\s*([\d,]+)/i.exec(parameters)?.[1];
-      const lost = /\b(?:lost|l)\s*=\s*([\d,]+)/i.exec(parameters)?.[1];
-      const played = (parseNumber(won ?? '') ?? 0) + (parseNumber(lost ?? '') ?? 0);
-
-      if (played > 0) {
-        return { games: played, goals: this.tennisTitles(box, wikitext) };
-      }
-    }
-
-    const record = box.singlesrecord ?? box.singles_record ?? null;
-    let games: number | null = null;
-
-    if (record) {
-      // Strip the win-percentage some articles append: "1274-275 (82.2%)".
-      const [wins, losses] = record.replace(/\(.*?\)/g, '').split(/[–-]/);
-      const won = wins ? parseNumber(wins) : null;
-      const lost = losses ? parseNumber(losses) : null;
-      if (won !== null || lost !== null) games = (won ?? 0) + (lost ?? 0);
-    }
-
-    return { games, goals: this.tennisTitles(box, wikitext) };
-  }
-
-  /**
-   * A tennis player's singles title count.
-   *
-   * The field is annotated ("103 (2nd in the Open Era)") and sometimes wraps
-   * the number in a link to a statistics article, which template stripping
-   * turns into bare text. Both shapes yield their count to the leading integer;
-   * the wikitext is consulted only when the cleaned field has none.
-   */
-  private tennisTitles(box: Infobox, wikitext: string): number | null {
-    const cleaned = box.singlestitles ?? box.singles_titles ?? null;
-    const fromCleaned = cleaned ? parseNumber(leadingNumber(cleaned)) : null;
-    if (fromCleaned !== null) return fromCleaned;
-
-    const raw = /\|\s*singlestitles\s*=\s*(.*)/i.exec(wikitext)?.[1];
-    if (!raw) return null;
-
-    // "[[Novak Djokovic career statistics|101]]": the display half of the link
-    // is the count, so the first integer after any pipe is taken.
-    const linked = /\[\[[^\]]*\|(\d[\d,]*)\]\]/.exec(raw)?.[1];
-    return parseNumber(linked ?? leadingNumber(raw));
-  }
-
-  /**
-   * A driver's race entries and wins, from the rendered infobox.
-   *
-   * HTML rather than wikitext, unavoidably: an F1 infobox writes its figures as
-   * `{{F1stat|HAM|entries}}`, a template resolved from a central statistics
-   * store when the page is rendered. The wikitext therefore contains no numbers
-   * at all, and reading it returns "( starts)".
-   *
-   * Entries rather than starts, which differ when a driver fails to qualify or
-   * withdraws. Entries is the figure both templates always carry, and the
-   * registry describes the tile as appearances rather than starts to match.
-   */
-  private async motorsportCareerTotals(title: string): Promise<WikiCareerTotals> {
-    const html = await this.client.fetchHtml(title);
-    if (!html) return { games: null, goals: null };
-
-    // Read by label from the whole document rather than from a single infobox
-    // element: a driver's page carries several stacked boxes and the racing
-    // record is not in the first. Rows are matched non-greedily and the search
-    // stops at the career-results table, whose header repeats these words as
-    // column names.
-    const upToResults = html.split(/id="[^"]*(?:Racing_record|Career_statistics)/)[0] ?? html;
-
-    const value = (labels: string[]): number | null => {
-      for (const row of upToResults.matchAll(/<tr[^>]*>([\s\S]{0,2000}?)<\/tr>/g)) {
-        const cells = stripCells(row[1]!);
-        // Exactly two cells: a label and its figure. Longer rows are the
-        // season-by-season table, where "Wins" is a column heading.
-        if (cells.length !== 2) continue;
-
-        const [label, figure] = cells;
-        if (!label || !figure) continue;
-        if (!labels.some((candidate) => new RegExp(`^${candidate}$`, 'i').test(label.trim()))) {
-          continue;
-        }
-
-        return parseNumber(leadingNumber(figure));
-      }
-
-      return null;
-    };
-
-    return {
-      games: value(['entries', 'races', 'starts']),
-      goals: value(['wins', 'race wins']),
-    };
   }
 
   /**
@@ -1520,9 +1335,34 @@ export class WikipediaProvider {
 
     const entries: WikiRankingEntry[] = [];
 
+    // Some tables carry a rank column the header row does not declare. Roma's
+    // appearance table heads four columns "Player | Position | Appearances |
+    // Goals" and then writes five cells a row, the first being the rank, and the
+    // renderer drops the surplus. Read positionally, "Player" lands on the rank
+    // and every row was rejected for having a numeric name.
+    //
+    // Detected from the data rather than the width, because the widths match:
+    // the name column reads as a bare number on every row while the column
+    // after it does not.
+    const numeric = (value: string | undefined) =>
+      value !== undefined && /^\d+$/.test(value.trim());
+
+    const offset =
+      table.rows.length > 0 &&
+      table.rows.every((row) => numeric(row.cells[nameIndex]) && !numeric(row.cells[nameIndex + 1]))
+        ? 1
+        : 0;
+
+    const widest = table.rows.reduce((most, row) => Math.max(most, row.cells.length), 0);
+
     for (const row of table.rows) {
-      const rawName = row.cells[nameIndex];
-      const rawCell = row.cells[valueIndex ?? combinedIndex];
+      // A row narrower than the widest keeps its own indexing. Merged cells are
+      // already resolved by the parser, so a short row is malformed rather than
+      // offset.
+      const shift = row.cells.length >= widest ? offset : 0;
+
+      const rawName = row.cells[nameIndex + shift];
+      const rawCell = row.cells[(valueIndex ?? combinedIndex) + shift];
       if (!rawName || !rawCell) continue;
 
       // Several countries' tables append a link to a per-player match list, so
@@ -1572,7 +1412,7 @@ export class WikipediaProvider {
       // link to a page that does not exist as "Title?action=edit&redlink=1",
       // and carrying that through produced ranking rows pointing at an edit
       // form.
-      const candidates = (row.cellLinks[nameIndex] ?? []).filter(
+      const candidates = (row.cellLinks[nameIndex + shift] ?? []).filter(
         (candidate) => !candidate.includes('?') && !candidate.includes('action=edit'),
       );
       const simplify = (value: string) =>
@@ -1661,15 +1501,4 @@ function stripCells(row: string): string[] {
       .replace(/\s+/g, ' ')
       .trim(),
   );
-}
-
-/**
- * The leading integer of an infobox value.
- *
- * Infoboxes annotate their numbers: "103 (2nd in the Open Era)", "349 (347
- * starts)". Parsing the whole string yields nothing, and the figure wanted is
- * always the one written first.
- */
-function leadingNumber(value: string): string {
-  return /^[^\d]*([\d,.]+)/.exec(value)?.[1] ?? value;
 }

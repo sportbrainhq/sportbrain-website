@@ -785,12 +785,18 @@ export class IngestionService {
     if (existingId) {
       // Known entity. Update the fields this provider is authoritative for,
       // leaving anything a human has locked untouched.
+      //
+      // The lock is enforced per column rather than per row: an editor who
+      // corrects a club's name should not also freeze its crest or its founding
+      // year. `lockedFields` was documented as the mechanism for this and was
+      // never actually consulted here, so the comment above was true only by
+      // accident, because `name` happened not to be in the SET list.
       await this.database.db
         .update(team)
         .set({
-          country: item.fields.country,
-          foundedYear: item.fields.foundedYear,
-          logoUrl: item.fields.logoUrl,
+          country: sql`CASE WHEN 'country' = ANY(${team.lockedFields}) THEN ${team.country} ELSE ${item.fields.country ?? null} END`,
+          foundedYear: sql`CASE WHEN 'foundedYear' = ANY(${team.lockedFields}) THEN ${team.foundedYear} ELSE ${item.fields.foundedYear ?? null} END`,
+          logoUrl: sql`CASE WHEN 'logoUrl' = ANY(${team.lockedFields}) THEN ${team.logoUrl} ELSE ${item.fields.logoUrl ?? null} END`,
           notability: item.notability ?? 0,
           updatedAt: new Date(),
         })

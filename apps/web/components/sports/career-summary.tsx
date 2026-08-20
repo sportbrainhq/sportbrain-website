@@ -1,17 +1,18 @@
 import type { CareerSummaryEntry } from '@sportbrain/contracts';
 
 /**
- * The three headline numbers on a player page: games, a scoring total, trophies.
+ * A player's headline career numbers: for a footballer, games, goals, trophies.
  *
  * Deliberately not driven by what has been ingested. The registry-backed
  * `StatisticsPanel` below varies in shape from player to player, which is
  * correct for detailed statistics and wrong for a profile's headline: a page
  * that shows three tiles for one footballer and one for the next reads as
- * broken. So this renders exactly three tiles, always, and a value the archive
- * does not hold shows as a dash rather than disappearing.
+ * broken. So every player of a sport gets the same tiles, and a value the
+ * archive does not hold shows as a dash rather than disappearing.
  *
- * The middle label arrives with the data rather than being written here,
- * because it is goals in football, runs in cricket and race wins in Formula 1.
+ * Labels arrive with the data rather than being written here, and the panel is
+ * absent entirely for a sport that has not declared its own set: football is
+ * the only one so far, and goals are not runs.
  */
 export function CareerSummary({ entries }: { entries: CareerSummaryEntry[] }) {
   if (entries.length === 0) return null;

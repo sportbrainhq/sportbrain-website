@@ -77,36 +77,7 @@ export interface ParsedRow {
  * truncates the box at the first nested template, silently dropping most of it.
  */
 export function parseInfobox(wikitext: string): Infobox | null {
-  return parseInfoboxAt(wikitext, wikitext.search(/\{\{\s*Infobox/i));
-}
-
-/**
- * Every infobox in an article, merged into one set of fields.
- *
- * Needed because an article can carry more than one. A Formula 1 driver's page
- * opens with a biographical `Infobox person` and puts the racing record in a
- * separate `Infobox racing driver` further down, so reading only the first box
- * returns a birthplace and no races. Earlier boxes win on a key collision,
- * matching the first-box behaviour callers already expect.
- */
-export function parseInfoboxes(wikitext: string): Infobox | null {
-  const merged: Infobox = {};
-  const pattern = /\{\{\s*Infobox/gi;
-
-  for (const match of wikitext.matchAll(pattern)) {
-    const box = parseInfoboxAt(wikitext, match.index);
-    if (!box) continue;
-
-    for (const [key, value] of Object.entries(box)) {
-      if (!(key in merged)) merged[key] = value;
-    }
-  }
-
-  return Object.keys(merged).length > 0 ? merged : null;
-}
-
-/** One infobox, starting at a known `{{Infobox` offset. */
-function parseInfoboxAt(wikitext: string, start: number): Infobox | null {
+  const start = wikitext.search(/\{\{\s*Infobox/i);
   if (start === -1) return null;
 
   let depth = 0;

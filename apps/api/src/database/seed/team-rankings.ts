@@ -47,3 +47,30 @@ export interface TeamRankingSeed {
 }
 
 export const TEAM_RANKING_SEEDS: Record<string, TeamRankingSeed[]> = {};
+
+/**
+ * Teams deliberately left out, and why.
+ *
+ * Recorded so the next person does not spend the afternoon rediscovering it.
+ *
+ * - **Lazio** publishes an appearance and a goalscoring record holder in prose
+ *   and no leaderboard anywhere, on either its own article or its records page.
+ *   One name is not a table.
+ * - **Palermo, Atalanta, Genoa, Werder Bremen, Zenit** state a handful of club
+ *   records in prose without a ranked list behind them.
+ * - **Yugoslavia** is defunct and its records are split between successor
+ *   federations, which is an editorial decision rather than a data one.
+ *
+ * Anything here is a candidate for a licensed feed, not for hand entry: a
+ * ten-row table typed from a forum post is worse than an absent one, because
+ * nothing on the page tells a reader which it is.
+ */
+export const RANKINGS_WITHOUT_A_SOURCE = [
+  'ss-lazio',
+  'palermo-f-c',
+  'atalanta-bc',
+  'genoa-cfc',
+  'sv-werder-bremen',
+  'fc-zenit-saint-petersburg',
+  'yugoslavia-men-s-national-football-team',
+] as const;

@@ -155,7 +155,7 @@ async function main(): Promise<void> {
       const query = `
 SELECT ?item ?itemLabel ?sitelinks
        (SAMPLE(?birth) AS ?birthDate) (SAMPLE(?death) AS ?deathDate)
-       (SAMPLE(?natLabel) AS ?nationality) (SAMPLE(?image) AS ?imageUrl)
+       (MIN(?natLabel) AS ?nationality) (SAMPLE(?image) AS ?imageUrl)
        (SAMPLE(?posLabel) AS ?position)
 WHERE {
   VALUES ?item { ${values} }
@@ -168,7 +168,9 @@ WHERE {
   ?item wikibase:sitelinks ?sitelinks .
   OPTIONAL { ?item rdfs:label ?itemLabel . FILTER(LANG(?itemLabel) = "en") }
   OPTIONAL { ?item wdt:P569 ?birth } OPTIONAL { ?item wdt:P570 ?death }
-  OPTIONAL { ?item wdt:P27 ?ni . ?ni rdfs:label ?natLabel . FILTER(LANG(?natLabel) = "en") }
+  # P1532 (country for sport) rather than P27 (citizenship): see the note in
+  # peopleDetailQuery. Citizenship published Messi as Spain and Klose as Poland.
+  OPTIONAL { ?item wdt:P1532 ?ni . ?ni rdfs:label ?natLabel . FILTER(LANG(?natLabel) = "en") }
   OPTIONAL { ?item wdt:P18 ?image }
   OPTIONAL { ?item wdt:P413 ?pi . ?pi rdfs:label ?posLabel . FILTER(LANG(?posLabel) = "en") }
 }
