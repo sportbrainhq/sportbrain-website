@@ -1,5 +1,26 @@
+import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { config as loadDotenv } from 'dotenv';
 import type { NextConfig } from 'next';
+
+/**
+ * Loads the repository-root .env.
+ *
+ * Next.js reads .env from the app directory only, and the monorepo keeps one
+ * shared file at the root. Nothing had noticed because every server variable
+ * happened to have a working default, so `API_URL` resolved to localhost and
+ * looked configured. `REVALIDATE_SECRET` has no safe default, and the endpoint
+ * that needs it refused every request until this was added.
+ *
+ * The app's own .env still wins: `dotenv` does not overwrite a variable that is
+ * already set, and it is loaded first.
+ */
+for (const candidate of [
+  fileURLToPath(new URL('.env', import.meta.url)),
+  fileURLToPath(new URL('../../.env', import.meta.url)),
+]) {
+  if (existsSync(candidate)) loadDotenv({ path: candidate });
+}
 
 /**
  * Security headers applied to every response.

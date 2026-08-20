@@ -272,7 +272,44 @@ export class WikipediaIngestionService {
       }
     }
 
+    // The cache is evicted here rather than left to expire. Cache tags were
+    // declared on every page fetch and nothing ever invalidated them, so a
+    // corrected figure waited out the full hour: Atlético Madrid went on
+    // showing Real Madrid's leaderboards long after the rows were deleted, and
+    // the only reliable fix was rebuilding the web server.
+    await this.revalidate([`sport:${sportSlug}`]);
+
     return { teams, rankings };
+  }
+
+  /**
+   * Asks the web app to drop cached pages for a set of tags.
+   *
+   * Best effort by design: ingestion having succeeded is the valuable outcome,
+   * and a web app that is not running, or not configured with the shared
+   * secret, must not fail the run. The failure is logged so a stale page is
+   * traceable to a missed revalidation rather than looking like bad data.
+   */
+  private async revalidate(tags: string[]): Promise<void> {
+    const url = process.env.WEB_URL;
+    const secret = process.env.REVALIDATE_SECRET;
+    if (!url || !secret) return;
+
+    try {
+      const response = await fetch(new URL('/api/revalidate', url), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${secret}` },
+        body: JSON.stringify({ tags }),
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!response.ok) {
+        this.logger.warn(`Revalidation returned ${response.status}; pages may serve stale data`);
+        return;
+      }
+      this.logger.log(`  revalidated ${tags.join(', ')}`);
+    } catch (error) {
+      this.logger.warn(`Revalidation failed: ${this.message(error)}`);
+    }
   }
 
   /**
