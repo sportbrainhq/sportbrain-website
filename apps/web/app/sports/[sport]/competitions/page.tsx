@@ -32,10 +32,12 @@ function buildQuery(parts: { kind?: string; q?: string }): string {
 /**
  * The groupings a reader can filter by.
  *
- * Deliberately coarser than the stored `kind`. "International" covers both
- * national-team tournaments and the continental club cups, because the World
- * Cup and the Champions League are one idea to a reader and two values in the
- * enum; the API expands the group rather than matching a single value.
+ * The split is club football against national-team football, which is the
+ * distinction a reader is actually making. "Leagues" therefore holds the
+ * continental club cups as well as the domestic leagues: the Champions League
+ * is contested by the same clubs as La Liga, so it belongs beside them rather
+ * than beside the World Cup. The API expands each group across the stored
+ * kinds rather than matching a single value.
  */
 const KINDS = [
   { value: '', label: 'All' },
@@ -72,7 +74,7 @@ export default async function CompetitionsPage({
     kind === 'international'
       ? `${sport.name} international competitions`
       : kind === 'league'
-        ? `${sport.name} leagues`
+        ? `${sport.name} leagues and club cups`
         : `${sport.name} competitions`;
 
   return (

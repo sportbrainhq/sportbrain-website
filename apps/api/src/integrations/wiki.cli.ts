@@ -6,6 +6,7 @@
  * pnpm --filter @sportbrain/api wiki facts teams football 200
  * pnpm --filter @sportbrain/api wiki crests football 300
  * pnpm --filter @sportbrain/api wiki crests all 3000 overwrite
+ * pnpm --filter @sportbrain/api wiki logos football 60
  * pnpm --filter @sportbrain/api wiki rankings football 60
  * pnpm --filter @sportbrain/api wiki cricket-stats 300
  * pnpm --filter @sportbrain/api wiki careers 300
@@ -41,7 +42,7 @@ async function main(): Promise<void> {
 
   if (!command) {
     process.stderr.write(
-      'Usage: wiki <map|facts|crests|rankings|cricket-stats|basketball-stats|careers|career-totals|scan-totals|titles|all> [entityType] [sport] [limit]\n',
+      'Usage: wiki <map|facts|crests|logos|rankings|cricket-stats|basketball-stats|careers|career-totals|scan-totals|titles|all> [entityType] [sport] [limit]\n',
     );
     process.exitCode = 1;
     return;
@@ -109,6 +110,19 @@ async function main(): Promise<void> {
         );
         process.stdout.write(
           `${result.examined} scanned, ${result.resolved} crests, ${result.written} teams updated\n`,
+        );
+        break;
+      }
+
+      case 'logos': {
+        const [sport, limit, mode] = args;
+        const result = await ingestion.ingestCompetitionLogos(
+          sport === 'all' ? null : (sport ?? 'football'),
+          Number(limit ?? 200),
+          mode === 'overwrite',
+        );
+        process.stdout.write(
+          `${result.examined} scanned, ${result.resolved} logos, ${result.written} competitions updated\n`,
         );
         break;
       }
@@ -209,6 +223,11 @@ async function main(): Promise<void> {
         const crests = await ingestion.ingestTeamCrests(sportSlug, cap);
         process.stdout.write(
           `  crests       ${crests.written} teams updated from ${crests.resolved} files\n`,
+        );
+
+        const logos = await ingestion.ingestCompetitionLogos(sportSlug, cap);
+        process.stdout.write(
+          `  logos        ${logos.written} competitions updated from ${logos.resolved} files\n`,
         );
 
         const rankings = await ingestion.ingestTeamRankings(sportSlug, Math.min(cap, 60));

@@ -18,10 +18,27 @@ import {
  * one row. Appearances come before goals: a reader comparing two clubs wants
  * the same table in the same place, and appearances is the broader measure.
  *
+ * For a competition the roll of honour leads, because who won is the first
+ * thing anyone opens a tournament page to see, and the individual awards follow
+ * in the order the trophies are ranked: the Golden Ball is the tournament's
+ * headline prize, then the Golden Boot, the Golden Glove, and the young player
+ * award. Listing them alphabetically put Best Young Player above all three.
+ *
+ * The two groups share one list because a kind belongs to only one of them: a
+ * club has no `award:` tables and a competition has no `most_appearances`.
+ *
  * Anything unlisted sorts after these, alphabetically by kind, so a new kind
  * appears predictably rather than at a random position.
  */
-const RANKING_ORDER = ['most_appearances', 'top_scorers', 'roll_of_honour'];
+const RANKING_ORDER = [
+  'roll_of_honour',
+  'award:most-valuable-player-award',
+  'award:more-goals-scored',
+  'award:best-goalkeeper',
+  'award:best-young-player',
+  'most_appearances',
+  'top_scorers',
+];
 
 const rankingOrder = sql`array_position(
   ${sql.raw(`ARRAY[${RANKING_ORDER.map((kind) => `'${kind}'`).join(', ')}]::text[]`)},

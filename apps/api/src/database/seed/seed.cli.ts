@@ -46,6 +46,7 @@ import {
   FOOTBALL_EXPLAINER_TOPICS,
 } from './football-explainer-taxonomy';
 import { FOOTBALL_EXPLAINERS, FOOTBALL_EXPLAINER_SOURCES } from './football-explainers';
+import { FOOTBALL_SEEDED_AWARDS } from './football-competition-awards';
 import { FOOTBALL_CURATED_COMPETITIONS, FOOTBALL_CURATED_SLUGS } from './football-competitions';
 import { seedExplainerLibrary } from './seed-explainers';
 import { honourTier } from './football-honour-tiers';
@@ -68,6 +69,11 @@ async function main(): Promise<void> {
         `${competitions.deleted} removed\n`,
     );
 
+    const awards = await seedCompetitionAwards(db);
+    process.stdout.write(
+      `Awards:   ${awards.written} seeded award winners merged, ${awards.skipped} skipped\n`,
+    );
+
     const definitions = await seedRegistry(db);
     process.stdout.write(`Registry: ${definitions} definitions upserted\n`);
 
@@ -79,6 +85,9 @@ async function main(): Promise<void> {
 
     const ranked = await derivePersonPriority(db);
     process.stdout.write(`Derived:  ${ranked} people re-prioritised\n`);
+
+    const merged = await deduplicateHonours(db);
+    process.stdout.write(`Derived:  ${merged} duplicate honours merged\n`);
 
     const tiered = await deriveHonourPrestige(db);
     process.stdout.write(`Derived:  ${tiered} honours tiered\n`);
@@ -350,6 +359,53 @@ async function derivePersonPriority(db: Db): Promise<number> {
   `);
 
   return rows.length;
+}
+
+/**
+ * Removes honours that two sources record differently.
+ *
+ * Part of the seed rather than a one-off script because re-reading the
+ * Wikipedia honours resurrects the collisions every time, and I have already
+ * forgotten to re-run it once: Messi's page showed eight European Golden Shoes
+ * against the six he won.
+ *
+ * Two kinds of duplicate, neither of which is a wrong row on its own:
+ *
+ *   1. **Season labels.** Wikidata records the Golden Shoe of season 2007-08 as
+ *      2008 and Wikipedia as 2007. The pair sits one year apart, and Wikidata's
+ *      is dropped because a single year cannot say which season it meant.
+ *   2. **Renamed awards.** "FIFA Ballon d'Or" and "FIFA World Player of the
+ *      Year" are the Ballon d'Or for the years the awards were merged. Messi's
+ *      separate 2009 FIFA World Player of the Year survives, because before the
+ *      merger it was a different prize.
+ *
+ * A genuine pair of consecutive wins is left alone, which is why this compares
+ * across sources rather than looking for adjacent years: Modrić really did win
+ * six Champions Leagues and Čech really did win twelve Czech Golden Balls.
+ */
+async function deduplicateHonours(db: Db): Promise<number> {
+  const seasons = await db.execute<{ id: string }>(sql`
+    DELETE FROM honour wd
+    USING honour wp
+    WHERE wd.source = 'wikidata'
+      AND wp.source = 'wikipedia'
+      AND wd.person_id = wp.person_id
+      AND wd.title = wp.title
+      AND wd.year = wp.year + 1
+    RETURNING wd.id
+  `);
+
+  const aliases = await db.execute<{ id: string }>(sql`
+    DELETE FROM honour a
+    USING honour b
+    WHERE a.person_id = b.person_id
+      AND a.year = b.year
+      AND b.title = 'Ballon d''Or'
+      AND a.title IN ('FIFA Ballon d''Or', 'FIFA World Player of the Year')
+    RETURNING a.id
+  `);
+
+  return seasons.length + aliases.length;
 }
 
 /**
@@ -928,4 +984,104 @@ async function seedFootballCompetitions(
   );
 
   return { updated, created, deleted: removed.length };
+}
+
+/**
+ * Merges hand-entered results into the crawled award and honour tables.
+ *
+ * Wikidata's coverage of these lags and, for the roll of honour, is padded with
+ * editions that are not tournaments, so the most recent results are missing and
+ * the coverage note undercounts itself. Rather than replacing every table, each
+ * seeded result is merged into the existing entry list for its `kind` and the
+ * whole list re-ranked, which keeps the older editions coming from the source.
+ * A `kind` named in `replaceKinds` is rebuilt from the seed alone, for the case
+ * where the crawled list is wrong rather than merely short.
+ *
+ * Idempotent: a result already present for an edition is replaced rather than
+ * added again, so a repeat run does not accumulate duplicates.
+ */
+async function seedCompetitionAwards(db: Db): Promise<{ written: number; skipped: number }> {
+  let written = 0;
+  let skipped = 0;
+
+  type Entry = { rank: number; name: string; value: number | null; detail: string | null };
+
+  for (const group of FOOTBALL_SEEDED_AWARDS) {
+    const [competition] = await db.execute<{ id: string }>(
+      sql`SELECT c.id FROM competition c
+          JOIN sport s ON s.id = c.sport_id AND s.slug = 'football'
+          WHERE c.slug = ${group.competitionSlug} LIMIT 1`,
+    );
+
+    if (!competition) {
+      process.stdout.write(`  skipped ${group.competitionSlug}: not in the database\n`);
+      skipped += group.awards.length;
+      continue;
+    }
+
+    // Grouped by table, so each one is written once with all of its seeded
+    // rows rather than once per row. Writing per row would re-read and re-rank
+    // the same table dozens of times and leave its note naming one edition.
+    const byKind = new Map<string, typeof group.awards>();
+    for (const entry of group.awards) {
+      byKind.set(entry.kind, [...(byKind.get(entry.kind) ?? []), entry]);
+    }
+
+    for (const [kind, seeded] of byKind) {
+      const replace = group.replaceKinds?.includes(kind) ?? false;
+
+      const [existing] = replace
+        ? []
+        : await db.execute<{ entries: unknown }>(
+            sql`SELECT entries FROM entity_ranking
+                WHERE entity_type = 'competition'
+                  AND entity_id = ${competition.id}
+                  AND kind = ${kind}
+                LIMIT 1`,
+          );
+
+      const seededYears = new Set(seeded.map((entry) => String(entry.year)));
+      const carried = ((existing?.entries as Entry[] | undefined) ?? []).filter(
+        // Dropped so a re-run replaces rather than appends, and so a seeded
+        // edition wins over the crawled one it corrects.
+        (entry) => !seededYears.has(String(entry.detail)),
+      );
+
+      const merged = [
+        ...carried,
+        ...seeded.map((entry) => ({
+          rank: 0,
+          name: entry.winner,
+          value: entry.value ?? entry.year,
+          detail: String(entry.year),
+        })),
+      ]
+        // Newest first, matching how enrichment orders these tables.
+        .sort((a, b) => Number(b.detail ?? 0) - Number(a.detail ?? 0))
+        .map((entry, index) => ({ ...entry, rank: index + 1 }));
+
+      const label = seeded[0]!.label;
+      const note = `${merged.length} editions, compiled from ${group.source}`;
+
+      await db.execute(
+        sql`INSERT INTO entity_ranking (
+              entity_type, entity_id, kind, label, entries, confidence, note, source_title
+            )
+            VALUES (
+              'competition', ${competition.id}, ${kind}, ${label},
+              ${JSON.stringify(merged)}::jsonb, 'high', ${note}, ${MANUAL_RANKING_SOURCE}
+            )
+            ON CONFLICT (entity_type, entity_id, kind) DO UPDATE SET
+              label = EXCLUDED.label,
+              entries = EXCLUDED.entries,
+              confidence = 'high',
+              note = EXCLUDED.note,
+              source_title = EXCLUDED.source_title,
+              updated_at = now()`,
+      );
+      written += seeded.length;
+    }
+  }
+
+  return { written, skipped };
 }

@@ -543,7 +543,7 @@ export class WikidataProvider implements SportsDataProvider {
   /** A competition's editions, with winners and hosts. */
   async fetchCompetitionEditions(
     competitionQid: string,
-  ): Promise<{ label: string; year?: number; winner?: string; hosts?: string }[]> {
+  ): Promise<{ label: string; year?: number; endsOn?: string; winner?: string; hosts?: string }[]> {
     const rows = await this.runQuery(competitionEditionsQuery(competitionQid));
 
     return rows
@@ -552,6 +552,10 @@ export class WikidataProvider implements SportsDataProvider {
         label: row.editionLabel!,
         // Tournaments carry a point in time; league seasons carry a start date.
         year: this.year(row.when) ?? this.year(row.start),
+        // Passed through as the raw timestamp rather than a year, because the
+        // caller needs to know whether the edition has finished as of today,
+        // which a year cannot answer for the current year's editions.
+        endsOn: row.end,
         winner: row.winnerLabel,
         hosts: row.hosts || undefined,
       }));

@@ -180,6 +180,18 @@ export class WikipediaClient {
 
       const body = await this.getJson<{
         query?: {
+          /**
+           * How the API rewrote each requested title.
+           *
+           * It rewrites more than it looks like it should: underscores become
+           * spaces, and a filename written with percent escapes in the wikitext
+           * comes back decoded. The response is keyed by the rewritten title, so
+           * a caller looking up the title it asked for finds nothing. That lost
+           * the Copa America logo (`Logo de la Conmebol Copa Am%C3%A9rica.svg`)
+           * and the Argentine Primera's (`Liga_profesional_afa_logo26.png`)
+           * even though both resolved.
+           */
+          normalized?: { from: string; to: string }[];
           pages?: {
             title: string;
             missing?: boolean;
@@ -187,6 +199,11 @@ export class WikipediaClient {
           }[];
         };
       }>(url);
+
+      // Keyed by what the API returned, valued by what the caller asked for.
+      const requested = new Map(
+        (body.query?.normalized ?? []).map((entry) => [entry.to, entry.from]),
+      );
 
       for (const page of body.query?.pages ?? []) {
         // `missing` is not decisive here. A file hosted on Commons rather than
@@ -198,7 +215,13 @@ export class WikipediaClient {
         // `thumburl` is absent for formats MediaWiki will not rasterise. The
         // original is still better than nothing for those.
         const source = page.imageinfo?.[0]?.thumburl ?? page.imageinfo?.[0]?.url;
-        if (source) resolved.set(page.title, source);
+        if (!source) continue;
+
+        // Both keys, so a caller can look up either the title it passed in or
+        // the canonical one.
+        resolved.set(page.title, source);
+        const asRequested = requested.get(page.title);
+        if (asRequested) resolved.set(asRequested, source);
       }
     }
 

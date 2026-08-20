@@ -16,12 +16,18 @@ import {
 /**
  * The filter groups offered on the competitions tab, expanded to stored kinds.
  *
+ * The split is by who competes, not by how far the competition travels.
+ * "International" is national teams only; the continental club cups sit with
+ * the leagues because the Champions League is contested by Real Madrid and
+ * Bayern, the same clubs as La Liga and the Bundesliga, and grouping it with
+ * the World Cup put club and country in one list again.
+ *
  * `friendly` belongs to no group deliberately: an exhibition match is not what
  * anyone opening this tab is looking for, and the curated list contains none.
  */
 const COMPETITION_KIND_GROUPS: Record<string, ('international' | 'domestic' | 'continental')[]> = {
-  international: ['international', 'continental'],
-  league: ['domestic'],
+  international: ['international'],
+  league: ['domestic', 'continental'],
 };
 
 @Injectable()

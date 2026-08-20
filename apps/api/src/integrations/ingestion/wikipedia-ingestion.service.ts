@@ -183,13 +183,53 @@ export class WikipediaIngestionService {
     limit: number,
     overwrite = false,
   ): Promise<{ examined: number; resolved: number; written: number }> {
+    return this.ingestLogos('team', sportSlug, limit, overwrite);
+  }
+
+  /**
+   * The same backfill for competition logos, which were missing for exactly the
+   * competitions a reader can name.
+   *
+   * Wikidata's P154 covers the second tiers and the smaller leagues, and is
+   * absent for the World Cup, the Champions League, La Liga, the Bundesliga and
+   * Serie A, for the crest reason above: those logos are trademarks and Commons
+   * will not host them. 33 of football's 48 competitions had no logo at all,
+   * every tier-one entry among them, so the listing showed initials where a
+   * reader expects a badge.
+   *
+   * Competitions created by the curated seed also arrive with no Wikipedia
+   * title, because title mapping runs from the QID and they were inserted after
+   * the last mapping pass. Run `wiki map competition` before this, or `wiki all`,
+   * which does both in order.
+   */
+  async ingestCompetitionLogos(
+    sportSlug: string | null,
+    limit: number,
+    overwrite = false,
+  ): Promise<{ examined: number; resolved: number; written: number }> {
+    return this.ingestLogos('competition', sportSlug, limit, overwrite);
+  }
+
+  /**
+   * Shared body of the two backfills above.
+   *
+   * `team` and `competition` differ only in the table joined and the column
+   * updated: both hold `logo_url`, both map to Wikipedia by title, and the
+   * infobox field carrying the image is one of the same four either way.
+   */
+  private async ingestLogos(
+    entityType: 'team' | 'competition',
+    sportSlug: string | null,
+    limit: number,
+    overwrite: boolean,
+  ): Promise<{ examined: number; resolved: number; written: number }> {
     const targets = await this.database.db.execute<{ id: string; title: string; name: string }>(sql`
       SELECT e.id, em.external_id AS title, e.name
       FROM external_mapping em
-      JOIN team e ON e.id = em.entity_id
+      JOIN ${sql.raw(entityType)} e ON e.id = em.entity_id
       JOIN sport s ON s.id = e.sport_id
       WHERE em.provider = 'wikipedia'
-        AND em.entity_type = 'team'
+        AND em.entity_type = ${entityType}
         ${sql.raw(sportSlug ? `AND s.slug = '${sportSlug}'` : '')}
         ${sql.raw(overwrite ? '' : 'AND e.logo_url IS NULL')}
       ORDER BY e.notability DESC
@@ -197,7 +237,7 @@ export class WikipediaIngestionService {
     `);
 
     // Collected before resolving, so the thumbnail lookups can be batched rather
-    // than run one per team.
+    // than run one per entity.
     const wanted = new Map<string, { id: string; name: string }[]>();
     let examined = 0;
 
@@ -214,11 +254,11 @@ export class WikipediaIngestionService {
         group.push({ id: target.id, name: target.name });
         wanted.set(file, group);
       } catch (error) {
-        this.logger.warn(`Crest lookup failed for ${target.title}: ${this.message(error)}`);
+        this.logger.warn(`Logo lookup failed for ${target.title}: ${this.message(error)}`);
       }
 
       if ((index + 1) % 25 === 0) {
-        this.logger.log(`  ${index + 1}/${targets.length} teams scanned`);
+        this.logger.log(`  ${index + 1}/${targets.length} ${entityType}s scanned`);
       }
     }
 
@@ -226,13 +266,15 @@ export class WikipediaIngestionService {
 
     let written = 0;
 
-    for (const [file, teams] of wanted) {
+    for (const [file, entities] of wanted) {
       const url = thumbnails.get(file);
       if (!url) continue;
 
-      for (const team of teams) {
+      for (const entity of entities) {
         await this.database.db.execute(sql`
-          UPDATE team SET logo_url = ${url}, updated_at = now() WHERE id = ${team.id}
+          UPDATE ${sql.raw(entityType)}
+          SET logo_url = ${url}, updated_at = now()
+          WHERE id = ${entity.id}
         `);
         written += 1;
       }

@@ -25,10 +25,11 @@
  *
  * Two groups, matching what a reader means by "competition":
  *
- *   - **International**: the World Cup and the continental championships, the
- *     continental club cups, and the two global club competitions.
- *   - **Leagues**: top-flight domestic leagues, plus the small number of second
- *     tiers with a genuine following of their own.
+ *   - **International**: national-team football. The World Cup, the continental
+ *     championships, the Nations League.
+ *   - **Leagues**: club football. Top-flight domestic leagues, the small number
+ *     of second tiers with a following of their own, and the continental club
+ *     cups, which are contested by the same clubs as the domestic leagues.
  *
  * Everything else is deleted. Third tiers, regional and county leagues, youth
  * and reserve competitions, and defunct leagues of historical interest only are
@@ -104,12 +105,13 @@ export interface CuratedCompetition {
 }
 
 /**
- * International competitions: national teams, and the continental club cups.
+ * Competitions played across borders, by national teams and by clubs alike.
  *
- * Both belong under one heading because both are what a reader means by
- * "international": a competition contested across borders rather than inside
- * one. The distinction between a national-team tournament and a club one is
- * carried by `kind`, where `continental` marks the club competitions.
+ * Grouped together here because they are curated as one set, but they are not
+ * presented as one: the reader's filter splits on who competes, so `kind`
+ * decides the tab. `international` is national-team football and
+ * `continental` is club football, which puts the Champions League beside the
+ * leagues its entrants come from rather than beside the World Cup.
  */
 export const FOOTBALL_INTERNATIONAL_COMPETITIONS: CuratedCompetition[] = [
   // ── National teams ───────────────────────────────────────────────────────
@@ -270,11 +272,14 @@ export const FOOTBALL_INTERNATIONAL_COMPETITIONS: CuratedCompetition[] = [
     foundedYear: 1967,
     create: true,
   },
+  // Global rather than continental, but contested by clubs, and `kind` is what
+  // decides whether a competition is filed under national teams or under club
+  // football. Filed with the club cups so it does not sit beside the World Cup.
   {
     slug: 'fifa-club-world-cup',
     wikidata: 'Q223366',
     name: 'FIFA Club World Cup',
-    kind: 'international',
+    kind: 'continental',
     format: 'group_knockout',
     country: null,
     tier: 3,

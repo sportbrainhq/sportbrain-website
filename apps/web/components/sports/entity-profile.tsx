@@ -161,10 +161,17 @@ function RankingTable({ ranking, sportSlug }: { ranking: EntityRanking; sportSlu
         )}
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-border">
+      {/* Every entry is rendered, inside a scrolling box rather than cut off at
+          a fixed count. These tables used to stop at fifteen rows, which was
+          fine while they were open-ended leaderboards and wrong once they
+          became complete records: the World Cup roll of honour holds 23
+          champions, and truncating it silently dropped the first eight
+          tournaments, Uruguay's 1930 title among them. A reader could not tell
+          the difference between a list that ended and a list that was cut. */}
+      <div className="max-h-[30rem] overflow-auto rounded-lg border border-border">
         <table className="w-full text-sm">
           <tbody>
-            {ranking.entries.slice(0, 15).map((entry) => (
+            {ranking.entries.map((entry) => (
               <tr
                 key={`${entry.rank}-${entry.name}`}
                 className="border-b border-border last:border-0"

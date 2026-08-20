@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { FactPanel, RankingPanel, SectionPanel } from '@/components/sports/entity-profile';
+import { Avatar } from '@/components/sports/avatar';
 import { ApiError, fetchCompetition } from '@/lib/api';
 import { buildMetadata } from '@/lib/seo';
 
@@ -59,23 +60,36 @@ export default async function CompetitionPage({
 
   return (
     <article className="space-y-8">
-      <header>
-        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-          <Link href={`/sports/${sportSlug}/competitions`} className="hover:underline">
-            {competition.sport.name}
-          </Link>
-          <span className="ml-2 capitalize">
-            {competition.kind} {competition.format.replace('_', ' ')}
-          </span>
-        </p>
-        <h1 className="mt-1.5 text-3xl font-black tracking-tight sm:text-4xl">
-          {competition.name}
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {[competition.country, competition.foundedYear && `since ${competition.foundedYear}`]
-            .filter(Boolean)
-            .join(' · ')}
-        </p>
+      <header className="flex flex-wrap items-start gap-4">
+        {/* `object-contain` rather than the crest default: a competition logo is
+            usually a wordmark, and cropping one to a square cuts the name in
+            half. */}
+        {competition.logoUrl && (
+          <Avatar
+            text={competition.name}
+            imageUrl={competition.logoUrl}
+            size={80}
+            className="rounded-lg object-contain"
+          />
+        )}
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+            <Link href={`/sports/${sportSlug}/competitions`} className="hover:underline">
+              {competition.sport.name}
+            </Link>
+            <span className="ml-2 capitalize">
+              {competition.kind} {competition.format.replace('_', ' ')}
+            </span>
+          </p>
+          <h1 className="mt-1.5 text-3xl font-black tracking-tight sm:text-4xl">
+            {competition.name}
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {[competition.country, competition.foundedYear && `since ${competition.foundedYear}`]
+              .filter(Boolean)
+              .join(' · ')}
+          </p>
+        </div>
       </header>
 
       {/* The competition's own columns, rendered as facts.

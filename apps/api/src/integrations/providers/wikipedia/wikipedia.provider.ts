@@ -144,6 +144,22 @@ const EXCLUDED_HONOUR_GROUPS =
  *
  * What still has to go is anything won in another role, or not won at all.
  */
+
+/**
+ * Where a honours line stops recording wins.
+ *
+ * Articles append the times a player did not win to the same line as the times
+ * they did, and the transition is a word rather than any markup: "Ballon d'Or
+ * Winner: 1963, nominated: 1956, 1957, 1958, ...". Splitting on runner-up
+ * clauses alone left the nine nominations in place, and Lev Yashin's profile
+ * claimed ten Ballons d'Or against the one he won.
+ *
+ * Nominations and shortlists are the common case and matter most, because they
+ * attach to exactly the awards a reader recognises.
+ */
+const NOT_A_WIN =
+  /\b(runners?-up|runner up|third place|finalist|nominated|nominee|nominations?|shortlist(?:ed)?|longlist(?:ed)?)\b/i;
+
 const EXCLUDED_HONOUR_LIST_GROUPS =
   /^(manager|managerial|as a manager|head coach|coach|assistant|youth|reserves?|see also|notes?|references?)\b/i;
 
@@ -348,7 +364,7 @@ export class WikipediaProvider {
         new RegExp(`\\|\\s*${field}\\s*=\\s*\\[\\[\\s*(?:File|Image):([^|\\]]+)`, 'i'),
       );
       const file = linked?.[1]?.trim();
-      if (file && /\.(svg|png)$/i.test(file)) return `File:${file}`;
+      if (file && /\.(svg|png)$/i.test(file)) return `File:${decodeFilename(file)}`;
     }
 
     for (const field of ['image', 'logo', 'crest', 'badge']) {
@@ -360,17 +376,32 @@ export class WikipediaProvider {
       // |upright=0.5]]`, whose display parameters are not part of the name.
       // `cleanWikitext` has already reduced that to its parameters alone, so
       // the link is recovered from the raw wikitext rather than from the field.
-      const name = raw
+      const value = raw
         .replace(/^\[\[/, '')
         .replace(/\]\]$/, '')
         .replace(/^(?:File|Image):/i, '')
         .split('|')[0]
         ?.trim();
 
-      if (!name) continue;
-      if (!/\.(svg|png)$/i.test(name)) continue;
+      if (!value) continue;
 
-      return `File:${name}`;
+      // The filename is taken from within the value rather than by testing its
+      // end, because competition infoboxes append rendering options to it
+      // through the pipe escape: `FIFA World Cup wordmark (2023).svg{{!}}
+      // class=skin-invert`. `{{!}}` is a template standing in for a literal
+      // pipe, so `parseInfobox` does not split on it and `cleanWikitext`
+      // reduces it to a space, leaving `... .svg class=skin-invert` in the
+      // field. Anchoring on the extension kept the World Cup and the Copa
+      // America without a logo while the leagues had one.
+      //
+      // The extension is still what rejects a photograph: a `.jpg` never
+      // matches, so an infobox whose image is a squad photo or a trophy shot
+      // yields nothing, which is the intended outcome.
+      const name = value.match(/^(.*?\.(?:svg|png))(?:\s|$)/i)?.[1]?.trim();
+
+      if (!name) continue;
+
+      return `File:${decodeFilename(name)}`;
     }
 
     return null;
@@ -1144,7 +1175,7 @@ export class WikipediaProvider {
 
       // Everything from a runner-up, third-place or losing-finalist clause
       // onwards is a record of not winning.
-      const winning = text.split(/\b(?:runners?-up|runner up|third place|finalist)\b/i)[0] ?? '';
+      const winning = text.split(NOT_A_WIN)[0] ?? '';
 
       // Only what follows the colon, so a competition whose name carries a year
       // ("Copa Am\u00e9rica 2021") is not itself counted as a win.
@@ -1226,7 +1257,7 @@ export class WikipediaProvider {
       if (!text) continue;
 
       // Anything from a runner-up clause onwards records not winning.
-      const winning = text.split(/\b(?:runners?-up|runner up|third place|finalist)\b/i)[0] ?? '';
+      const winning = text.split(NOT_A_WIN)[0] ?? '';
       const colon = winning.indexOf(':');
       if (colon < 0) continue;
 
@@ -1380,7 +1411,7 @@ export class WikipediaProvider {
 
         // A losing record, however it is phrased. Checked before the winners
         // pattern because "Runners-up: (14)" also carries a bracketed count.
-        if (/\b(runners?-up|runner up|third place|finalist)\b/i.test(text)) continue;
+        if (NOT_A_WIN.test(text)) continue;
         if (EXCLUDED_TITLE_TYPES.test(text)) continue;
         if (EXCLUDED_COMPETITIONS.test(text)) continue;
 
@@ -1936,4 +1967,25 @@ function stripCells(row: string): string[] {
       .replace(/\s+/g, ' ')
       .trim(),
   );
+}
+
+/**
+ * Decodes percent escapes in an infobox filename.
+ *
+ * Some articles write the file with its URL encoding intact:
+ * `Logo de la Conmebol Copa Am%C3%A9rica.svg`. The API rejects that outright,
+ * with `The requested page title contains invalid characters: "%C3"`, so the
+ * Copa America logo resolved to nothing until the escape was decoded.
+ *
+ * A malformed escape is left alone rather than thrown on: `decodeURIComponent`
+ * raises on a stray `%`, and a filename containing one is still worth trying.
+ */
+function decodeFilename(name: string): string {
+  if (!name.includes('%')) return name;
+
+  try {
+    return decodeURIComponent(name);
+  } catch {
+    return name;
+  }
 }

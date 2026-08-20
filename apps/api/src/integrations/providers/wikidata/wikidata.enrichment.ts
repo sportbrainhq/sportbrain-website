@@ -139,7 +139,7 @@ LIMIT ${limit}`.trim();
  */
 export function competitionEditionsQuery(competitionQid: string): string {
   return `
-SELECT ?edition ?editionLabel ?when ?start ?winnerLabel
+SELECT ?edition ?editionLabel ?when ?start ?end ?winnerLabel
        (GROUP_CONCAT(DISTINCT ?hostLabel; separator=", ") AS ?hosts) WHERE {
   # Two linking patterns, because two kinds of competition model their
   # instances differently, and neither covers the other. Verified by counting:
@@ -152,6 +152,10 @@ SELECT ?edition ?editionLabel ?when ?start ?winnerLabel
   OPTIONAL { ?edition wdt:P585 ?when }
   # League seasons carry a start time rather than a point in time.
   OPTIONAL { ?edition wdt:P580 ?start }
+  # The end date decides whether an edition has actually finished, which the
+  # year alone cannot: the 2026 World Cup ended on 19 July 2026 and is a
+  # completed tournament, while a 2026 league season running now is not.
+  OPTIONAL { ?edition wdt:P582 ?end }
   OPTIONAL {
     ?edition wdt:P1346 ?winner .
     ?winner rdfs:label ?winnerLabel . FILTER(LANG(?winnerLabel) = "en")
@@ -161,7 +165,7 @@ SELECT ?edition ?editionLabel ?when ?start ?winnerLabel
     ?host rdfs:label ?hostLabel . FILTER(LANG(?hostLabel) = "en")
   }
 }
-GROUP BY ?edition ?editionLabel ?when ?start ?winnerLabel
+GROUP BY ?edition ?editionLabel ?when ?start ?end ?winnerLabel
 ORDER BY DESC(COALESCE(?when, ?start))
 LIMIT 100`.trim();
 }
@@ -180,7 +184,11 @@ LIMIT 100`.trim();
  */
 export function competitionAwardsQuery(competitionQid: string): string {
   return `
-SELECT ?editionLabel ?when ?personLabel ?criterionLabel ?value WHERE {
+SELECT DISTINCT ?editionLabel ?when ?personLabel ?criterionLabel ?value WHERE {
+  # DISTINCT above is load-bearing. An edition linked by both P527 and P3450
+  # matches each side of this UNION, and without it every award came back twice:
+  # the World Cup listed "Emiliano Martínez 2022" at ranks 1 and 2, Mbappé at 1
+  # and 2, and so on down every table.
   { wd:${competitionQid} wdt:P527 ?edition } UNION { ?edition wdt:P3450 wd:${competitionQid} }
   ?edition p:P3279 ?statement .
   ?statement ps:P3279 ?person .
