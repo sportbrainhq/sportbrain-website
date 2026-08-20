@@ -159,6 +159,12 @@ SELECT ?item ?itemLabel ?sitelinks
        (SAMPLE(?posLabel) AS ?position)
 WHERE {
   VALUES ?item { ${values} }
+  # The entity must be a human. Without this the command created a person from
+  # whatever a ranking link happened to resolve to, and a records table links
+  # its flag icons: Spain (Q29), Brazil (Q155), France, Japan and Germany were
+  # all written as football players with notability in the 400s, which put them
+  # above every real player on the Players tab.
+  ?item wdt:P31 wd:Q5 .
   ?item wikibase:sitelinks ?sitelinks .
   OPTIONAL { ?item rdfs:label ?itemLabel . FILTER(LANG(?itemLabel) = "en") }
   OPTIONAL { ?item wdt:P569 ?birth } OPTIONAL { ?item wdt:P570 ?death }

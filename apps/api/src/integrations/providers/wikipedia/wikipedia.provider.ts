@@ -62,6 +62,15 @@ export interface WikiRanking {
   entries: WikiRankingEntry[];
   confidence: 'high' | 'partial' | 'indicative';
   note: string | null;
+  /**
+   * The article the rows were read from.
+   *
+   * Carried on the ranking rather than assumed by the caller, because a team's
+   * two leaderboards can now come from two different articles: a records page
+   * for one and the team's own page for the other. Storing the wrong title
+   * would defeat the check this column exists for.
+   */
+  sourceTitle?: string;
 }
 
 /** A person's statistics for one discipline, keyed to the registry. */
@@ -396,14 +405,59 @@ export class WikipediaProvider {
    * the clubs tried have a records article in a shape this recognises, and the
    * rest simply render without these tables.
    */
-  async fetchTeamRankings(recordsTitle: string | null, teamName?: string): Promise<WikiRanking[]> {
-    // A missing records article is not the end of the attempt. Two thirds of
-    // countries have none: Poland, Ghana and Egypt among them, and Poland's
-    // list of internationals carries the same two leaderboards.
-    const html = recordsTitle ? await this.client.fetchHtml(recordsTitle) : null;
-    if (!html) {
-      return teamName ? this.fetchInternationalsRankings(teamName) : [];
+  async fetchTeamRankings(
+    recordsTitle: string | null,
+    teamName?: string,
+    teamTitle?: string,
+  ): Promise<WikiRanking[]> {
+    // Three sources, tried in order of how authoritative they are.
+    //
+    // The records article first, where one exists. Then the team's own article,
+    // which for most sides without a records article carries the same two
+    // tables under "Player records": Ghana, Egypt, Serbia, Sevilla, Atlético
+    // Madrid and Boca Juniors all publish their leaderboards there and nowhere
+    // else, and reading only the records article left every one of them empty.
+    // The list of internationals last, being the thinnest of the three.
+    const rankings: WikiRanking[] = [];
+
+    for (const title of [recordsTitle, teamTitle]) {
+      if (!title) continue;
+
+      const found = await this.rankingsFromArticle(title);
+      for (const ranking of found) {
+        if (rankings.some((existing) => existing.kind === ranking.kind)) continue;
+        rankings.push({ ...ranking, sourceTitle: title });
+      }
+
+      if (rankings.length >= 2) break;
     }
+
+    // A ranking with a single entry is a record holder, not a leaderboard, so it
+    // counts as a gap: France's article states its record scorer in prose and
+    // lists nobody else.
+    const thin = (kind: string) =>
+      (rankings.find((ranking) => ranking.kind === kind)?.entries.length ?? 0) < 3;
+
+    if (teamName && (thin('most_appearances') || thin('top_scorers'))) {
+      for (const derived of await this.fetchInternationalsRankings(teamName)) {
+        if (!thin(derived.kind)) continue;
+
+        // Replaces the thin ranking rather than sitting beside it: two
+        // leaderboards of the same kind on one team is not a shape the page can
+        // render.
+        const existing = rankings.findIndex((ranking) => ranking.kind === derived.kind);
+        if (existing >= 0) rankings.splice(existing, 1, derived);
+        else rankings.push(derived);
+      }
+    }
+
+    return rankings;
+  }
+
+  /** Both leaderboards as read from one article, by table then by prose list. */
+  private async rankingsFromArticle(title: string): Promise<WikiRanking[]> {
+    const html = await this.client.fetchHtml(title);
+    if (!html) return [];
 
     const tables = parseTables(html);
     const rankings: WikiRanking[] = [];
@@ -435,7 +489,7 @@ export class WikipediaProvider {
         'All competitions',
       ],
       ['player|name'],
-      ['total', 'apps', 'appearances', 'matches', 'games', 'caps'],
+      ['total', 'apps', 'app', 'appearances', 'matches', 'games', 'caps'],
     );
     if (appearances) {
       const entries = this.rowsToEntries(appearances, [
@@ -446,6 +500,9 @@ export class WikipediaProvider {
         'caps',
         'appearances',
         'apps',
+        // "App." with the full stop, which Boca Juniors uses and which no
+        // longer spelling matches.
+        'app',
         'matches',
         'games',
       ]);
@@ -461,7 +518,7 @@ export class WikipediaProvider {
           // from scattered statements, so unlike the Wikidata equivalent this
           // matches the club's own published figures.
           confidence: 'high',
-          note: 'From the club records article on Wikipedia.',
+          note: 'From the records tables on Wikipedia.',
         });
       }
     }
@@ -497,7 +554,7 @@ export class WikipediaProvider {
           label: 'Top scorers',
           entries,
           confidence: 'high',
-          note: 'From the club records article on Wikipedia.',
+          note: 'From the records tables on Wikipedia.',
         });
       }
     }
@@ -515,7 +572,7 @@ export class WikipediaProvider {
           label: 'Most appearances',
           entries,
           confidence: 'high',
-          note: 'From the club records article on Wikipedia.',
+          note: 'From the records tables on Wikipedia.',
         });
       }
     }
@@ -528,31 +585,8 @@ export class WikipediaProvider {
           label: 'Top scorers',
           entries,
           confidence: 'high',
-          note: 'From the club records article on Wikipedia.',
+          note: 'From the records tables on Wikipedia.',
         });
-      }
-    }
-
-    // Last resort for national sides: the squad list. France's records article
-    // names only the single record holder for goals, so a leaderboard has to be
-    // derived from "List of France international footballers", which tabulates
-    // caps and goals for every capped player.
-    // A ranking with a single entry is a record holder, not a leaderboard, so
-    // it counts as a gap: France's article states its record scorer in prose
-    // and lists nobody else.
-    const thin = (kind: string) =>
-      (rankings.find((ranking) => ranking.kind === kind)?.entries.length ?? 0) < 3;
-
-    if (teamName && (thin('most_appearances') || thin('top_scorers'))) {
-      for (const derived of await this.fetchInternationalsRankings(teamName)) {
-        if (!thin(derived.kind)) continue;
-
-        // Replaces the thin ranking rather than sitting beside it: two
-        // leaderboards of the same kind on one team is not a shape the page can
-        // render.
-        const existing = rankings.findIndex((ranking) => ranking.kind === derived.kind);
-        if (existing >= 0) rankings.splice(existing, 1, derived);
-        else rankings.push(derived);
       }
     }
 
@@ -611,6 +645,7 @@ export class WikipediaProvider {
     const rankings: WikiRanking[] = [];
 
     const note = `Derived from the list of ${country} internationals on Wikipedia.`;
+    const sourceTitle = title;
 
     const appearances = this.rowsToEntries(table, ['caps']);
     if (appearances.length > 0) {
@@ -620,6 +655,7 @@ export class WikipediaProvider {
         entries: appearances,
         confidence: 'partial',
         note,
+        sourceTitle,
       });
     }
 
@@ -631,6 +667,7 @@ export class WikipediaProvider {
         entries: scorers,
         confidence: 'partial',
         note,
+        sourceTitle,
       });
     }
 

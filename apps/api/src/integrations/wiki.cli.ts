@@ -24,6 +24,7 @@ import postgres from 'postgres';
 import { loadConfiguration } from '../config/configuration';
 import type { DatabaseService } from '../database/database.service';
 import * as schema from '../database/schema';
+import { InMemoryCacheService } from '../infrastructure/cache/cache.service';
 import { WikipediaIngestionService } from './ingestion/wikipedia-ingestion.service';
 import { WikipediaClient } from './providers/wikipedia/wikipedia.client';
 import { WikipediaProvider } from './providers/wikipedia/wikipedia.provider';
@@ -46,9 +47,16 @@ async function main(): Promise<void> {
   const config = loadConfiguration();
   const client = postgres(config.database.url, { max: 2, onnotice: () => {} });
   const database = { db: drizzle(client, { schema }) } as unknown as DatabaseService;
+  // A no-op cache, deliberately. This CLI is its own process, so the running
+  // API's in-memory cache is not reachable from here and clearing a local one
+  // would be theatre. The web revalidation call below is what makes the change
+  // visible; an API served from a long-lived process still needs restarting or
+  // its own invalidation endpoint, which is why the cache TTLs are short.
+  const cache = new InMemoryCacheService();
   const ingestion = new WikipediaIngestionService(
     database,
     new WikipediaProvider(new WikipediaClient()),
+    cache,
   );
 
   const startedAt = Date.now();

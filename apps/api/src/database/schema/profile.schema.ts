@@ -119,6 +119,16 @@ export const entitySection = pgTable(
 );
 
 /**
+ * `source_title` for a leaderboard entered by hand rather than ingested.
+ *
+ * Around a hundred notable teams have no Wikipedia records article and no
+ * parseable list of internationals, so their leaderboards cannot be crawled at
+ * all. Those rows are seeded from published figures and marked with this
+ * sentinel, which the ingestion upsert refuses to overwrite.
+ */
+export const MANUAL_RANKING_SOURCE = 'seed:manual';
+
+/**
  * A derived leaderboard: notable scorers, most appearances, roll of honour.
  *
  * Materialised rather than computed per request, because the underlying

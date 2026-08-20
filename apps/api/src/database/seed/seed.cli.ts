@@ -67,6 +67,9 @@ async function main(): Promise<void> {
     const spans = await deriveCareerSpans(db);
     process.stdout.write(`Derived:  ${spans} career spans written\n`);
 
+    const ranked = await derivePersonPriority(db);
+    process.stdout.write(`Derived:  ${ranked} people re-prioritised\n`);
+
     const overviews = await seedOverviews(db);
     process.stdout.write(`Content:  ${overviews} sport overviews written\n`);
 
@@ -250,6 +253,74 @@ async function deriveHonourCounts(db: Db): Promise<number> {
  * career span is biographical rather than statistical: it is not a quantity
  * anybody aggregates or ranks by.
  */
+/**
+ * Scores people for list ordering.
+ *
+ * Sitelinks alone rank a person by fame, not by relevance to the sport, and the
+ * two diverge badly at the top: Viktor Orbán and Albert Camus both carry the
+ * footballer occupation and outrank Ferenc Puskás on sitelinks, because a prime
+ * minister and a Nobel laureate have articles in more languages than almost any
+ * player. Ordering the Players tab by sitelinks put them on page one.
+ *
+ * The fix is to prefer evidence of a career in the sport, all of which is
+ * already in the database:
+ *
+ *   - appearing in a club's records table, the strongest signal available,
+ *     since a club publishes those about its own significant players;
+ *   - recorded club spells;
+ *   - recorded honours.
+ *
+ * Sitelinks stay in the score as the tiebreaker rather than the driver, which
+ * keeps the ordering sensible among people who all have career evidence.
+ *
+ * Written to `notability` rather than a new column so every existing query and
+ * index benefits. Ingestion overwrites it with the raw sitelink count, so this
+ * runs after ingestion, and re-running is idempotent because the score is
+ * recomputed from base data rather than incremented.
+ */
+async function derivePersonPriority(db: Db): Promise<number> {
+  const rows = await db.execute<{ count: string }>(sql`
+    WITH evidence AS (
+      SELECT
+        p.id,
+        -- Capped, so a long career cannot outweigh the sport itself.
+        least(count(DISTINCT pt.team_id), 8) AS clubs,
+        least(count(DISTINCT h.id), 12) AS honours,
+        count(DISTINCT lb.entity_id) AS leaderboards,
+        p.notability AS sitelinks
+      FROM person p
+      LEFT JOIN person_team pt ON pt.person_id = p.id
+      LEFT JOIN honour h ON h.person_id = p.id
+      LEFT JOIN external_mapping m
+        ON m.entity_id = p.id AND m.entity_type = 'person' AND m.provider = 'wikipedia'
+      LEFT JOIN LATERAL (
+        SELECT r.entity_id
+        FROM entity_ranking r
+        CROSS JOIN LATERAL jsonb_array_elements(r.entries) e
+        WHERE r.entity_type = 'team' AND e->>'link' = m.external_id
+      ) lb ON true
+      GROUP BY p.id, p.notability
+    )
+    UPDATE person p SET
+      -- Weights chosen so that any single piece of career evidence outranks a
+      -- person with none, however famous: a leaderboard appearance is worth
+      -- 400, and the largest sitelink count in the database is 205.
+      notability =
+        evidence.leaderboards * 400
+        + evidence.clubs * 60
+        + evidence.honours * 40
+        + least(evidence.sitelinks, 250),
+      updated_at = now()
+    FROM evidence
+    WHERE evidence.id = p.id
+      -- A curated row keeps whatever a human decided.
+      AND p.confidence <> 'curated'
+    RETURNING 1 AS count
+  `);
+
+  return rows.length;
+}
+
 async function deriveCareerSpans(db: Db): Promise<number> {
   const rows = await db.execute<{ count: string }>(sql`
     WITH spans AS (

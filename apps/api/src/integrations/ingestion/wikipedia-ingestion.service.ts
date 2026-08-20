@@ -1,7 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
-import { discipline, entityFact, entityRanking, externalMapping } from '../../database/schema';
+import { CacheService } from '../../infrastructure/cache/cache.service';
+import {
+  discipline,
+  entityFact,
+  entityRanking,
+  externalMapping,
+  MANUAL_RANKING_SOURCE,
+} from '../../database/schema';
 import {
   WikipediaProvider,
   type WikiFact,
@@ -26,6 +33,7 @@ export class WikipediaIngestionService {
   constructor(
     private readonly database: DatabaseService,
     private readonly provider: WikipediaProvider,
+    private readonly cache: CacheService,
   ) {}
 
   /**
@@ -255,11 +263,17 @@ export class WikipediaIngestionService {
         // Poland's and Ecuador's leaderboards come from.
         const recordsTitle = await this.provider.findRecordsArticle(target.name, sportSlug);
 
-        const extracted = await this.provider.fetchTeamRankings(recordsTitle, target.name);
+        // The team's own article is passed as a second source: most sides
+        // without a records article publish the same two tables there.
+        const extracted = await this.provider.fetchTeamRankings(
+          recordsTitle,
+          target.name,
+          target.title,
+        );
         if (extracted.length === 0) continue;
 
         for (const ranking of extracted) {
-          await this.writeRanking('team', target.id, ranking, recordsTitle);
+          await this.writeRanking('team', target.id, ranking, ranking.sourceTitle ?? recordsTitle);
           rankings += 1;
         }
         teams += 1;
@@ -291,6 +305,19 @@ export class WikipediaIngestionService {
    * traceable to a missed revalidation rather than looking like bad data.
    */
   private async revalidate(tags: string[]): Promise<void> {
+    // The API's own cache first. Revalidating only the web app left it fetching
+    // fresh pages from a stale API, which is how the Players tab went on
+    // listing countries after they had been deleted: both layers hold the same
+    // response, and clearing one changes nothing.
+    try {
+      await this.cache.deleteByPrefix('players:');
+      await this.cache.deleteByPrefix('teams:');
+      await this.cache.deleteByPrefix('competitions:');
+      await this.cache.deleteByPrefix('content:');
+    } catch (error) {
+      this.logger.warn(`Clearing the API cache failed: ${this.message(error)}`);
+    }
+
     const url = process.env.WEB_URL;
     const secret = process.env.REVALIDATE_SECRET;
     if (!url || !secret) return;
@@ -692,6 +719,12 @@ export class WikipediaIngestionService {
           sourceTitle,
           updatedAt: new Date(),
         },
+        // Hand-curated rows survive ingestion. Around a hundred notable teams
+        // have no records article Wikipedia can be read from at all, so their
+        // leaderboards are seeded by hand; without this guard the next crawl
+        // would either overwrite them with a worse table or, for a team the
+        // parser still cannot read, leave them intact only by luck.
+        setWhere: sql`${entityRanking.sourceTitle} IS DISTINCT FROM ${MANUAL_RANKING_SOURCE}`,
       });
   }
 
