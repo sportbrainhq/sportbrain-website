@@ -5,7 +5,6 @@ import { FactPanel, RankingPanel, SectionPanel } from '@/components/sports/entit
 import { HonoursList } from '@/components/sports/entity-card';
 import { Avatar } from '@/components/sports/avatar';
 import { StatisticsPanel } from '@/components/sports/statistics-panel';
-import { CareerSummary } from '@/components/sports/career-summary';
 import { ApiError, fetchPlayer } from '@/lib/api';
 import { buildMetadata } from '@/lib/seo';
 
@@ -80,8 +79,6 @@ export default async function PlayerPage({
         </div>
       </header>
 
-      <CareerSummary entries={player.careerSummary} />
-
       {facts.length > 0 && (
         <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-3">
           {facts.map(([key, value]) => (
@@ -146,7 +143,7 @@ export default async function PlayerPage({
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
           Statistics
         </h2>
-        <StatisticsPanel groups={player.statistics} />
+        <StatisticsPanel groups={player.statistics} summary={player.careerSummary} />
       </section>
     </article>
   );

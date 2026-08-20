@@ -31,6 +31,15 @@ import {
 const CAREER_SUMMARY_KEYS = ['career_games', 'career_goals', 'career_trophies'] as const;
 
 /**
+ * Keys the detailed blocks must not render.
+ *
+ * The three headline keys, because they lead the section already, plus
+ * `honours_won`: it counts the same trophies as `career_trophies` and showed up
+ * beside it as a second, differently named tile.
+ */
+const SUPPRESSED_KEYS = new Set<string>([...CAREER_SUMMARY_KEYS, 'honours_won']);
+
+/**
  * Turns stored statistics into something a page can render.
  *
  * This is where the statistics design pays off or fails. The database holds a
@@ -270,9 +279,9 @@ export class StatisticsAssembler {
     const values: StatisticValue[] = [];
 
     for (const [key, definition] of byKey) {
-      // The headline trio renders in its own fixed panel above. Leaving it in
-      // here as well printed each number twice on the page.
-      if (CAREER_SUMMARY_KEYS.includes(key as (typeof CAREER_SUMMARY_KEYS)[number])) continue;
+      // The sport's fixed set leads the statistics section already. Leaving
+      // these in here as well printed each number twice on the page.
+      if (SUPPRESSED_KEYS.has(key)) continue;
 
       const raw = stats[key];
       // Undefined means the statistic was never recorded, which is different

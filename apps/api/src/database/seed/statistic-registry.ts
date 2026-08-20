@@ -109,7 +109,7 @@ const FOOTBALL_CAREER_HEADLINES: StatisticDefinitionSeed[] = [
     isHeadline: true,
     displayOrder: -3,
     description:
-      'Senior club appearances over a career, read from the player\u2019s own article rather than summed from the spells we hold, so clubs outside our catalogue still count.',
+      'Senior appearances for clubs and country over a career, read from the player\u2019s own article rather than summed from the spells we hold, so clubs outside our catalogue still count.',
   },
   {
     key: 'career_goals',
@@ -122,7 +122,7 @@ const FOOTBALL_CAREER_HEADLINES: StatisticDefinitionSeed[] = [
     isHeadline: true,
     displayOrder: -2,
     description:
-      'Career goals in senior club football. International goals are counted separately and are not included.',
+      'Career goals in senior football, for clubs and country. Youth and reserve-team goals are not included.',
   },
   {
     key: 'career_trophies',
@@ -135,7 +135,7 @@ const FOOTBALL_CAREER_HEADLINES: StatisticDefinitionSeed[] = [
     isHeadline: true,
     displayOrder: -1,
     description:
-      'Team trophies and individual awards recorded against this player, counted from the honours list.',
+      'Competitions won with a club or a national side, counted from the honours list on the player\u2019s article. Individual awards are listed there in full but are not totalled here.',
   },
 ];
 

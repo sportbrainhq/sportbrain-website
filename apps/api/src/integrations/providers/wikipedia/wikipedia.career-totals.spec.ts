@@ -65,3 +65,80 @@ describe('WikipediaProvider.fetchFootballCareerTotals', () => {
     expect(totals).toEqual({ games: null, goals: null });
   });
 });
+
+/**
+ * Trophy counting, tested against the group shapes the real articles use.
+ *
+ * Each case is a count that was wrong on the site: zero for half the great
+ * players, then a wildly inflated figure once the section was read at all.
+ */
+describe('WikipediaProvider.fetchFootballHonours', () => {
+  const provider = (html: string) =>
+    new WikipediaProvider({
+      fetchHtml: async () => html,
+      fetchWikitext: async () => null,
+    } as unknown as WikipediaClient);
+
+  const honours = (body: string) => `<h2 id="Honours">Honours</h2>${body}<h2 id="See_also">x</h2>`;
+
+  const list = (items: string[]) => `<ul>${items.map((i) => `<li>${i}</li>`).join('')}</ul>`;
+
+  it('counts each winning year, not each line', async () => {
+    // "Serie A: 1996–97, 1997–98" is two league titles, and counting lines
+    // reported one.
+    const html = honours(`<p>Juventus</p>${list(['Serie A: 1996–97, 1997–98'])}`);
+
+    expect(await provider(html).fetchFootballHonours('X')).toEqual({ won: 2, groups: 1 });
+  });
+
+  it('does not count runner-up years', async () => {
+    // Zidane lost two Champions League finals with Juventus, which the section
+    // records on a line of its own.
+    const html = honours(
+      `<p>Juventus</p>${list([
+        'Serie A: 1996–97',
+        'UEFA Champions League runner-up: 1996–97, 1997–98',
+      ])}`,
+    );
+
+    expect(await provider(html).fetchFootballHonours('X')).toEqual({ won: 1, groups: 1 });
+  });
+
+  it('counts the winning half of a line that carries both', async () => {
+    // "FIFA World Cup: 1998; runner-up: 2006" is one win and one final lost.
+    const html = honours(`<p>France</p>${list(['FIFA World Cup: 1998; runner-up: 2006'])}`);
+
+    expect(await provider(html).fetchFootballHonours('X')).toEqual({ won: 1, groups: 1 });
+  });
+
+  it('excludes the individual and records groups', async () => {
+    // The records group is the worst offender: its numbers are appearance
+    // counts, and Casillas totalled 69 "trophies" with them included.
+    const html = honours(
+      `<p>Real Madrid</p>${list(['La Liga: 2000–01'])}` +
+        `<p>Individual</p>${list(['Bravo Award: 2000'])}` +
+        `<p>Records</p>${list(['Second-most appearances in the UEFA Champions League: 177'])}`,
+    );
+
+    expect(await provider(html).fetchFootballHonours('X')).toEqual({ won: 1, groups: 1 });
+  });
+
+  it('excludes a managerial section and everything nested under it', async () => {
+    // Guardiola's managerial honours sit under an h3 whose own club labels
+    // re-enabled counting, crediting a player with 59 trophies won as a coach.
+    const html = honours(
+      `<h3>Player</h3><p>Barcelona</p>${list(['La Liga: 1990–91'])}` +
+        `<h3>Manager</h3><p>Barcelona</p>${list(['La Liga: 2008–09, 2009–10, 2010–11'])}` +
+        `<p>Manchester City</p>${list(['Premier League: 2017–18'])}`,
+    );
+
+    expect(await provider(html).fetchFootballHonours('X')).toEqual({ won: 1, groups: 2 });
+  });
+
+  it('reports a null count when the article has no honours section', async () => {
+    expect(await provider('<p>Nothing here</p>').fetchFootballHonours('X')).toEqual({
+      won: null,
+      groups: 0,
+    });
+  });
+});

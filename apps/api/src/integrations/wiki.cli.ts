@@ -10,6 +10,7 @@
  * pnpm --filter @sportbrain/api wiki cricket-stats 300
  * pnpm --filter @sportbrain/api wiki careers 300
  * pnpm --filter @sportbrain/api wiki career-totals 400
+ * pnpm --filter @sportbrain/api wiki scan-totals 100
  * pnpm --filter @sportbrain/api wiki all football 200
  * ```
  *
@@ -39,7 +40,7 @@ async function main(): Promise<void> {
 
   if (!command) {
     process.stderr.write(
-      'Usage: wiki <map|facts|crests|rankings|cricket-stats|basketball-stats|careers|career-totals|all> [entityType] [sport] [limit]\n',
+      'Usage: wiki <map|facts|crests|rankings|cricket-stats|basketball-stats|careers|career-totals|scan-totals|all> [entityType] [sport] [limit]\n',
     );
     process.exitCode = 1;
     return;
@@ -132,6 +133,32 @@ async function main(): Promise<void> {
       case 'career-totals': {
         const result = await ingestion.ingestFootballCareerTotals(Number(args[0] ?? 200));
         process.stdout.write(`${result.players} players examined, ${result.written} written\n`);
+        break;
+      }
+
+      /**
+       * Reads the headline numbers for the most notable footballers and prints
+       * them, writing nothing.
+       *
+       * For checking the three tiles against the articles before a run, which
+       * is how the zero-trophy players were found.
+       */
+      case 'scan-totals': {
+        const rows = await ingestion.scanFootballCareerTotals(Number(args[0] ?? 100));
+
+        const flagged = rows.filter((row) => row.warnings.length > 0);
+
+        for (const row of rows) {
+          process.stdout.write(
+            `${row.name.slice(0, 26).padEnd(27)}` +
+              `${String(row.games ?? '-').padStart(6)}` +
+              `${String(row.goals ?? '-').padStart(6)}` +
+              `${String(row.trophies ?? '-').padStart(6)}` +
+              `${row.warnings.length > 0 ? `  ${row.warnings.join(', ')}` : ''}\n`,
+          );
+        }
+
+        process.stdout.write(`\n${rows.length} scanned, ${flagged.length} flagged for review\n`);
         break;
       }
 

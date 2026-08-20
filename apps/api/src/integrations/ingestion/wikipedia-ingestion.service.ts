@@ -615,10 +615,15 @@ export class WikipediaIngestionService {
    * Football only. Each sport counts a career in its own terms, so each gets
    * its own pass rather than one reader guessing at five vocabularies.
    *
-   * Trophies are counted from our own honours table rather than fetched, in the
-   * same pass, so a page's three numbers are always computed from the same
-   * moment. Values are merged into the existing career row, never replacing it,
-   * so the detailed per-discipline statistics survive.
+   * All three come from the player's own article, in one pass, so a page's
+   * numbers are always read from the same revision. Trophies used to be counted
+   * from our honour table instead, and that was the wrong source: the honours
+   * there arrive from Wikidata's "award received" statements, which are close to
+   * empty for footballers, so Pel\u00e9, Maradona, Zidane, Cruyff and Buffon all
+   * reported zero trophies.
+   *
+   * Values are merged into the existing career row, never replacing it, so the
+   * detailed per-discipline statistics survive.
    */
   async ingestFootballCareerTotals(limit: number): Promise<{ players: number; written: number }> {
     const [sportRow] = await this.database.db.execute<{ id: string }>(
@@ -633,7 +638,10 @@ export class WikipediaIngestionService {
 
     for (const [index, target] of targets.entries()) {
       try {
-        const totals = await this.provider.fetchFootballCareerTotals(target.title);
+        const [totals, honours] = await Promise.all([
+          this.provider.fetchFootballCareerTotals(target.title),
+          this.provider.fetchFootballHonours(target.title),
+        ]);
 
         // A null is "the article does not say", which must not be written as a
         // zero: the page renders a dash for the former and a real figure for
@@ -641,6 +649,13 @@ export class WikipediaIngestionService {
         const payload: Record<string, number> = {};
         if (totals.games !== null) payload.career_games = totals.games;
         if (totals.goals !== null) payload.career_goals = totals.goals;
+
+        // `groups` guards against a silent zero: an article whose honours
+        // section this reader does not recognise parses into no groups at all,
+        // which is a parsing failure rather than a trophyless career.
+        if (honours.won !== null && honours.groups > 0) {
+          payload.career_trophies = honours.won;
+        }
 
         if (Object.keys(payload).length === 0) continue;
 
@@ -671,46 +686,118 @@ export class WikipediaIngestionService {
       }
     }
 
-    const trophies = await this.deriveTrophyCounts(sportRow.id);
-    this.logger.log(`${trophies} footballers' trophy counts refreshed`);
-
-    await this.revalidate(['players']);
+    // `sport:football`, not `players`: the website tags its player pages by
+    // sport, so a `players` tag matches nothing and the corrected figures sat
+    // behind the cache until the hour-long window expired on its own.
+    await this.revalidate(['sport:football']);
 
     return { players: targets.length, written };
   }
 
   /**
-   * Counts each player's honours into `career_trophies`.
+   * Reads the headline numbers for the most notable footballers and reports
+   * them, without writing anything.
    *
-   * A count rather than a fetch: the honours are already ingested and counting
-   * them here means the tile can never disagree with the honours list rendered
-   * directly above it on the same page.
+   * A review tool rather than a pipeline step. The three tiles are the most
+   * visible numbers on the site, and a wrong one is embarrassing in a way a
+   * missing statistic is not: Casillas showing zero trophies was noticed
+   * immediately. This prints the values so they can be read against what the
+   * articles say, and flags the shapes that are suspicious on their face.
    */
-  private async deriveTrophyCounts(sportId: string): Promise<number> {
-    const rows = await this.database.db.execute<{ person_id: string }>(sql`
-      WITH counts AS (
-        SELECT person_id, sport_id, count(*) AS trophies
-        FROM honour
-        WHERE person_id IS NOT NULL AND sport_id = ${sportId}
-        GROUP BY person_id, sport_id
-      )
-      INSERT INTO person_statistic (person_id, sport_id, scope, discipline_id, stats, computed_at)
-      SELECT person_id, sport_id, 'career', NULL,
-             jsonb_build_object('career_trophies', trophies), now()
-      FROM counts
-      ON CONFLICT (
-        person_id, scope,
-        coalesce(competition_id, '00000000-0000-0000-0000-000000000000'::uuid),
-        coalesce(season_id, '00000000-0000-0000-0000-000000000000'::uuid),
-        coalesce(team_id, '00000000-0000-0000-0000-000000000000'::uuid),
-        coalesce(discipline_id, '00000000-0000-0000-0000-000000000000'::uuid)
-      ) DO UPDATE SET
-        stats = person_statistic.stats || EXCLUDED.stats,
-        computed_at = now()
-      RETURNING person_id
+  async scanFootballCareerTotals(limit: number): Promise<ScanRow[]> {
+    // Its own query rather than `targets`, for two reasons: the player's
+    // recorded position is needed to judge a goals figure, and one person can
+    // hold two Wikipedia mappings, which `targets` returns as two rows. Raúl
+    // appeared twice in the first scan for exactly that reason.
+    const targets = await this.database.db.execute<{
+      title: string;
+      name: string;
+      position: string | null;
+    }>(sql`
+      SELECT DISTINCT ON (p.id)
+             em.external_id AS title,
+             p.full_name AS name,
+             p.attributes->>'position' AS position
+      FROM person p
+      JOIN sport s ON s.id = p.primary_sport_id AND s.slug = 'football'
+      JOIN external_mapping em
+        ON em.entity_id = p.id AND em.provider = 'wikipedia' AND em.entity_type = 'person'
+      ORDER BY p.id, em.external_id
+      LIMIT ${limit * 3}
     `);
 
-    return rows.length;
+    // Notability drives the order, and `DISTINCT ON` requires it to lead the
+    // sort, so the ranking is applied after de-duplication rather than in SQL.
+    const ranked = await this.database.db.execute<{ title: string }>(sql`
+      SELECT em.external_id AS title
+      FROM person p
+      JOIN sport s ON s.id = p.primary_sport_id AND s.slug = 'football'
+      JOIN external_mapping em
+        ON em.entity_id = p.id AND em.provider = 'wikipedia' AND em.entity_type = 'person'
+      ORDER BY p.notability DESC
+    `);
+
+    const order = new Map(ranked.map((row, index) => [row.title, index]));
+    const shortlist = targets
+      .sort((a, b) => (order.get(a.title) ?? Infinity) - (order.get(b.title) ?? Infinity))
+      .slice(0, limit);
+
+    const rows: ScanRow[] = [];
+
+    for (const [index, target] of shortlist.entries()) {
+      try {
+        const [totals, honours] = await Promise.all([
+          this.provider.fetchFootballCareerTotals(target.title),
+          this.provider.fetchFootballHonours(target.title),
+        ]);
+
+        // A goalkeeper who scored nothing is the normal case, so the position
+        // decides whether a zero is a finding: flagging Buffon, Casillas, Neuer
+        // and Yashin as broken buried the real problems in the first scan.
+        const keeper = /goal ?keeper|goalie/i.test(target.position ?? '');
+
+        const warnings: string[] = [];
+        if (totals.games === null) warnings.push('no appearances');
+        if (totals.goals === null) warnings.push('no goals');
+        if (honours.won === null || honours.groups === 0) warnings.push('no honours section');
+        if (!keeper && totals.goals === 0 && (totals.games ?? 0) > 200) {
+          warnings.push('outfielder with no goals');
+        }
+        if (honours.won === 0 && honours.groups > 0) warnings.push('zero trophies');
+        // Nobody has played 1,500 senior matches; a figure that large means two
+        // numbers have been added that should not have been.
+        if ((totals.games ?? 0) > 1_500) warnings.push('implausible appearances');
+        // Puskás genuinely scored more than he played, so this is a prompt to
+        // look rather than proof of an error.
+        if ((totals.goals ?? 0) > (totals.games ?? 0)) warnings.push('goals exceed games');
+
+        rows.push({
+          name: target.name,
+          title: target.title,
+          position: target.position,
+          games: totals.games,
+          goals: totals.goals,
+          trophies: honours.won,
+          warnings,
+        });
+      } catch (error) {
+        rows.push({
+          name: target.name,
+          title: target.title,
+          position: target.position,
+          games: null,
+          goals: null,
+          trophies: null,
+          warnings: [`failed: ${this.message(error)}`],
+        });
+      }
+
+      if ((index + 1) % 25 === 0) {
+        this.logger.log(`  scanned ${index + 1}/${shortlist.length}`);
+      }
+    }
+
+    return rows;
   }
 
   // ---------------------------------------------------------------------------
@@ -835,4 +922,17 @@ export class WikipediaIngestionService {
   private message(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
   }
+}
+
+/** One player's headline numbers, as read for review rather than for writing. */
+export interface ScanRow {
+  name: string;
+  title: string;
+  /** Decides whether a goals figure of zero is a finding or a goalkeeper. */
+  position: string | null;
+  games: number | null;
+  goals: number | null;
+  trophies: number | null;
+  /** Shapes worth a human look: a zero that should not be, a figure too large. */
+  warnings: string[];
 }

@@ -88,6 +88,32 @@ export interface WikiStatBlock {
  * real "0" for the second. Trophies, the third headline tile, are counted from
  * our own honours table rather than fetched.
  */
+/**
+ * A count of the team trophies an article credits a player with.
+ *
+ * `groups` is kept alongside the total as a sanity check: a page whose Honours
+ * section parsed into zero groups has a shape this reader does not understand,
+ * which is different from a player who has genuinely won nothing.
+ */
+export interface WikiHonourCount {
+  won: number | null;
+  groups: number;
+}
+
+/**
+ * Honours groups that are not team trophies won as a player.
+ *
+ * Two kinds are excluded. "Records" matters most among the first: it holds
+ * lines like "Second-most appearances in the UEFA Champions League: 177", whose
+ * number is an appearance count and would otherwise be added to a trophy total.
+ *
+ * "Manager" is the second kind, and a subtler error. Zidane's article lists his
+ * playing honours and his managerial ones under sibling headings, so counting
+ * both credited a player's tile with trophies he won from the touchline.
+ */
+const EXCLUDED_HONOUR_GROUPS =
+  /^(individual|records?|orders?|decorations?|awards?|other|see also|notes?|references?|state honours|honours and awards|personal|manager|managerial|as a manager|head coach|coach)\b/i;
+
 export interface WikiCareerTotals {
   games: number | null;
   goals: number | null;
@@ -956,9 +982,10 @@ export class WikipediaProvider {
    * whether we hold it or not.
    *
    * Rows without an appearance figure are youth spells and are skipped, as are
-   * reserve and B sides, whose figures would otherwise be added to the senior
-   * career twice over. International caps are excluded: they sit in their own
-   * block, and a combined figure matches no published record.
+   * reserve, B and age-group sides, whose figures would otherwise be counted
+   * twice over. Senior international caps are included: 855 for Messi and 991
+   * for Ronaldo are the club-plus-country figures a reader recognises, and the
+   * page said 855 beside a stale 1,100 until the two agreed.
    */
   async fetchFootballCareerTotals(title: string): Promise<WikiCareerTotals> {
     const career = await this.fetchFootballCareer(title);
@@ -978,6 +1005,128 @@ export class WikipediaProvider {
     }
 
     return { games, goals };
+  }
+
+  /**
+   * The team trophies a player's article credits them with.
+   *
+   * The reason this exists: honours reached the database from Wikidata's "award
+   * received" statements, which are close to empty for footballers. Pel\u00e9,
+   * Maradona, Zidane, Cruyff, Ronaldo and Buffon all held zero, so their pages
+   * reported no trophies at all. Wikipedia's own Honours section lists them in
+   * full, grouped by club and country.
+   *
+   * **Team trophies only**: competitions won with a club or a national side. An
+   * individual award is a different kind of thing from a league title, and a
+   * count that adds a magazine's Team of the Year selection to a World Cup is
+   * not a number anybody can check. Those groups are still shown in full in the
+   * honours list on the same page; they are simply not totalled here.
+   *
+   * Counting rules, because a naive count of the section is wrong three times:
+   *
+   *   - **Individual, Records, Orders and Decorations groups are excluded.**
+   *     The Records group is the worst offender: "Second-most appearances in
+   *     the UEFA Champions League: 177" contributes a number that is not a
+   *     trophy at all.
+   *   - **Runner-up lines do not count.** "UEFA Champions League runner-up:
+   *     1996\u201397, 1997\u201398" is a record of losing two finals. Where a line
+   *     carries both ("FIFA World Cup: 1998; runner-up: 2006"), only the part
+   *     before the runner-up clause counts.
+   *   - **Each year is one trophy.** "Serie A: 1996\u201397, 1997\u201398" is two
+   *     league titles on one line, and counting lines would report one.
+   */
+  async fetchFootballHonours(title: string): Promise<WikiHonourCount> {
+    const html = await this.client.fetchHtml(title);
+    if (!html) return { won: null, groups: 0 };
+
+    // The section runs from its own heading to the next top-level one. Anchored
+    // on the heading id rather than its text, which varies.
+    const heading = /id="(Honours|Honors|Career_honours|Honours_and_awards)"/.exec(html);
+    if (!heading) return { won: null, groups: 0 };
+
+    const rest = html.slice(heading.index);
+    const nextSection = rest.search(/<h2\b/);
+    const section = nextSection > 0 ? rest.slice(0, nextSection) : rest;
+
+    let won = 0;
+    let groups = 0;
+
+    // Two levels of suppression, because the two kinds of label nest. A
+    // heading ("Manager") governs everything down to the next heading, while a
+    // bold or plain label ("Individual") governs only the list right after it.
+    // Tracking one flag conflated them: Guardiola's managerial honours sit under
+    // an h3 whose first club label re-enabled counting, and his tile credited a
+    // player with 59 trophies won from the touchline.
+    let sectionExcluded = false;
+    let labelExcluded = false;
+
+    // Walked in document order, because a label applies to the lists that
+    // follow it. Articles label their groups inconsistently: some use headings
+    // ("Player", "Records") and some a bold or plain paragraph ("Real Madrid",
+    // "Individual"), so all of them are treated as labels.
+    const tokens = section.matchAll(
+      /<(b|p|h[345])\b[^>]*>([\s\S]{0,200}?)<\/\1>|<li\b[^>]*>([\s\S]*?)<\/li>/g,
+    );
+
+    for (const token of tokens) {
+      const tag = token[1];
+      const label = token[2];
+      const item = token[3];
+
+      if (tag !== undefined && label !== undefined) {
+        const text = this.plainText(label);
+        // Short, because a group label is a name and not a sentence: a
+        // paragraph of prose inside the section is not a heading.
+        if (!text || text.length >= 60) continue;
+
+        const excluded = EXCLUDED_HONOUR_GROUPS.test(text);
+
+        if (tag.startsWith('h')) {
+          sectionExcluded = excluded;
+          labelExcluded = false;
+        } else {
+          labelExcluded = excluded;
+        }
+
+        if (!sectionExcluded && !labelExcluded) groups += 1;
+        continue;
+      }
+
+      if (sectionExcluded || labelExcluded || item === undefined) continue;
+
+      const text = this.plainText(item);
+      if (!text) continue;
+
+      // Everything from a runner-up, third-place or losing-finalist clause
+      // onwards is a record of not winning.
+      const winning = text.split(/\b(?:runners?-up|runner up|third place|finalist)\b/i)[0] ?? '';
+
+      // Only what follows the colon, so a competition whose name carries a year
+      // ("Copa Am\u00e9rica 2021") is not itself counted as a win.
+      if (!winning.includes(':')) continue;
+
+      const years = winning.slice(winning.indexOf(':') + 1).match(/\d{4}(?:[\u2013-]\d{2,4})?/g);
+      if (!years) continue;
+
+      won += years.length;
+    }
+
+    return { won, groups };
+  }
+
+  /** An HTML fragment as displayable text, references and markup removed. */
+  private plainText(fragment: string): string {
+    return (
+      fragment
+        // Reference markers carry years of their own and would be counted.
+        .replace(/<sup[\s\S]*?<\/sup>/g, '')
+        .replace(/<style[\s\S]*?<\/style>/g, '')
+        .replace(/<[^>]+>/g, '')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&amp;/g, '&')
+        .replace(/\s+/g, ' ')
+        .trim()
+    );
   }
 
   /**

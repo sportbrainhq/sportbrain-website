@@ -1,21 +1,34 @@
-import type { StatisticGroup, StatisticValue } from '@sportbrain/contracts';
+import type { CareerSummaryEntry, StatisticGroup, StatisticValue } from '@sportbrain/contracts';
 
 /**
- * Renders statistics for any sport, without knowing which sport it is.
+ * A player's or team's statistics: one section, uniform across a sport.
  *
- * This component is the payoff for the registry in the database. Every value
- * arrives labelled, categorised and formatted, so a cricketer's Test and T20I
- * blocks and a footballer's single block render through the same code. Adding a
- * sport requires no change here.
+ * Two kinds of number arrive here and both render as the same kind of tile.
  *
- * The one rule it enforces: nothing renders that the registry has not described.
- * That is what stops a raw provider key ever appearing as a column heading.
+ * The `summary` is the sport's fixed set, shown by every player of that sport
+ * in the same order whether or not the archive holds a figure for them, because
+ * a profile that changes shape from player to player reads as broken rather
+ * than as incomplete. A missing value shows as a dash.
+ *
+ * The `groups` are the registry-driven detail, which varies with what has been
+ * ingested. Every value arrives labelled, categorised and formatted, so a
+ * cricketer's Test and T20I blocks and a footballer's single block render
+ * through the same code and adding a sport requires no change here.
+ *
+ * The one rule it enforces: nothing renders that the registry has not
+ * described. That is what stops a raw provider key appearing as a heading.
  */
 
-export function StatisticsPanel({ groups }: { groups: StatisticGroup[] }) {
+export function StatisticsPanel({
+  groups,
+  summary = [],
+}: {
+  groups: StatisticGroup[];
+  summary?: CareerSummaryEntry[];
+}) {
   const populated = groups.filter((group) => group.statistics.length > 0);
 
-  if (populated.length === 0) {
+  if (summary.length === 0 && populated.length === 0) {
     // Honest rather than blank. Entity data comes from a free source that holds
     // no match statistics, so this state is expected and should say so rather
     // than implying the page is broken.
@@ -27,19 +40,29 @@ export function StatisticsPanel({ groups }: { groups: StatisticGroup[] }) {
   }
 
   return (
-    <div className="space-y-8">
-      {populated.map((group, index) => (
-        <section key={group.discipline?.key ?? `group-${index}`}>
-          {/* Only labelled when the sport actually has divisions. A footballer
-              should not see a heading saying "—". */}
-          {group.discipline && (
-            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-              {group.discipline.label}
-            </h3>
-          )}
+    <div className="space-y-px">
+      {summary.length > 0 && (
+        <dl className="grid grid-cols-3 gap-px overflow-hidden rounded-lg border border-border bg-border">
+          {summary.map((entry) => (
+            <Tile
+              key={entry.key}
+              label={entry.label}
+              description={entry.description}
+              value={entry.value === null ? null : entry.value.toLocaleString('en-GB')}
+            />
+          ))}
+        </dl>
+      )}
 
-          <StatisticGrid statistics={group.statistics} appearances={group.appearances} />
-        </section>
+      {populated.map((group, index) => (
+        <StatisticGrid
+          key={group.discipline?.key ?? `group-${index}`}
+          statistics={group.statistics}
+          // Deliberately not rendered as its own labelled sub-block. A reader
+          // wants one set of statistics, not a page that splits a footballer's
+          // numbers under an "Outfield" heading they never asked about.
+          appearances={null}
+        />
       ))}
     </div>
   );
@@ -52,16 +75,8 @@ function StatisticGrid({
   statistics: StatisticValue[];
   appearances: number | null;
 }) {
-  // Grouped by the registry's category, which is what turns a flat list into
-  // "Batting" and "Bowling" on a cricketer's page.
-  const byCategory = new Map<string, StatisticValue[]>();
-  for (const statistic of statistics) {
-    const key = statistic.category ?? 'General';
-    byCategory.set(key, [...(byCategory.get(key) ?? []), statistic]);
-  }
-
   return (
-    <div className="space-y-6">
+    <div className="space-y-px">
       {appearances !== null && appearances > 0 && (
         <p className="text-sm text-muted-foreground">
           <span className="font-semibold text-foreground">
@@ -71,32 +86,43 @@ function StatisticGrid({
         </p>
       )}
 
-      {[...byCategory].map(([category, values]) => (
-        <div key={category}>
-          {byCategory.size > 1 && (
-            <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              {category}
-            </h4>
-          )}
-          <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-3 lg:grid-cols-4">
-            {values.map((statistic) => (
-              <div key={statistic.key} className="bg-card p-4">
-                <dt
-                  className="text-xs font-medium text-muted-foreground"
-                  // The registry's definition, surfaced on hover. This is the
-                  // data layer meeting the explainer mission.
-                  title={statistic.description ?? undefined}
-                >
-                  {statistic.label}
-                </dt>
-                <dd className="mt-1 font-mono text-xl font-bold tabular-nums">
-                  {formatValue(statistic)}
-                </dd>
-              </div>
-            ))}
-          </dl>
-        </div>
-      ))}
+      <dl className="grid grid-cols-3 gap-px overflow-hidden rounded-lg border border-border bg-border">
+        {statistics.map((statistic) => (
+          <Tile
+            key={statistic.key}
+            label={statistic.label}
+            description={statistic.description}
+            value={formatValue(statistic)}
+          />
+        ))}
+      </dl>
+    </div>
+  );
+}
+
+/** One number and its label. The same shape whichever list it came from. */
+function Tile({
+  label,
+  description,
+  value,
+}: {
+  label: string;
+  description: string | null;
+  value: string | null;
+}) {
+  return (
+    <div className="bg-card p-4">
+      <dt
+        className="text-xs font-medium text-muted-foreground"
+        // The registry's definition, surfaced on hover. This is the data layer
+        // meeting the explainer mission.
+        title={description ?? undefined}
+      >
+        {label}
+      </dt>
+      <dd className="mt-1 font-mono text-2xl font-bold tabular-nums">
+        {value === null ? <span className="text-muted-foreground">—</span> : value}
+      </dd>
     </div>
   );
 }
