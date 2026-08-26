@@ -61,7 +61,22 @@ export class PlayersService {
           imageUrl: row.imageUrl,
           biography: row.biography,
           attributes: (row.attributes ?? {}) as Record<string, unknown>,
-          sport: { slug: row.sportSlug, name: row.sportName },
+          // Narrowed at the boundary rather than trusted: the column is text so
+          // it can gain a state without a migration, and an unexpected value
+          // must render as no badge rather than fail validation.
+          careerStatus:
+            row.careerStatus === 'active' || row.careerStatus === 'retired'
+              ? row.careerStatus
+              : null,
+          // Traits travel with the player, so the page can ask what kind of
+          // sport this is rather than testing the slug. A cricketer has no
+          // current club to show and a footballer does, and that difference
+          // belongs in the sport's own record.
+          sport: {
+            slug: row.sportSlug,
+            name: row.sportName,
+            traits: (row.sportTraits ?? {}) as Record<string, unknown>,
+          },
           honours,
           careerSummary,
           statistics,

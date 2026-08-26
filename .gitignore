@@ -40,3 +40,20 @@ Thumbs.db
 # misc
 *.pem
 .cache/
+
+# generated data worklists
+#
+# Snapshots of what the database is currently missing, written to the repository
+# root by ad-hoc scripts. They are derived entirely from live table state and go
+# stale the moment more data is ingested, so a committed copy is misleading
+# rather than useful. Nothing in the source reads them.
+rankings-needed.json
+*-needed.json
+
+# scratch scripts
+#
+# Ad-hoc diagnostic scripts written beside the app while debugging. They read
+# DATABASE_URL directly and are not part of the build, so they must never be
+# committed; two slipped in before this pattern existed.
+*.tmp.mjs
+*.tmp.ts

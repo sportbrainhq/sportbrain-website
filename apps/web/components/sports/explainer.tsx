@@ -1,4 +1,11 @@
 import Link from 'next/link';
+import { BasketballPlayDiagram, toCourtPlay } from './basketball-diagrams';
+import {
+  CricketFieldDiagram,
+  ScorecardBreakdown,
+  toFieldSetting,
+  toScoreBreakdown,
+} from './cricket-diagrams';
 import type {
   ExplainerCategory,
   ExplainerRelated,
@@ -118,7 +125,7 @@ export function CategoryNav({ categories }: { categories: ExplainerCategory[] })
   if (categories.length === 0) return null;
 
   return (
-    <nav aria-label="Explainer categories" className="-mx-1 overflow-x-auto">
+    <nav aria-label="Explainer categories" className="scrollbar-thin -mx-1 overflow-x-auto">
       <ul className="flex min-w-max gap-1 px-1 pb-1">
         {categories.map((category) => (
           <li key={category.id}>
@@ -242,6 +249,40 @@ const SECTION_HEADINGS: Record<string, string> = {
   provider_differences: 'Provider differences',
   tactical_application: 'Tactical application',
   historical_context: 'Historical context',
+  // Cricket templates. Headings rather than components: a dismissal's decision
+  // sequence and a delivery's release are prose with their own name, and giving
+  // each a type means a template is a set of rows rather than a parsed blob.
+  format_differences: 'Format differences',
+  when_you_will_see_it: "When you'll see it",
+  step_by_step: 'Step by step',
+  decision_sequence: 'The decision, step by step',
+  reviews_and_technology: 'Reviews and technology',
+  grip_and_release: 'Grip and release',
+  what_the_batter_expects: 'What the batter expects',
+  what_actually_happens: 'What actually happens',
+  how_batters_counter_it: 'How batters counter it',
+  footwork_and_bat_path: 'Footwork and bat path',
+  scoring_area: 'Scoring area',
+  risk: 'Risk',
+  common_mistakes: 'Common mistakes',
+  position_on_the_field: 'Where it is on the field',
+  purpose: 'What it is for',
+  when_it_is_used: 'When it is used',
+  duration_and_structure: 'Duration and structure',
+  result_types: 'How it can end',
+  who_plays_it: 'Who plays it',
+  reading_the_score: 'Reading the score',
+  reading_a_batting_line: 'Reading a batting line',
+  reading_a_bowling_analysis: 'Reading a bowling analysis',
+  // Basketball templates. `rule_differences` is the one that carries weight: it
+  // is where a concept says how the NBA, FIBA, the NCAA and the WNBA diverge,
+  // which is what keeps one concept on one page instead of four.
+  rule_differences: 'How the competitions differ',
+  how_to_read_it: 'How to read it',
+  the_action: 'The action',
+  how_it_is_defended: 'How it is defended',
+  counters: 'Counters',
+  where_it_happens: 'Where it happens',
 };
 
 /**
@@ -252,7 +293,14 @@ const SECTION_HEADINGS: Record<string, string> = {
  * section's would waste it.
  */
 export function ArticleSection({ section, title }: { section: ExplainerSection; title: string }) {
-  const shape = toFormationShape(section.structuredData);
+  // One visual per section, chosen by what the payload actually is rather than
+  // by the sport. A formation, a fielding setting and a worked scoreline are
+  // distinguishable from their shape, so adding a sport's diagram does not add
+  // a branch on sport anywhere.
+  const formation = toFormationShape(section.structuredData);
+  const field = formation ? null : toFieldSetting(section.structuredData);
+  const play = formation || field ? null : toCourtPlay(section.structuredData);
+  const score = formation || field || play ? null : toScoreBreakdown(section.structuredData);
 
   if (section.type === 'one_sentence') {
     return (
@@ -270,9 +318,24 @@ export function ArticleSection({ section, title }: { section: ExplainerSection; 
       <h2 className="text-lg font-bold tracking-tight">
         {section.heading ?? SECTION_HEADINGS[section.type] ?? section.type}
       </h2>
-      {shape && (
+      {formation && (
         <div className="mt-4">
-          <FormationDiagram shape={shape} title={title} />
+          <FormationDiagram shape={formation} title={title} />
+        </div>
+      )}
+      {field && (
+        <div className="mt-4">
+          <CricketFieldDiagram shape={field} title={title} />
+        </div>
+      )}
+      {play && (
+        <div className="mt-4">
+          <BasketballPlayDiagram shape={play} title={title} />
+        </div>
+      )}
+      {score && (
+        <div className="mt-4">
+          <ScorecardBreakdown breakdown={score} />
         </div>
       )}
       {section.body && (
@@ -399,6 +462,38 @@ export function RelatedConcepts({
           ))}
       </div>
     </section>
+  );
+}
+
+/**
+ * The rule-provenance note.
+ *
+ * Shown only on content flagged as rule-sensitive, and stated plainly rather
+ * than tucked into the sources panel. A no-ball or a powerplay explainer has one
+ * weakness it cannot engineer away, which is that the rule may have changed
+ * since somebody checked, and naming the edition and the review date is the
+ * honest way to hand the reader that fact.
+ */
+export function RuleProvenance({
+  isRuleSensitive,
+  sourceRevision,
+  lastReviewedAt,
+}: {
+  isRuleSensitive: boolean;
+  sourceRevision: string | null;
+  lastReviewedAt: string | null;
+}) {
+  if (!isRuleSensitive) return null;
+
+  return (
+    <aside className="rounded-lg border border-border bg-muted/30 px-4 py-3 text-xs leading-relaxed text-muted-foreground">
+      <p>
+        <span className="font-semibold text-foreground">Rule-dependent content.</span> Laws and
+        playing conditions are revised, and competitions vary.
+        {sourceRevision ? ` Written against ${sourceRevision}.` : ''}
+        {lastReviewedAt ? ` Last checked ${lastReviewedAt}.` : ''}
+      </p>
+    </aside>
   );
 }
 

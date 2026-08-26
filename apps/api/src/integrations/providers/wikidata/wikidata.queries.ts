@@ -281,8 +281,21 @@ export function peopleQuery(
   const participationClause = requireParticipation ? '?item wdt:P1344 ?participatedIn .' : '';
   const sitelinkClause = minSitelinks ? `FILTER(?sitelinks >= ${minSitelinks})` : '';
 
+  // The name, taken from the English label where one exists and from the
+  // English Wikipedia article title where it does not.
+  //
+  // Requiring `rdfs:label` in English silently drops people who plainly qualify.
+  // Allan Border is the case that found this: 19 sitelinks, an English Wikipedia
+  // article, `P641 = cricket` and `P106 = cricketer`, but no English *label* on
+  // the Wikidata item, only Hindi, Portuguese, German, Bengali and nine others.
+  // He was excluded from every page of every run while far more obscure
+  // contemporaries were ingested.
+  //
+  // The sitelink is a sound fallback because it is the title of the article we
+  // would map him to anyway, and `external_mapping` stores exactly that string.
+  // COALESCE rather than a UNION so the ordering and paging are unaffected.
   return `
-SELECT DISTINCT ?item ?itemLabel ?sitelinks
+SELECT DISTINCT ?item (COALESCE(?label, ?article) AS ?itemLabel) ?sitelinks
 WHERE {
   ${competitionClause}
   ${participationClause}
@@ -291,7 +304,14 @@ WHERE {
   ?item wikibase:sitelinks ?sitelinks .
   ${sitelinkClause}
   ${clubClause}
-  ?item rdfs:label ?itemLabel . FILTER(LANG(?itemLabel) = "en")
+  OPTIONAL { ?item rdfs:label ?label . FILTER(LANG(?label) = "en") }
+  OPTIONAL {
+    ?sitelink schema:about ?item ; schema:isPartOf <https://en.wikipedia.org/> ;
+              schema:name ?article .
+  }
+  # One of the two must exist: a person with neither an English label nor an
+  # English article is not someone this catalogue can name.
+  FILTER(BOUND(?label) || BOUND(?article))
 }
 ORDER BY DESC(?sitelinks)
 LIMIT ${limit}

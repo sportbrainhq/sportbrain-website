@@ -73,10 +73,193 @@ export interface WikiRanking {
   sourceTitle?: string;
 }
 
-/** A person's statistics for one discipline, keyed to the registry. */
+/**
+ * The three international formats, and where each keeps its records.
+ *
+ * Article titles are candidates rather than a single guess, because the naming
+ * is not uniform: most follow "List of {Team} Test cricket records", but the
+ * team word varies ("England cricket team" against "Australia national cricket
+ * team") and some redirect. Each is tried in turn and the first that yields
+ * tables wins.
+ *
+ * Deliberately international-only. A first-class or List A record is not a Test
+ * or ODI record, and inventing a domestic equivalent of this list would be the
+ * `Test = first-class` error in another form.
+ */
+const CRICKET_FORMATS_FOR_RANKINGS: readonly {
+  key: string;
+  articleTitles: (teamName: string) => string[];
+}[] = [
+  {
+    key: 'test',
+    articleTitles: (team) => cricketRecordArticleTitles(team, 'Test'),
+  },
+  {
+    key: 'odi',
+    articleTitles: (team) => cricketRecordArticleTitles(team, 'One Day International'),
+  },
+  {
+    key: 't20i',
+    articleTitles: (team) => cricketRecordArticleTitles(team, 'Twenty20 International'),
+  },
+];
+
+/** Display names, so a stored kind of `t20i_most_runs` renders as prose. */
+const CRICKET_FORMAT_LABELS: Record<string, string> = {
+  test: 'Test',
+  odi: 'ODI',
+  t20i: 'T20I',
+};
+
+/**
+ * Adjectival forms that a records-article caption uses for a team.
+ *
+ * Only the ones a rule cannot derive. "Australia" to "Australian" falls out of
+ * appending -n, but "England" to "English" and "Netherlands" to "Dutch" do not,
+ * and a missed form means a real table is rejected as somebody else's.
+ */
+const CRICKET_TEAM_ADJECTIVES: Record<string, string[]> = {
+  england: ['english'],
+  scotland: ['scottish', 'scots'],
+  ireland: ['irish'],
+  netherlands: ['dutch'],
+  pakistan: ['pakistani'],
+  'sri lanka': ['sri lankan'],
+  'west indies': ['west indian', 'windies', 'caribbean'],
+  india: ['indian'],
+  australia: ['australian'],
+  'new zealand': ['new zealander', 'kiwi'],
+  'south africa': ['south african'],
+  bangladesh: ['bangladeshi'],
+  zimbabwe: ['zimbabwean'],
+  afghanistan: ['afghan'],
+  nepal: ['nepali', 'nepalese'],
+};
+
+/** Candidate records-article titles for one team and format. */
+function cricketRecordArticleTitles(teamName: string, format: string): string[] {
+  // "India national cricket team" -> "India"; "England cricket team" ->
+  // "England". The records articles are titled by country, not by entity name.
+  const country = teamName
+    .replace(/\b(men's|women's|national|cricket|team)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!country) return [];
+
+  return [`List of ${country} ${format} cricket records`, `List of ${country} ${format} records`];
+}
+
+/**
+ * Which career leaderboard a table is, if it is one at all.
+ *
+ * Both signals are needed, and neither is sufficient alone. That was learned
+ * from the two layouts:
+ *
+ *   - A **team article** files these tables under a section headed merely
+ *     "Tests" and captions them "Last updated: 5 December 2024". No text near
+ *     the table says what it ranks, so the only usable signal is the ranked
+ *     column: a run-scorers table has a Runs column, a bowlers table has
+ *     Wickets.
+ *   - A **records article** has thirty tables with a Player column, most of
+ *     which are decoys sharing those very columns. "Most sixes" and "Most
+ *     ducks" both carry Runs; "Most career catches", "Most consecutive career
+ *     matches" and "Most matches as captain" all carry Matches. Choosing on
+ *     columns there published a wicketkeeping dismissals table as Australia's
+ *     most-capped list, ranked 7.
+ *
+ * So an explicit heading decides outright, and the columns are consulted only
+ * where no heading names a metric. Everything naming something other than the
+ * three career leaderboards is rejected first, which is what keeps the innings,
+ * series, partnership and captaincy tables out.
+ */
+function cricketMetricFrom(
+  context: string,
+  headers: string[] = [],
+): { key: string; label: string; valueHeaders: string[] } | null {
+  const text = context.toLowerCase();
+
+  const MATCHES = {
+    key: 'most_matches',
+    label: 'Most matches',
+    valueHeaders: ['matches', 'tests', 'odis', 't20is', 'caps', 'games', 'played'],
+  };
+  const RUNS = { key: 'most_runs', label: 'Most runs', valueHeaders: ['runs'] };
+  const WICKETS = { key: 'most_wickets', label: 'Most wickets', valueHeaders: ['wickets', 'wkts'] };
+
+  // Rejected outright: per-innings, per-series and per-match records,
+  // partnership and captaincy tables, and the many "most X" curiosities that
+  // share their columns with the career leaderboards.
+  if (
+    /\bin an? (innings|series|match|over|tournament|world cup|bilateral)\b/.test(text) ||
+    /\b(partnership|captain|umpired|conceded|consecutive|fewest|lowest|highest|margin|chase)\b/.test(
+      text,
+    ) ||
+    /\b(against each|each batting|by wicket|position|opposition|venue)\b/.test(text) ||
+    /\b(dismissals?|catches|stumpings|sixes|fours|ducks|centuries|hauls)\b/.test(text) ||
+    /half-centuries|\b(average|economy|strike rate|man of the|awards?)\b/.test(text)
+  ) {
+    return null;
+  }
+
+  // An explicit heading wins. "Most career wickets" is unambiguous and must not
+  // be second-guessed by a column scan.
+  if (/\bmost (career )?wickets?\b/.test(text)) return WICKETS;
+  if (/\bmost (career )?runs?\b/.test(text)) return RUNS;
+  if (/\bmost (career )?(matches|appearances|caps)\b|\bmost capped\b/.test(text)) return MATCHES;
+
+  // No heading named a metric, so this is the inline layout. Read the ranked
+  // column, which is the one immediately after Rank.
+  //
+  // Wickets and Runs are tested before Matches because every one of these
+  // tables also carries a Matches column, and testing Matches first would
+  // label all six of India's tables "Most matches".
+  const columns = headers.map((header) => header.toLowerCase().trim());
+  const ranked = columns[1] ?? '';
+  const isRanked = (...names: string[]) =>
+    names.some((name) => ranked === name || ranked.startsWith(name));
+
+  if (isRanked('wickets', 'wkts')) return WICKETS;
+  if (isRanked('runs')) return RUNS;
+  if (isRanked('matches', 'tests', 'odis', 't20is', 'caps', 'games', 'played')) return MATCHES;
+
+  return null;
+}
+
+/**
+ * Which format a table's surrounding text names, if any.
+ *
+ * The spellings are the ones the articles actually use, which were read off the
+ * parsed pages rather than assumed. A team article files these tables under
+ * section headings "Tests", "One-Day Internationals" and "Twenty20
+ * Internationals"; a records article names the format in its title. Both reach
+ * this function as part of the same joined context string.
+ *
+ * Ordered longest-first. "Twenty20 Internationals" contains neither "ODI" nor
+ * "Test", but checking Test first would misfile nothing while checking a bare
+ * "international" first would misfile everything, so the specific patterns run
+ * before the general ones.
+ */
+function cricketFormatFrom(context: string): string | null {
+  const text = context.toLowerCase();
+  if (/t20i|twenty20 international|t20 international|twenty-20 international/.test(text)) {
+    return 't20i';
+  }
+  if (/\bodis?\b|one[- ]day international/.test(text)) return 'odi';
+  if (/\btests?\b|test cricket|test match/.test(text)) return 'test';
+  return null;
+}
+
+/**
+ * A person's statistics for one discipline, keyed to the registry.
+ *
+ * Values are numbers or strings, because a few statistics are irreducibly two
+ * numbers: a best bowling return of "7/43" and an unbeaten highest score of
+ * "248*" both lose their meaning when forced into one figure. The registry
+ * declares those keys as `text` and the page prints them verbatim.
+ */
 export interface WikiStatBlock {
   discipline: string | null;
-  stats: Record<string, number>;
+  stats: Record<string, number | string>;
   appearances: number | null;
 }
 
@@ -111,8 +294,69 @@ export interface WikiHonourCount {
  * playing honours and his managerial ones under sibling headings, so counting
  * both credited a player's tile with trophies he won from the touchline.
  */
+/**
+ * Honours groups that are not titles anybody counts.
+ *
+ * Regional and friendly competitions: Real Madrid lists 27 of them, none of
+ * which appear in any published tally of the club's honours.
+ */
+const EXCLUDED_TITLE_TYPES = /^(regional|friendly|friendlies|other|minor|youth|reserve|women)/i;
+
+/**
+ * Competitions that are invitational or regional whatever group they sit under.
+ *
+ * The group label is not always there to be excluded. Celta Vigo lists its
+ * pre-season trophies as plain honours lines \u2014 "Trofeo Cidade de Vigo Winners
+ * (21)", "Trofeo Memorial Quinocho Winners (21)" \u2014 which took the club to 83
+ * titles, more than Bayern. A summer friendly is not a title.
+ */
+const EXCLUDED_COMPETITIONS =
+  /\b(trofeo|troph[e\u00e9]e|memorial|cidade|ciudad|copa galicia|championship \(|regional|amistoso|pre-?season|testimonial|charity|cup winners \(shared\))\b/i;
+
 const EXCLUDED_HONOUR_GROUPS =
   /^(individual|records?|orders?|decorations?|awards?|other|see also|notes?|references?|state honours|honours and awards|personal|manager|managerial|as a manager|head coach|coach)\b/i;
+
+/**
+ * Groups to skip when listing a player's honours, as opposed to counting them.
+ *
+ * Much narrower than `EXCLUDED_HONOUR_GROUPS`, and deliberately so. That
+ * pattern exists to count team trophies, where "Individual" and "Awards" are
+ * correctly excluded because a Ballon d'Or is not a trophy the team won. Reusing
+ * it here dropped exactly the honours worth listing: Ronaldo's five Ballons d'Or
+ * sit under an "Individual" label and none of them was read.
+ *
+ * What still has to go is anything won in another role, or not won at all.
+ */
+
+/**
+ * Where a honours line stops recording wins.
+ *
+ * Articles append the times a player did not win to the same line as the times
+ * they did, and the transition is a word rather than any markup: "Ballon d'Or
+ * Winner: 1963, nominated: 1956, 1957, 1958, ...". Splitting on runner-up
+ * clauses alone left the nine nominations in place, and Lev Yashin's profile
+ * claimed ten Ballons d'Or against the one he won.
+ *
+ * Nominations and shortlists are the common case and matter most, because they
+ * attach to exactly the awards a reader recognises.
+ */
+const NOT_A_WIN =
+  /\b(runners?-up|runner up|third place|finalist|nominated|nominee|nominations?|shortlist(?:ed)?|longlist(?:ed)?)\b/i;
+
+const EXCLUDED_HONOUR_LIST_GROUPS =
+  /^(manager|managerial|as a manager|head coach|coach|assistant|youth|reserves?|see also|notes?|references?)\b/i;
+
+/**
+ * A count of the titles a club's article credits it with.
+ *
+ * `competitions` is the number of table rows counted, kept as a sanity check: a
+ * club page whose honours table this reader does not recognise yields zero of
+ * them, which is different from a club that has won nothing.
+ */
+export interface WikiTitleCount {
+  titles: number | null;
+  competitions: number;
+}
 
 export interface WikiCareerTotals {
   games: number | null;
@@ -303,7 +547,7 @@ export class WikipediaProvider {
         new RegExp(`\\|\\s*${field}\\s*=\\s*\\[\\[\\s*(?:File|Image):([^|\\]]+)`, 'i'),
       );
       const file = linked?.[1]?.trim();
-      if (file && /\.(svg|png)$/i.test(file)) return `File:${file}`;
+      if (file && /\.(svg|png)$/i.test(file)) return `File:${decodeFilename(file)}`;
     }
 
     for (const field of ['image', 'logo', 'crest', 'badge']) {
@@ -315,17 +559,32 @@ export class WikipediaProvider {
       // |upright=0.5]]`, whose display parameters are not part of the name.
       // `cleanWikitext` has already reduced that to its parameters alone, so
       // the link is recovered from the raw wikitext rather than from the field.
-      const name = raw
+      const value = raw
         .replace(/^\[\[/, '')
         .replace(/\]\]$/, '')
         .replace(/^(?:File|Image):/i, '')
         .split('|')[0]
         ?.trim();
 
-      if (!name) continue;
-      if (!/\.(svg|png)$/i.test(name)) continue;
+      if (!value) continue;
 
-      return `File:${name}`;
+      // The filename is taken from within the value rather than by testing its
+      // end, because competition infoboxes append rendering options to it
+      // through the pipe escape: `FIFA World Cup wordmark (2023).svg{{!}}
+      // class=skin-invert`. `{{!}}` is a template standing in for a literal
+      // pipe, so `parseInfobox` does not split on it and `cleanWikitext`
+      // reduces it to a space, leaving `... .svg class=skin-invert` in the
+      // field. Anchoring on the extension kept the World Cup and the Copa
+      // America without a logo while the leagues had one.
+      //
+      // The extension is still what rejects a photograph: a `.jpg` never
+      // matches, so an infobox whose image is a squad photo or a trophy shot
+      // yields nothing, which is the intended outcome.
+      const name = value.match(/^(.*?\.(?:svg|png))(?:\s|$)/i)?.[1]?.trim();
+
+      if (!name) continue;
+
+      return `File:${decodeFilename(name)}`;
     }
 
     return null;
@@ -444,6 +703,304 @@ export class WikipediaProvider {
    * the clubs tried have a records article in a shape this recognises, and the
    * rest simply render without these tables.
    */
+  /**
+   * A cricket side's per-format leaderboards: matches, runs and wickets.
+   *
+   * Cricket needs its own method rather than a widened `fetchTeamRankings`,
+   * because the shape of the answer is different. Football has two leaderboards
+   * per team; a cricket side has up to nine, because a career record only means
+   * something inside one format. Test, ODI and T20I records are not comparable
+   * and must never be merged into a single "most runs" table: that is the same
+   * mistake as adding a batting average across formats, and the discipline
+   * model exists precisely to prevent it.
+   *
+   * ## Two layouts, because Wikipedia has two
+   *
+   * Coverage was measured across the twelve Full Members before this was
+   * written, and there is no single source that serves them all:
+   *
+   *   - **Inline.** India, Bangladesh, Zimbabwe, Afghanistan and Ireland carry
+   *     the tables on the team's own article, captioned "Most Test runs for
+   *     India".
+   *   - **Per-format records articles.** Australia, England, South Africa and
+   *     Sri Lanka carry them in "List of {Team} {Format} cricket records",
+   *     under "Most career runs" / "Most career wickets" / "Most career
+   *     matches".
+   *
+   * Both are read. Sides with neither, which at the time of writing includes
+   * Pakistan, New Zealand and the West Indies, get no tables rather than
+   * tables borrowed from somewhere that happened to parse.
+   *
+   * ## Why the caption is checked
+   *
+   * A per-format records article opens each section with prose about the
+   * *world* record, so "Most career runs" on Australia's page is introduced by
+   * a paragraph about Tendulkar. The table beneath it is Australia's, and says
+   * so: "Most career Test runs by Australian batsmen". Anchoring on that
+   * caption is what stops this repeating the contamination that once filed
+   * Real Madrid's footballers under three other clubs, and it is the reason
+   * `ownsTable` rejects rather than guesses.
+   */
+  async fetchCricketTeamRankings(teamName: string, teamTitle: string): Promise<WikiRanking[]> {
+    const rankings: WikiRanking[] = [];
+
+    // The team's own article first: where the inline tables exist they are the
+    // most current, being maintained alongside the rest of the article.
+    const inline = await this.cricketRankingsFromArticle(teamTitle, teamName, null);
+    rankings.push(...inline);
+
+    // Then one records article per format, for the formats still missing. A
+    // side with inline Test tables and no inline T20I tables is common, so the
+    // gap is filled per format rather than per team.
+    for (const format of CRICKET_FORMATS_FOR_RANKINGS) {
+      const have = rankings.some((ranking) => ranking.kind.startsWith(`${format.key}_`));
+      if (have) continue;
+
+      for (const candidate of format.articleTitles(teamName)) {
+        const found = await this.cricketRankingsFromArticle(candidate, teamName, format.key);
+        if (found.length > 0) {
+          rankings.push(...found);
+          break;
+        }
+      }
+    }
+
+    return rankings;
+  }
+
+  /**
+   * A domestic or franchise side's leaderboards: most runs and most wickets.
+   *
+   * Deliberately not format-split, and that is the point rather than a
+   * shortcut. An IPL side plays Twenty20 and nothing else, so "most runs for
+   * Mumbai Indians" is unambiguous and needs no format qualifier. Labelling it
+   * `t20i_most_runs` would be worse than wrong: a T20I is an international
+   * match, and the IPL is not international cricket. These get their own
+   * `club_` kinds so the two can never be conflated or summed.
+   *
+   * Matches are not collected here. The franchise tables carry a Matches column
+   * but rank on runs or wickets, and there is no separate most-appearances
+   * table on these articles to read, so publishing one would mean re-ranking a
+   * column the source never ranked.
+   */
+  async fetchCricketClubRankings(teamName: string, teamTitle: string): Promise<WikiRanking[]> {
+    // The team's own article first, then its records article.
+    //
+    // Both are needed. Mumbai Indians and Royal Challengers Bengaluru carry the
+    // leaderboards inline; Chennai Super Kings, Delhi Capitals, Punjab Kings
+    // and several others keep only a "Statistics" heading and push the tables
+    // to "List of {Team} records", so reading the team article alone left six
+    // IPL sides with nothing.
+    for (const title of [teamTitle, `List of ${teamName} records`]) {
+      const found = await this.clubRankingsFromArticle(teamName, title);
+      if (found.length > 0) return found;
+    }
+
+    return [];
+  }
+
+  /** Both club leaderboards as read from one article. */
+  private async clubRankingsFromArticle(
+    teamName: string,
+    teamTitle: string,
+  ): Promise<WikiRanking[]> {
+    const html = await this.client.fetchHtml(teamTitle);
+    if (!html) return [];
+
+    const rankings: WikiRanking[] = [];
+
+    for (const table of parseTables(html)) {
+      const hasPlayer = table.headers.some((header) => /player|name/i.test(header));
+      if (!hasPlayer) continue;
+
+      const context = [table.caption, table.heading, ...table.headingPath]
+        .filter((part): part is string => !!part)
+        .join(' | ');
+
+      // Heading-led only. These articles carry season-by-season and
+      // playing-record tables whose columns look identical to the
+      // leaderboards, and only the heading separates them.
+      // "career" is optional in the middle, which is not a detail. A team
+      // article heads these "Most runs"; a franchise records article heads them
+      // "Most career wickets", and matching only the former left every side
+      // whose tables live in a records article with runs and no wickets:
+      // Chennai Super Kings, Delhi Capitals, Punjab Kings and eight others.
+      const metric = /\bmost (?:career )?wickets\b/i.test(context)
+        ? { key: 'club_most_wickets', label: 'Most wickets', valueHeaders: ['wickets', 'wkts'] }
+        : /\bmost (?:career )?runs\b/i.test(context)
+          ? { key: 'club_most_runs', label: 'Most runs', valueHeaders: ['runs'] }
+          : null;
+      if (!metric) continue;
+
+      // Reject the per-season, per-match and per-series variants. A franchise
+      // records article carries "Most runs in a season", "Most runs conceded in
+      // a match" and "Most wickets in a series" alongside the career tables,
+      // and all three share the career tables' columns.
+      if (
+        /\bin an? (innings|season|match|over|series|tournament)\b/i.test(context) ||
+        /\b(partnership|highest|best|conceded|fewest|lowest|captain)\b/i.test(context) ||
+        // A franchise records article files wicket-keeping and hauls under
+        // headings containing "wickets": "Most four-wickets (& over) hauls"
+        // and "Most career dismissals" both matched before this.
+        /\b(hauls?|dismissals?|catches|stumpings|four-wickets|five-wickets)\b/i.test(context)
+      ) {
+        continue;
+      }
+
+      if (rankings.some((existing) => existing.kind === metric.key)) continue;
+
+      const entries = this.rowsToEntries(table, metric.valueHeaders).map((entry) => ({
+        ...entry,
+        name: entry.name
+          .replace(/[♠†‡*]/g, '')
+          .replace(/\s+/g, ' ')
+          .trim(),
+      }));
+      if (entries.length < 3) continue;
+
+      rankings.push({
+        kind: metric.key,
+        label: metric.label,
+        entries,
+        confidence: 'partial',
+        note: `${metric.label} for ${teamName} in this competition. Franchise and domestic records are separate from international records and are not comparable with them.`,
+        sourceTitle: teamTitle,
+      });
+    }
+
+    return rankings;
+  }
+
+  /**
+   * Reads whatever cricket leaderboards one article holds.
+   *
+   * `onlyFormat` is set when reading a per-format records article, whose
+   * headings say "Most career runs" without naming the format: the format comes
+   * from which article it is. Null when reading a team article, where each
+   * table names its own format ("Most ODI wickets for India") and the heading
+   * is the only thing that can tell them apart.
+   */
+  private async cricketRankingsFromArticle(
+    title: string,
+    teamName: string,
+    onlyFormat: string | null,
+  ): Promise<WikiRanking[]> {
+    const html = await this.client.fetchHtml(title);
+    if (!html) return [];
+
+    const tables = parseTables(html);
+    const rankings: WikiRanking[] = [];
+
+    for (const table of tables) {
+      const context = [table.caption, table.heading, ...table.headingPath]
+        .filter((part): part is string => !!part)
+        .join(' | ');
+
+      // A leaderboard names people. Requiring a player column first is what
+      // keeps head-to-head tables (whose columns are opponents and results) and
+      // partnership tables out of the set cheaply.
+      const hasPlayer = table.headers.some((header) => /player|name|batsman|bowler/i.test(header));
+      if (!hasPlayer) continue;
+
+      const metric = cricketMetricFrom(context, table.headers);
+      if (!metric) continue;
+
+      const format = onlyFormat ?? cricketFormatFrom(context);
+      if (!format) continue;
+      if (onlyFormat && cricketFormatFrom(context) && cricketFormatFrom(context) !== onlyFormat) {
+        // A records article for one format occasionally links a table for
+        // another. Trust the table's own words over the article's title.
+        continue;
+      }
+
+      // The ownership check, run against the article title as well as the
+      // table's own context.
+      //
+      // A records article discusses world records beside the team's own, so
+      // something has to establish whose table this is. Two things were tried.
+      // The table's caption states it outright ("Most career Test runs by
+      // Australian batsmen"), but `parseTables` fills `caption` with the
+      // "Last updated" line that sits in the same cell, so the qualification
+      // never reaches this code. The article title does reach it, and "List of
+      // Australia Test cricket records" identifies the owner just as firmly.
+      //
+      // Checked only for records articles. A table on a team's own page needs
+      // no qualification, and demanding one rejected all six of India's
+      // tables, whose entire context is "Statistics | Tests".
+      if (onlyFormat !== null && !this.ownsCricketTable(`${title} ${context}`, teamName)) {
+        continue;
+      }
+
+      const kind = `${format}_${metric.key}`;
+      if (rankings.some((existing) => existing.kind === kind)) continue;
+
+      const entries = this.rowsToEntries(table, metric.valueHeaders).map((entry) => ({
+        ...entry,
+        // These tables flag the world record holder with a spade and current
+        // players with a dagger, both inside the name cell, so a row arrives as
+        // "Muttiah Muralitharan ♠". Stripped here rather than in the shared
+        // parser: the symbols carry meaning worth keeping for football's
+        // tables, and only cricket puts them in the name.
+        name: entry.name
+          .replace(/[♠†‡*]/g, '')
+          .replace(/\s+/g, ' ')
+          .trim(),
+      }));
+      // Two rows is a pair of record holders, not a leaderboard.
+      if (entries.length < 3) continue;
+
+      rankings.push({
+        kind,
+        label: `${CRICKET_FORMAT_LABELS[format] ?? format} – ${metric.label}`,
+        entries,
+        // `partial` rather than `high` throughout. These tables carry their own
+        // "Last updated" line and are frequently months behind, and an active
+        // player's total is stale the moment it is read.
+        confidence: 'partial',
+        note: `${metric.label} in ${CRICKET_FORMAT_LABELS[format] ?? format} for ${teamName}. Career records are per format and are not comparable across formats.`,
+        sourceTitle: title,
+      });
+    }
+
+    return rankings;
+  }
+
+  /**
+   * Whether a table's own text says it belongs to this team.
+   *
+   * Matched on the country or team word rather than the full entity name,
+   * because the table says "by Australian batsmen" where the team is "Australia
+   * national cricket team", and "for India" where the team is "India national
+   * cricket team". Both the plain and the adjectival form are tried.
+   *
+   * A table on a team's own article that names no team at all is accepted: an
+   * unqualified "Most Test runs" section on India's page is India's. A table on
+   * a records article must name the team, because those articles discuss world
+   * records alongside the team's own.
+   */
+  private ownsCricketTable(context: string, teamName: string): boolean {
+    const haystack = context.toLowerCase();
+
+    // "India national cricket team" -> "india"; "West Indies cricket team" ->
+    // "west indies".
+    const core = teamName
+      .replace(/\b(men's|women's|national|cricket|team)\b/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+    if (!core) return true;
+
+    if (haystack.includes(core)) return true;
+
+    // Adjectival forms: Australia -> Australian, Pakistan -> Pakistani,
+    // England -> English, Sri Lanka -> Sri Lankan.
+    const adjectives = CRICKET_TEAM_ADJECTIVES[core];
+    if (adjectives?.some((form) => haystack.includes(form))) return true;
+
+    // Naive but effective for the rest: most country names take -n or -an.
+    return haystack.includes(`${core}n`) || haystack.includes(`${core}an`);
+  }
+
   async fetchTeamRankings(
     recordsTitle: string | null,
     teamName?: string,
@@ -807,18 +1364,117 @@ export class WikipediaProvider {
   }
 
   /**
+   * A cricketer's playing span, and whether it is over.
+   *
+   * The evidence a cricket article carries and a football one does not. Club
+   * spells are how a footballer's status is derived, and cricketers have almost
+   * none recorded: the ingested squads are national sides and franchises with no
+   * dates, so 4,769 cricketers had no evidence either way and their pages showed
+   * no badge at all. Tendulkar, who retired in 2013, was one of them.
+   *
+   * **The start is the first international**, taken from `internationalspan` or
+   * the earliest debut year, and club years are consulted only for a player who
+   * has none. A career that begins with a domestic debut reads wrongly on a page
+   * that calls the figure a career start: Dhoni's said 1999, the year he first
+   * played for Bihar, while he is universally described as debuting in 2004,
+   * when he first played for India.
+   *
+   * The end is the opposite: the latest year from any source, because a player
+   * who has retired from internationals and still turns out in a franchise
+   * league has not stopped playing. Dhoni's 2025 is his IPL, and it is why he
+   * reads as active rather than retired in 2019.
+   *
+   * Null where the article says nothing, which stays null: no badge is better
+   * than a wrong one.
+   */
+  async fetchCricketCareerSpan(
+    title: string,
+  ): Promise<{ start: number | null; end: number | null; ongoing: boolean } | null> {
+    const wikitext = await this.client.fetchWikitext(title);
+    if (!wikitext) return null;
+
+    // The cricketer box by name, not the first one on the page: Dhoni's
+    // article opens with an officeholder infobox for an honorary army rank.
+    const box = parseInfobox(wikitext, 'cricketer');
+    if (!box) return null;
+
+    const yearsIn = (value: string | undefined): number[] =>
+      value
+        ? [...value.matchAll(/\b(1[89]\d{2}|20\d{2})\b/g)].map((match) => Number(match[1]))
+        : [];
+
+    const stillGoing = (value: string | undefined): boolean =>
+      value !== undefined && /present|current/i.test(value);
+
+    const internationalSpans = [box.internationalspan, box.nationalyears];
+    const clubSpans = Array.from({ length: 8 }, (_, index) => box[`year${index + 1}`]);
+
+    // Debut years, which are the harder evidence for a start: a span reading
+    // "2004–2019" and `odidebutyear = 2004` agree, and where they disagree the
+    // debut field is the one stating a single match rather than a range.
+    const debutYears = ['testdebutyear', 'odidebutyear', 't20idebutyear']
+      .map((field) => parseNumber(box[field] ?? ''))
+      .filter((year): year is number => year !== null);
+
+    const internationalYears = [...internationalSpans.flatMap(yearsIn), ...debutYears];
+
+    // The first international, or the first of anything for a player who never
+    // played one.
+    const startCandidates =
+      internationalYears.length > 0 ? internationalYears : clubSpans.flatMap(yearsIn);
+
+    // The last international, on the same footing as the start. Franchise years
+    // are deliberately excluded: Dhoni's article runs his Chennai Super Kings
+    // spell to 2025 and he last played for India in 2019, and taking the later
+    // of the two labelled him Active six years after his international
+    // retirement. A career in these badges is an international career, or the
+    // whole domestic record of a player who never had one.
+    const lastYears = ['lasttestyear', 'lastodiyear', 'lastt20iyear']
+      .map((field) => parseNumber(box[field] ?? ''))
+      .filter((year): year is number => year !== null);
+
+    const endCandidates =
+      internationalYears.length > 0
+        ? [...internationalYears, ...lastYears]
+        : clubSpans.flatMap(yearsIn);
+
+    // "present" counts from the international span for anyone who has played
+    // one, and from a club span only for a domestic-only player. An open-ended
+    // franchise row says nothing about an international career.
+    const ongoing =
+      internationalYears.length > 0
+        ? internationalSpans.some(stillGoing)
+        : clubSpans.some(stillGoing);
+
+    const start = startCandidates.length > 0 ? Math.min(...startCandidates) : null;
+    const end = endCandidates.length > 0 ? Math.max(...endCandidates) : null;
+
+    if (start === null && end === null && !ongoing) return null;
+
+    return { start, end, ongoing };
+  }
+
+  /**
    * A cricketer's per-format career record.
    *
    * Cricket infoboxes use a `columnN` pattern: `column1 = Test`, `matches1`,
    * `runs1`, `bat avg1` and so on, repeated for each format a player has
    * played. That maps exactly onto the discipline model, which is why cricket
    * statistics work here and did not with the previous source.
+   *
+   * Three infobox fields carry two statistics each, and both halves are kept:
+   * `100s/50s` is hundreds and fifties, `catches/stumpings` is a fielding and a
+   * wicketkeeping figure, and taking only the first of each was throwing away a
+   * column the player page shows. A missing half is written as a dash or an en
+   * dash and yields nothing rather than a zero.
    */
   async fetchCricketStats(title: string): Promise<WikiStatBlock[]> {
     const wikitext = await this.client.fetchWikitext(title);
     if (!wikitext) return [];
 
-    const box = parseInfobox(wikitext);
+    // The cricketer box by name, not the first one on the page: Dhoni's
+    // article opens with an officeholder infobox for an honorary army rank.
+    const box = parseInfobox(wikitext, 'cricketer');
     if (!box) return [];
 
     const blocks: WikiStatBlock[] = [];
@@ -830,41 +1486,70 @@ export class WikipediaProvider {
       const discipline = this.disciplineFor(label);
       if (!discipline) continue;
 
-      const stats: Record<string, number> = {};
+      const stats: Record<string, number | string> = {};
+
       const numeric: [string, string][] = [
         ['matches', 'matches'],
         ['runs', 'runs'],
         ['bat avg', 'batting_average'],
-        ['100s/50s', 'hundreds'],
         ['wickets', 'wickets'],
         ['bowl avg', 'bowling_average'],
-        ['catches/stumpings', 'catches'],
         ['deliveries', 'deliveries'],
+        ['fivefor', 'five_wickets'],
       ];
 
       for (const [source, key] of numeric) {
         const raw = box[`${source}${column}`];
         if (!raw) continue;
 
-        // "100s/50s" arrives as "80/72" and "catches/stumpings" as "150/-".
-        // Only the first component is taken, which is the one the registry
-        // defines.
-        const first = raw.split('/')[0] ?? '';
-        const parsed = parseNumber(first);
+        const parsed = parseNumber(raw);
         if (parsed !== null) stats[key] = parsed;
       }
 
-      const topScore = box[`top score${column}`];
-      if (topScore) {
-        const parsed = parseNumber(topScore);
-        if (parsed !== null) stats.highest_score = parsed;
+      // Paired fields: "81/116" and "186/–". Each half is its own registry key.
+      const paired: [string, string, string][] = [
+        ['100s/50s', 'hundreds', 'fifties'],
+        ['catches/stumpings', 'catches', 'stumpings'],
+      ];
+
+      for (const [source, firstKey, secondKey] of paired) {
+        const raw = box[`${source}${column}`];
+        if (!raw) continue;
+
+        const halves = raw.split('/');
+        for (const [index, key] of [firstKey, secondKey].entries()) {
+          const parsed = parseNumber(halves[index] ?? '');
+          if (parsed !== null) stats[key] = parsed;
+        }
       }
+
+      // Text, and deliberately not parsed into a number. A highest score of
+      // "248*" is an unbeaten innings and the asterisk is the fact that makes
+      // it one; a best return of "5/32" is five wickets for thirty-two and
+      // means nothing reduced to either figure alone.
+      const text: [string, string][] = [
+        ['top score', 'highest_score'],
+        ['best bowling', 'best_bowling'],
+      ];
+
+      for (const [source, key] of text) {
+        const raw = box[`${source}${column}`];
+        if (!raw) continue;
+
+        const cleaned = cleanCricketFigure(raw);
+        if (cleaned) stats[key] = cleaned;
+      }
+
+      // Strike rate is not in the infobox, but it is the column a T20 record is
+      // read on, so it is computed where both inputs are present. Balls faced
+      // is not published either, so this is left to the aggregation job rather
+      // than guessed from deliveries, which are balls *bowled*.
 
       if (Object.keys(stats).length > 0) {
         blocks.push({
           discipline,
           stats,
-          appearances: stats.matches ?? null,
+          appearances: typeof stats.matches === 'number' ? stats.matches : null,
         });
       }
     }
@@ -1099,7 +1784,7 @@ export class WikipediaProvider {
 
       // Everything from a runner-up, third-place or losing-finalist clause
       // onwards is a record of not winning.
-      const winning = text.split(/\b(?:runners?-up|runner up|third place|finalist)\b/i)[0] ?? '';
+      const winning = text.split(NOT_A_WIN)[0] ?? '';
 
       // Only what follows the colon, so a competition whose name carries a year
       // ("Copa Am\u00e9rica 2021") is not itself counted as a win.
@@ -1112,6 +1797,134 @@ export class WikipediaProvider {
     }
 
     return { won, groups };
+  }
+
+  /**
+   * A player's honours as titles and years, from their Wikipedia article.
+   *
+   * Wikidata is the primary source for honours and is incomplete in a way that
+   * shows: it has three of Ronaldo's five Ballons d'Or and omits Messi's 2022
+   * World Cup Golden Ball entirely. The article's honours section has both,
+   * because it is maintained by people who follow the sport.
+   *
+   * The same walk as `fetchFootballHonours`, which counts these lines and throws
+   * the content away. This keeps it. Manager and youth sections are excluded by
+   * the same rules, since a trophy won from the touchline is not a playing
+   * honour.
+   *
+   * Deliberately conservative: a line must carry a colon and a four-digit year
+   * to be read at all, so prose inside the section produces nothing rather than
+   * a fabricated honour.
+   */
+  async fetchFootballHonourList(title: string): Promise<{ title: string; year: number | null }[]> {
+    const html = await this.client.fetchHtml(title);
+    if (!html) return [];
+
+    const heading = /id="(Honours|Honors|Career_honours|Honours_and_awards)"/.exec(html);
+    if (!heading) return [];
+
+    const rest = html.slice(heading.index);
+    const nextSection = rest.search(/<h2\b/);
+    // Figures removed before anything is read. An image caption is prose that
+    // happens to name an award and a year, and Rodri's article carries "Rodri
+    // winning the 2026 FIFA World Cup Golden Ball" beside the section, which the
+    // walk below read as an honour he has already won.
+    const section = (nextSection > 0 ? rest.slice(0, nextSection) : rest)
+      .replace(/<figure\b[\s\S]*?<\/figure>/g, ' ')
+      .replace(/<figcaption\b[\s\S]*?<\/figcaption>/g, ' ');
+
+    const honours: { title: string; year: number | null }[] = [];
+    let sectionExcluded = false;
+    let labelExcluded = false;
+
+    const tokens = section.matchAll(
+      /<(b|p|h[345])\b[^>]*>([\s\S]{0,200}?)<\/\1>|<li\b[^>]*>([\s\S]*?)<\/li>/g,
+    );
+
+    for (const token of tokens) {
+      const tag = token[1];
+      const label = token[2];
+      const item = token[3];
+
+      if (tag !== undefined && label !== undefined) {
+        const text = this.plainText(label);
+        if (!text || text.length >= 60) continue;
+
+        const excluded = EXCLUDED_HONOUR_LIST_GROUPS.test(text);
+        if (tag.startsWith('h')) {
+          sectionExcluded = excluded;
+          labelExcluded = false;
+        } else {
+          labelExcluded = excluded;
+        }
+        continue;
+      }
+
+      if (sectionExcluded || labelExcluded || item === undefined) continue;
+
+      const text = this.plainText(item);
+      if (!text) continue;
+
+      // Anything from a runner-up clause onwards records not winning.
+      const winning = text.split(NOT_A_WIN)[0] ?? '';
+      const colon = winning.indexOf(':');
+      if (colon < 0) continue;
+
+      const rawName = winning.slice(0, colon).trim();
+      if (!rawName || rawName.length > 160) continue;
+
+      // Season ranges are one win, not two. Articles write a season-based
+      // honour as "2007-08, 2010-11, 2013-14, 2014-15", and matching bare
+      // four-digit numbers counted each range twice: Ronaldo's four European
+      // Golden Shoes became six rows, and every league title was inflated the
+      // same way.
+      //
+      // A range is therefore matched first and reduced to its starting year,
+      // which is how the rest of the codebase labels a season.
+      const yearField = winning.slice(colon + 1);
+      const years = [...yearField.matchAll(/(\d{4})(?:\s*[\u2013\u2014-]\s*(\d{2,4}))?/g)].map(
+        (match) => match[1]!,
+      );
+      if (years.length === 0) continue;
+
+      // Articles join an award's historical names with slashes, so Messi's line
+      // reads "FIFA World Player of the Year/FIFA Ballon d'Or/The Best FIFA
+      // Men's Player". Stored whole that is one unrecognisable title; the first
+      // name is the one the award is listed under.
+      const name = (rawName.split('/')[0] ?? rawName).trim();
+      if (!name || name.length > 80) continue;
+
+      // Prose, not an honour. The section carries trivia lines in the same list
+      // markup ("One of only nine players to take part in five FIFA World
+      // Cups"), and a sentence is recognisable by starting with a word that no
+      // award title starts with.
+      if (
+        /^(one of|the only|first|second|third|holds|scored|became|most |named |set )/i.test(name)
+      ) {
+        continue;
+      }
+
+      // Aggregator selections and academic awards are not football honours.
+      if (/whoscored|opta|honorary doctor|doctorate|university of/i.test(name)) continue;
+
+      // One row per year, matching how the honour table stores repeats: eight
+      // Ballons d'Or are eight rows, not one row saying eight.
+      //
+      // Only genuinely future years are rejected. An earlier version excluded
+      // the current year as well, on the theory that an article lists a
+      // tournament a player is about to enter; that was wrong, and it dropped
+      // real honours won this year. The honours section records what has been
+      // won, and a caption promising a future one is handled by stripping
+      // figures rather than by distrusting the year.
+      const currentYear = new Date().getFullYear();
+      for (const year of years) {
+        const parsed = Number(year);
+        if (parsed > currentYear || parsed < 1850) continue;
+        honours.push({ title: name, year: parsed });
+      }
+    }
+
+    return honours;
   }
 
   /** An HTML fragment as displayable text, references and markup removed. */
@@ -1127,6 +1940,119 @@ export class WikipediaProvider {
         .replace(/\s+/g, ' ')
         .trim()
     );
+  }
+
+  /**
+   * The titles a club's article credits it with.
+   *
+   * A different shape from a player's honours and so a different reader. A
+   * player writes a bulleted list of years; a club states a count, and does so
+   * in one of two layouts, both handled here:
+   *
+   *   - a table, Competition | Titles | Seasons, whose Titles column holds the
+   *     figure (Real Madrid, Liverpool, Bayern);
+   *   - a list reading "Serie A Winners (3): 1941\u201342, ..." with the
+   *     runners-up on their own line (Roma, Tottenham, Aston Villa).
+   *
+   * The stated count is taken rather than the years listed beside it. The two
+   * should agree, and where they do not \u2014 pages marking shared titles \u2014 the
+   * count is what the article is actually asserting.
+   *
+   * Regional titles are excluded. Real Madrid's table closes with 27 regional
+   * and friendly trophies which no published count of its honours includes, and
+   * adding them produced a total a reader could not reconcile with anything.
+   */
+  async fetchClubTitles(title: string): Promise<WikiTitleCount> {
+    const html = await this.client.fetchHtml(title);
+    if (!html) return { titles: null, competitions: 0 };
+
+    const heading = /id="(Honours|Honors|Achievements|Honours_and_achievements)"/.exec(html);
+    if (!heading) return { titles: null, competitions: 0 };
+
+    const rest = html.slice(heading.index);
+    const nextSection = rest.search(/<h2\b/);
+    const section = nextSection > 0 ? rest.slice(0, nextSection) : rest;
+
+    let titles = 0;
+    let competitions = 0;
+    // The type is written once, in the first row of its group, and the rows
+    // beneath it carry only a competition. So it persists until replaced.
+    let type = '';
+
+    for (const table of section.matchAll(/<table[\s\S]*?<\/table>/g)) {
+      // Only a table that says it counts titles. The Honours heading is often
+      // followed by a European-record table of matches played, won and drawn,
+      // and summing its Won column gave Leverkusen 534 titles.
+      if (!/>\s*(?:Titles|Winners|Wins|Trophies)\b/i.test(table[0])) continue;
+      if (/Matches played|\bPld\b|Goal difference|\bGF\b/i.test(table[0])) continue;
+
+      for (const row of table[0].split(/<tr[^>]*>/)) {
+        const cells = stripCells(row);
+        if (cells.length < 2) continue;
+
+        // A row is either [type, competition, count, seasons] where its group
+        // begins, or [competition, count, seasons] where it continues. The
+        // count is the first cell that is a bare integer.
+        const countIndex = cells.findIndex((cell) => /^\d{1,3}$/.test(cell));
+        if (countIndex < 1) continue;
+
+        if (countIndex >= 2) type = cells[countIndex - 2] ?? type;
+
+        if (EXCLUDED_TITLE_TYPES.test(type)) continue;
+
+        const count = parseNumber(cells[countIndex]!);
+        if (count === null) continue;
+
+        titles += count;
+        competitions += 1;
+      }
+    }
+
+    // The second shape, and the more common one: a list rather than a table,
+    // written "Serie A Winners (3): 1941\u201342, 1982\u201383, 2000\u201301" with the
+    // runners-up on a line of their own. Roma, Lazio, Tottenham, Aston Villa,
+    // Newcastle and Fiorentina all use it, and a table-only reader skipped 67
+    // of the first 150 clubs.
+    if (competitions === 0) {
+      for (const item of section.matchAll(/<li\b[^>]*>([\s\S]*?)<\/li>/g)) {
+        const text = this.plainText(item[1]!);
+        if (!text) continue;
+
+        // A losing record, however it is phrased. Checked before the winners
+        // pattern because "Runners-up: (14)" also carries a bracketed count.
+        if (NOT_A_WIN.test(text)) continue;
+        if (EXCLUDED_TITLE_TYPES.test(text)) continue;
+        if (EXCLUDED_COMPETITIONS.test(text)) continue;
+
+        // A winning line at all: "Winners", "Winner" or "Champions".
+        if (!/\b(winners?|champions?)\b/i.test(text)) continue;
+
+        // Where the count is stated in brackets \u2014 "Serie A Winners (3)" \u2014 take
+        // it. The years after the colon confirm it and are not counted as well,
+        // since the two disagree on pages marking shared titles.
+        const stated = /\b(?:winners?|champions?)\b[^(:]*\((\d{1,3})\)/i.exec(text);
+
+        if (stated) {
+          const count = parseNumber(stated[1]!);
+          if (count === null) continue;
+
+          titles += count;
+          competitions += 1;
+          continue;
+        }
+
+        // Otherwise the years are the only count there is: Newcastle writes
+        // "FA Cup Winners: 1909\u201310, 1923\u201324, ..." with no figure at all, and
+        // a reader demanding brackets scored the club zero.
+        const years = text.slice(text.indexOf(':') + 1).match(/\d{4}(?:[\u2013-]\d{2,4})?/g);
+        if (!text.includes(':') || !years) continue;
+
+        titles += years.length;
+        competitions += 1;
+      }
+    }
+
+    return { titles, competitions };
   }
 
   /**
@@ -1624,11 +2550,42 @@ export class WikipediaProvider {
     if (normalised.includes('test')) return 'test';
     if (normalised.includes('t20i') || normalised.includes('twenty20 international')) return 't20i';
     if (normalised.includes('odi') || normalised.includes('one day international')) return 'odi';
-    // First-class, List A and domestic T20 are real formats with their own
-    // records, but no discipline is defined for them yet. Skipped rather than
-    // folded into an international format they are not comparable with.
+    // The domestic pair, checked after the internationals: the labels do not
+    // collide, but the internationals are the more specific patterns and run
+    // first on purpose. Kept apart from Test and ODI, which is the error the
+    // discipline model exists to prevent.
+    if (normalised.includes('first-class') || normalised.includes('first class')) {
+      return 'first_class';
+    }
+    if (/(^|[^a-z])fc([^a-z]|$)/.test(normalised)) return 'first_class';
+    if (normalised.includes('list a')) return 'list_a';
+    if (/(^|[^a-z])la([^a-z]|$)/.test(normalised)) return 'list_a';
+    // Domestic T20 is a real format with its own records, but no discipline is
+    // defined for it yet. Skipped rather than folded into a format it is not
+    // comparable with.
     return null;
   }
+}
+
+/**
+ * A cricket figure that is text rather than a number: "248*" or "5/32".
+ *
+ * Kept as written, minus the footnote marks and the dashes a table uses for a
+ * figure it does not hold. An en dash, an em dash or a bare hyphen all mean
+ * "none" in a cricket infobox and none of them should reach a page as a value.
+ */
+function cleanCricketFigure(value: string): string | null {
+  const cleaned = value
+    .replace(/[\u2020\u2021]/g, '')
+    .replace(/\s+/g, '')
+    .trim();
+  if (!cleaned) return null;
+  if (/^[-\u2013\u2014]+$/.test(cleaned)) return null;
+  // Anything without a digit is not a score or a bowling return. Guards against
+  // an infobox holding a note in the field.
+  if (!/\d/.test(cleaned)) return null;
+
+  return cleaned;
 }
 
 /**
@@ -1650,4 +2607,25 @@ function stripCells(row: string): string[] {
       .replace(/\s+/g, ' ')
       .trim(),
   );
+}
+
+/**
+ * Decodes percent escapes in an infobox filename.
+ *
+ * Some articles write the file with its URL encoding intact:
+ * `Logo de la Conmebol Copa Am%C3%A9rica.svg`. The API rejects that outright,
+ * with `The requested page title contains invalid characters: "%C3"`, so the
+ * Copa America logo resolved to nothing until the escape was decoded.
+ *
+ * A malformed escape is left alone rather than thrown on: `decodeURIComponent`
+ * raises on a stray `%`, and a filename containing one is still worth trying.
+ */
+function decodeFilename(name: string): string {
+  if (!name.includes('%')) return name;
+
+  try {
+    return decodeURIComponent(name);
+  } catch {
+    return name;
+  }
 }

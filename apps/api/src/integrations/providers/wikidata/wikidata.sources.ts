@@ -221,7 +221,17 @@ export const SPORT_SOURCES: Record<string, WikidataSportSource> = {
     // itself holds 1,273 cricket teams, which is a manageable corpus to take
     // whole.
     competitionQids: [],
-    defaultTeamKind: 'franchise',
+    // Was 'franchise', which was wrong for most of what this query returns and
+    // labelled 814 cricket teams a franchise: Otago, Queensland and Bengal are
+    // representative sides, Manchester Cricket Club is a club, and a franchise
+    // is specifically a side created for and owned within a competition.
+    //
+    // `club` is the least wrong default. Wikidata's generic cricket team class
+    // carries no statement distinguishing the three, so the honest options are a
+    // default that is right for a plurality and corrected afterwards, or no
+    // default at all. Migration 0018 reclassifies what can be identified with
+    // confidence; the rest is a curation task rather than an inference.
+    defaultTeamKind: 'club',
     competitionClassQid: 'Q623109',
     venueClassQid: 'Q483110',
   },
@@ -231,20 +241,53 @@ export const SPORT_SOURCES: Record<string, WikidataSportSource> = {
     sportQid: 'Q5372',
     // basketball team
     teamClassQid: 'Q13393265',
+    // men's national basketball team, NOT Q46351685 ("national basketball
+    // team"). The broader class was tried first and is unusable: its 1,480
+    // members are dominated by 3x3, wheelchair, under-16 and one-off Olympic
+    // squads, and neither the USA nor Spain senior side is classed under it
+    // directly, so the famous nations would have been missing while
+    // "Kiribati men's national basketball team" ranked eighth. This class holds
+    // 221 senior sides ordered sensibly: Spain, USA, France, Lithuania, Russia,
+    // Greece, Serbia and Argentina are the top eight.
+    nationalTeamClassQid: 'Q135728463',
     competitionQids: [
       'Q155223', // National Basketball Association
       'Q2593221', // WNBA
       'Q185982', // EuroLeague
       'Q1126104', // Liga ACB
       'Q540636', // Basketball Bundesliga
-      'Q94861615', // NCAA Division I men's basketball
     ],
-    // NCAA is excluded here on purpose: its 474 teams make the person query
-    // time out. Professional leagues only.
+    // NCAA Division I (Q94861615) was here and is deliberately gone.
+    //
+    // It contributed 408 college programmes to a 561-team catalogue, so three
+    // quarters of the Teams tab was "Dickinson Red Devils men's basketball" and
+    // similar: rows with no sitelinks, no honours and no players, which sorted
+    // to the bottom and padded the list to 24 pages. College basketball is a
+    // real subject, but a college programme is not comparable to an NBA
+    // franchise and mixing them serves neither. Removing it leaves the
+    // professional leagues plus the national sides.
+    //
+    // It was already excluded from `personCompetitionQids` below for a separate
+    // reason (its team count timed out the person query), so no player coverage
+    // is lost by dropping it here.
     personCompetitionQids: ['Q155223', 'Q2593221', 'Q185982'],
     defaultTeamKind: 'club',
     competitionClassQid: 'Q623109',
     venueClassQid: 'Q483110',
+
+    /**
+     * Notability floor for basketball people.
+     *
+     * Kept at five language editions, matching cricket rather than football's
+     * twelve. Basketball is documented in fewer languages than football, so the
+     * higher floor would cut into players a reader would search for.
+     *
+     * The prose here previously described cricket's 41,160 `P641` people and
+     * named Allan Border and Javed Miandad, having been copied from the cricket
+     * block. The number was never re-measured for basketball; the value is
+     * retained as a considered default rather than a verified one.
+     */
+    personMinSitelinks: 5,
   },
 
   tennis: {

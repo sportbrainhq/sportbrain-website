@@ -183,13 +183,53 @@ export class WikipediaIngestionService {
     limit: number,
     overwrite = false,
   ): Promise<{ examined: number; resolved: number; written: number }> {
+    return this.ingestLogos('team', sportSlug, limit, overwrite);
+  }
+
+  /**
+   * The same backfill for competition logos, which were missing for exactly the
+   * competitions a reader can name.
+   *
+   * Wikidata's P154 covers the second tiers and the smaller leagues, and is
+   * absent for the World Cup, the Champions League, La Liga, the Bundesliga and
+   * Serie A, for the crest reason above: those logos are trademarks and Commons
+   * will not host them. 33 of football's 48 competitions had no logo at all,
+   * every tier-one entry among them, so the listing showed initials where a
+   * reader expects a badge.
+   *
+   * Competitions created by the curated seed also arrive with no Wikipedia
+   * title, because title mapping runs from the QID and they were inserted after
+   * the last mapping pass. Run `wiki map competition` before this, or `wiki all`,
+   * which does both in order.
+   */
+  async ingestCompetitionLogos(
+    sportSlug: string | null,
+    limit: number,
+    overwrite = false,
+  ): Promise<{ examined: number; resolved: number; written: number }> {
+    return this.ingestLogos('competition', sportSlug, limit, overwrite);
+  }
+
+  /**
+   * Shared body of the two backfills above.
+   *
+   * `team` and `competition` differ only in the table joined and the column
+   * updated: both hold `logo_url`, both map to Wikipedia by title, and the
+   * infobox field carrying the image is one of the same four either way.
+   */
+  private async ingestLogos(
+    entityType: 'team' | 'competition',
+    sportSlug: string | null,
+    limit: number,
+    overwrite: boolean,
+  ): Promise<{ examined: number; resolved: number; written: number }> {
     const targets = await this.database.db.execute<{ id: string; title: string; name: string }>(sql`
       SELECT e.id, em.external_id AS title, e.name
       FROM external_mapping em
-      JOIN team e ON e.id = em.entity_id
+      JOIN ${sql.raw(entityType)} e ON e.id = em.entity_id
       JOIN sport s ON s.id = e.sport_id
       WHERE em.provider = 'wikipedia'
-        AND em.entity_type = 'team'
+        AND em.entity_type = ${entityType}
         ${sql.raw(sportSlug ? `AND s.slug = '${sportSlug}'` : '')}
         ${sql.raw(overwrite ? '' : 'AND e.logo_url IS NULL')}
       ORDER BY e.notability DESC
@@ -197,7 +237,7 @@ export class WikipediaIngestionService {
     `);
 
     // Collected before resolving, so the thumbnail lookups can be batched rather
-    // than run one per team.
+    // than run one per entity.
     const wanted = new Map<string, { id: string; name: string }[]>();
     let examined = 0;
 
@@ -214,11 +254,11 @@ export class WikipediaIngestionService {
         group.push({ id: target.id, name: target.name });
         wanted.set(file, group);
       } catch (error) {
-        this.logger.warn(`Crest lookup failed for ${target.title}: ${this.message(error)}`);
+        this.logger.warn(`Logo lookup failed for ${target.title}: ${this.message(error)}`);
       }
 
       if ((index + 1) % 25 === 0) {
-        this.logger.log(`  ${index + 1}/${targets.length} teams scanned`);
+        this.logger.log(`  ${index + 1}/${targets.length} ${entityType}s scanned`);
       }
     }
 
@@ -226,13 +266,15 @@ export class WikipediaIngestionService {
 
     let written = 0;
 
-    for (const [file, teams] of wanted) {
+    for (const [file, entities] of wanted) {
       const url = thumbnails.get(file);
       if (!url) continue;
 
-      for (const team of teams) {
+      for (const entity of entities) {
         await this.database.db.execute(sql`
-          UPDATE team SET logo_url = ${url}, updated_at = now() WHERE id = ${team.id}
+          UPDATE ${sql.raw(entityType)}
+          SET logo_url = ${url}, updated_at = now()
+          WHERE id = ${entity.id}
         `);
         written += 1;
       }
@@ -294,6 +336,97 @@ export class WikipediaIngestionService {
     await this.revalidate([`sport:${sportSlug}`]);
 
     return { teams, rankings };
+  }
+
+  /**
+   * Cricket sides' per-format leaderboards: matches, runs and wickets.
+   *
+   * Separate from `ingestTeamRankings` because the unit of work differs. That
+   * method writes two tables per team and stops as soon as it has them; this
+   * one writes up to nine, and must not stop early, because a side with Test
+   * tables and no T20I tables is the normal case rather than a failure.
+   *
+   * International sides only. A career record belongs to a format, and the
+   * formats these tables describe are Test, ODI and T20I: there is no
+   * equivalent published for a county or a franchise, and inventing one by
+   * reading a domestic side's page would produce a table whose rows mean
+   * something different from its label.
+   */
+  async ingestCricketTeamRankings(limit: number): Promise<{
+    teams: number;
+    rankings: number;
+    skipped: number;
+  }> {
+    const targets = await this.targets('team', 'cricket', limit, undefined, 'international');
+    let teams = 0;
+    let rankings = 0;
+    let skipped = 0;
+
+    for (const [index, target] of targets.entries()) {
+      try {
+        const extracted = await this.provider.fetchCricketTeamRankings(target.name, target.title);
+        if (extracted.length === 0) {
+          // Recorded rather than retried. Several sides publish these tables
+          // nowhere a parser can reach, and a run that reports how many it
+          // could not serve is more useful than one that quietly serves fewer.
+          skipped += 1;
+          continue;
+        }
+
+        for (const ranking of extracted) {
+          await this.writeRanking('team', target.id, ranking, ranking.sourceTitle ?? target.title);
+          rankings += 1;
+        }
+        teams += 1;
+      } catch (error) {
+        this.logger.warn(`Cricket rankings failed for ${target.name}: ${this.message(error)}`);
+        skipped += 1;
+      }
+
+      if ((index + 1) % 5 === 0) {
+        this.logger.log(`  ${index + 1}/${targets.length} teams, ${rankings} tables`);
+      }
+    }
+
+    // Franchise and domestic sides, in the same run. Their leaderboards are not
+    // format-split and come from the team's own article, so they are a second
+    // pass rather than a second command: one invocation should leave the whole
+    // sport consistent.
+    for (const kind of ['franchise', 'representative', 'club'] as const) {
+      const clubs = await this.targets('team', 'cricket', limit, undefined, kind);
+
+      for (const target of clubs) {
+        try {
+          const extracted = await this.provider.fetchCricketClubRankings(target.name, target.title);
+          if (extracted.length === 0) {
+            skipped += 1;
+            continue;
+          }
+
+          for (const ranking of extracted) {
+            await this.writeRanking(
+              'team',
+              target.id,
+              ranking,
+              ranking.sourceTitle ?? target.title,
+            );
+            rankings += 1;
+          }
+          teams += 1;
+        } catch (error) {
+          this.logger.warn(
+            `Cricket club rankings failed for ${target.name}: ${this.message(error)}`,
+          );
+          skipped += 1;
+        }
+      }
+
+      this.logger.log(`  ${kind}: ${clubs.length} examined, ${rankings} tables so far`);
+    }
+
+    await this.revalidate(['sport:cricket']);
+
+    return { teams, rankings, skipped };
   }
 
   /**
@@ -405,6 +538,72 @@ export class WikipediaIngestionService {
     }
 
     return { players, blocks };
+  }
+
+  /**
+   * Ingests cricketers' playing spans, and sets the Active or Retired badge.
+   *
+   * The badge is derived from club spells for footballers, and cricketers have
+   * next to none: their ingested sides are national teams and franchises with
+   * no dates, so nearly five thousand cricketers carried no status and their
+   * pages showed no badge. This reads the span the article does state.
+   *
+   * `career_status` is written here rather than left to the seed's derivation,
+   * because that derivation reasons about club spells and there are none to
+   * reason about. The rule is the same one it applies: a career that has ended
+   * more than two years ago is over, one still running is active, and anything
+   * else stays null so the page shows nothing rather than a guess. Curated rows
+   * are left alone, as everywhere else.
+   */
+  async ingestCricketCareerSpans(
+    limit: number,
+    /** One player, for correcting a single page without a full crawl. */
+    slug?: string,
+  ): Promise<{ players: number; active: number; retired: number }> {
+    const targets = await this.targets('person', 'cricket', limit, slug);
+
+    // Read once. A year boundary crossing mid-run would put two players on
+    // different sides of the same rule.
+    const thisYear = new Date().getUTCFullYear();
+
+    let players = 0;
+    let active = 0;
+    let retired = 0;
+
+    for (const [index, target] of targets.entries()) {
+      try {
+        const span = await this.provider.fetchCricketCareerSpan(target.title);
+        if (!span) continue;
+
+        // "present" in the article, or a last match recent enough that a gap is
+        // more likely to be a stale article than a retirement.
+        const stillPlaying = span.ongoing || (span.end !== null && span.end >= thisYear - 2);
+        const status = stillPlaying ? 'active' : span.end !== null ? 'retired' : null;
+
+        await this.database.db.execute(sql`
+          UPDATE person SET
+            attributes = attributes || ${JSON.stringify({
+              ...(span.start !== null ? { careerStart: span.start } : {}),
+              ...(span.end !== null && !span.ongoing ? { careerEnd: span.end } : {}),
+            })}::jsonb,
+            career_status = coalesce(${status}::text, career_status),
+            updated_at = now()
+          WHERE id = ${target.id} AND confidence <> 'curated'
+        `);
+
+        players += 1;
+        if (status === 'active') active += 1;
+        if (status === 'retired') retired += 1;
+      } catch (error) {
+        this.logger.warn(`Cricket career span failed for ${target.title}: ${this.message(error)}`);
+      }
+
+      if ((index + 1) % 50 === 0) {
+        this.logger.log(`  ${index + 1}/${targets.length} players, ${players} spans written`);
+      }
+    }
+
+    return { players, active, retired };
   }
 
   /**
@@ -653,7 +852,25 @@ export class WikipediaIngestionService {
         // `groups` guards against a silent zero: an article whose honours
         // section this reader does not recognise parses into no groups at all,
         // which is a parsing failure rather than a trophyless career.
-        if (honours.won !== null && honours.groups > 0) {
+        //
+        // The second guard catches a different error: club officials and
+        // federations are held in the person table, and their articles carry
+        // the *club's* honours rather than a playing record. Santiago Bernabéu,
+        // a president with 52 appearances, was credited with Real Madrid's 102
+        // trophies, and the Royal Spanish Football Federation with 77.
+        //
+        // A flat ceiling rather than a ratio, because the obvious ratios reject
+        // real records: a threshold on appearances would strip Kobbie Mainoo's
+        // two trophies at 92 games, and requiring trophies to be a small
+        // fraction of games would strip Aitana Bonmat\u00ed's 33 in 300 and Presnel
+        // Kimpembe's 28 in 202, all of which are correct. Players at the
+        // dominant clubs genuinely win in bunches.
+        //
+        // 60 sits well above the most decorated actual career on the site
+        // (Messi, 46) and well below a club's total, so it separates the two
+        // populations without touching any real player.
+        const plausible = honours.won !== null && honours.won <= 60;
+        if (honours.won !== null && honours.groups > 0 && plausible) {
           payload.career_trophies = honours.won;
         }
 
@@ -692,6 +909,68 @@ export class WikipediaIngestionService {
     await this.revalidate(['sport:football']);
 
     return { players: targets.length, written };
+  }
+
+  /**
+   * Ingests football clubs' and national sides' title counts.
+   *
+   * The team equivalent of the players' pass, and it exists for the same
+   * reason: titles were counted from our honour table, which holds honours for
+   * 400 of the 1,005 football teams, so the rest showed nothing at all. A
+   * club's article states its count directly in its honours table.
+   *
+   * Written to the sport-wide career row, since a title belongs to a club
+   * rather than to a format, and merged so nothing else in the payload is lost.
+   */
+  async ingestFootballTitles(limit: number): Promise<{ teams: number; written: number }> {
+    const [sportRow] = await this.database.db.execute<{ id: string }>(
+      sql`SELECT id FROM sport WHERE slug = 'football' LIMIT 1`,
+    );
+    if (!sportRow) return { teams: 0, written: 0 };
+
+    const targets = await this.targets('team', 'football', limit);
+    this.logger.log(`football: ${targets.length} teams`);
+
+    let written = 0;
+
+    for (const [index, target] of targets.entries()) {
+      try {
+        const counted = await this.provider.fetchClubTitles(target.title);
+
+        // `competitions` guards against a silent zero: an honours table this
+        // reader does not recognise yields none, which is a parsing failure
+        // rather than a club that has won nothing.
+        if (counted.titles === null || counted.competitions === 0) continue;
+
+        await this.database.db.execute(sql`
+          INSERT INTO team_statistic (
+            team_id, sport_id, discipline_id, scope, stats, computed_at
+          ) VALUES (
+            ${target.id}, ${sportRow.id}, NULL, 'career',
+            ${JSON.stringify({ titles_won: counted.titles })}::jsonb, now()
+          )
+          ON CONFLICT (
+            team_id, scope,
+            coalesce(competition_id, '00000000-0000-0000-0000-000000000000'::uuid),
+            coalesce(season_id, '00000000-0000-0000-0000-000000000000'::uuid),
+            coalesce(discipline_id, '00000000-0000-0000-0000-000000000000'::uuid)
+          ) DO UPDATE SET
+            stats = team_statistic.stats || EXCLUDED.stats,
+            computed_at = now()
+        `);
+        written += 1;
+      } catch (error) {
+        this.logger.warn(`Titles failed for ${target.title}: ${this.message(error)}`);
+      }
+
+      if ((index + 1) % 25 === 0) {
+        this.logger.log(`  ${index + 1}/${targets.length} teams, ${written} written`);
+      }
+    }
+
+    await this.revalidate(['sport:football']);
+
+    return { teams: targets.length, written };
   }
 
   /**
@@ -814,6 +1093,15 @@ export class WikipediaIngestionService {
     sportSlug: string | null,
     limit: number,
     slug?: string,
+    /**
+     * Restrict to teams of one kind.
+     *
+     * Added for cricket's per-format leaderboards, which exist only for
+     * international sides: Test, ODI and T20I records are published for
+     * countries and for nobody else, so running the same crawl over 800
+     * domestic and franchise sides would be 800 fruitless fetches.
+     */
+    teamKind?: string,
   ): Promise<{ id: string; title: string; name: string }[]> {
     const table = entityType === 'person' ? 'person' : entityType;
     const nameColumn = entityType === 'person' ? 'full_name' : 'name';
@@ -831,6 +1119,7 @@ export class WikipediaIngestionService {
         AND em.entity_type = ${entityType}
         ${sql.raw(sportSlug && entityType !== 'sport' ? `AND s.slug = '${sportSlug}'` : '')}
         AND (${slug ?? null}::text IS NULL OR e.slug = ${slug ?? null})
+        ${sql.raw(teamKind && entityType === 'team' ? `AND e.kind = '${teamKind}'` : '')}
       GROUP BY e.id, em.external_id, e.${sql.raw(nameColumn)}${sql.raw(
         entityType === 'sport' ? '' : ', e.notability',
       )}

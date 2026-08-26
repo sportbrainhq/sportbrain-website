@@ -202,13 +202,25 @@ export class StatisticsAssembler {
         title: honour.title,
         year: honour.year,
         note: honour.note,
+        prestige: honour.prestige,
       })
       .from(honour)
       .where(predicate)
-      // Undated honours sort last rather than first: a null year is missing
-      // information, not an ancient one.
-      .orderBy(sql`${honour.year} desc nulls last`)
-      .limit(100);
+      // Prestige first, then recency. Ordered by year alone, Messi's profile
+      // led with a ceremonial award and buried eight Ballons d'Or below it,
+      // because the newest thing is rarely the most important one.
+      //
+      // Unranked honours sort after every tier rather than before: null means
+      // the sport's list does not cover it, which is not a claim that it is
+      // significant. Undated honours likewise sort last within their tier,
+      // since a null year is missing information and not an ancient one.
+      .orderBy(sql`${honour.prestige} asc nulls last`, sql`${honour.year} desc nulls last`)
+      // Raised from 100 because the cap was cutting the part that matters.
+      // Messi has 200 recorded honours, and truncating at 100 removed four of
+      // his eight Ballons d'Or, so the page counted the award twice at four
+      // each. Ordered by prestige the important rows come first, but the count
+      // of repeats is only right if the whole set is present.
+      .limit(400);
 
     return rows;
   }
@@ -257,6 +269,13 @@ export class StatisticsAssembler {
    * Definitions scoped to the row's own discipline win over sport-wide ones with
    * the same key, which is what lets `batting_average` mean something slightly
    * different in Test and T20 while sharing a key.
+   *
+   * The result is ordered by category and then by the registry's display order
+   * within it, which is what the website reads as the columns of a record
+   * table. Sorting only by display order interleaved the departments, because
+   * the numbers restart per category: a cricketer's Test block arrived as
+   * matches, catches, wickets, balls, runs, so a batting table began with a
+   * bowling average.
    */
   private render(
     stats: Record<string, unknown>,
@@ -276,7 +295,7 @@ export class StatisticsAssembler {
       byKey.set(definition.key, definition);
     }
 
-    const values: StatisticValue[] = [];
+    const values: (StatisticValue & { order: number })[] = [];
 
     for (const [key, definition] of byKey) {
       // The sport's fixed set leads the statistics section already. Leaving
@@ -298,10 +317,29 @@ export class StatisticsAssembler {
         higherIsBetter: definition.higherIsBetter,
         description: definition.description,
         value: typeof raw === 'number' || typeof raw === 'string' ? raw : null,
+        order: definition.displayOrder,
       });
     }
 
-    return values;
+    // Categories keep the order they were first declared in, and the statistics
+    // within a category keep the registry's own. The category order is taken
+    // from the first definition carrying it rather than from a separate field,
+    // so a sport that reorders its statistics reorders its tables with them.
+    const categoryOrder = new Map<string, number>();
+    for (const value of values) {
+      const category = value.category ?? '';
+      if (!categoryOrder.has(category)) categoryOrder.set(category, categoryOrder.size);
+    }
+
+    return values
+      .sort((left, right) => {
+        const byCategory =
+          (categoryOrder.get(left.category ?? '') ?? 0) -
+          (categoryOrder.get(right.category ?? '') ?? 0);
+
+        return byCategory !== 0 ? byCategory : left.order - right.order;
+      })
+      .map(({ order: _order, ...value }) => value);
   }
 }
 

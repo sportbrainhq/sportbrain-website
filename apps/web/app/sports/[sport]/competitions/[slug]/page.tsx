@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { FactPanel, RankingPanel, SectionPanel } from '@/components/sports/entity-profile';
+import { Avatar } from '@/components/sports/avatar';
 import { ApiError, fetchCompetition } from '@/lib/api';
 import { buildMetadata } from '@/lib/seo';
 
@@ -38,26 +39,80 @@ export default async function CompetitionPage({
     throw error;
   }
 
+  // `continental` is accurate in the schema and means nothing to a reader: the
+  // Champions League is a club competition played across Europe, not a
+  // "continental" one.
+  const competitionType =
+    competition.kind === 'continental'
+      ? 'International club'
+      : competition.kind === 'international'
+        ? 'International'
+        : 'Domestic league';
+
+  const hasRankings = competition.profile.rankings.some((r) => r.entries.length > 0);
+  const hasDetail =
+    hasRankings ||
+    competition.records.length > 0 ||
+    competition.seasons.length > 0 ||
+    competition.profile.facts.length > 0 ||
+    competition.profile.sections.length > 0 ||
+    Boolean(competition.about);
+
   return (
     <article className="space-y-8">
-      <header>
-        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-          <Link href={`/sports/${sportSlug}/competitions`} className="hover:underline">
-            {competition.sport.name}
-          </Link>
-          <span className="ml-2 capitalize">
-            {competition.kind} {competition.format.replace('_', ' ')}
-          </span>
-        </p>
-        <h1 className="mt-1.5 text-3xl font-black tracking-tight sm:text-4xl">
-          {competition.name}
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {[competition.country, competition.foundedYear && `since ${competition.foundedYear}`]
-            .filter(Boolean)
-            .join(' · ')}
-        </p>
+      <header className="flex flex-wrap items-start gap-4">
+        {/* `object-contain` rather than the crest default: a competition logo is
+            usually a wordmark, and cropping one to a square cuts the name in
+            half. */}
+        {competition.logoUrl && (
+          <Avatar
+            text={competition.name}
+            imageUrl={competition.logoUrl}
+            size={80}
+            className="rounded-lg object-contain"
+          />
+        )}
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+            <Link href={`/sports/${sportSlug}/competitions`} className="hover:underline">
+              {competition.sport.name}
+            </Link>
+            <span className="ml-2 capitalize">
+              {competition.kind} {competition.format.replace('_', ' ')}
+            </span>
+          </p>
+          <h1 className="mt-1.5 text-3xl font-black tracking-tight sm:text-4xl">
+            {competition.name}
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {[competition.country, competition.foundedYear && `since ${competition.foundedYear}`]
+              .filter(Boolean)
+              .join(' · ')}
+          </p>
+        </div>
       </header>
+
+      {/* The competition's own columns, rendered as facts.
+          `profile.facts` is enrichment's output and is empty for most
+          competitions, which left pages showing a heading and nothing else even
+          though the row itself carried a type, a country and a founding year.
+          These come from the competition record rather than a provider, so they
+          are present whenever the competition is. */}
+      <dl className="grid gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-2 lg:grid-cols-4">
+        {[
+          { label: 'Type', value: competitionType },
+          { label: 'Format', value: competition.format.replace('_', ' ') },
+          { label: 'Country', value: competition.country },
+          { label: 'Founded', value: competition.foundedYear?.toString() ?? null },
+        ]
+          .filter((fact) => fact.value)
+          .map((fact) => (
+            <div key={fact.label} className="bg-card p-4">
+              <dt className="text-xs text-muted-foreground">{fact.label}</dt>
+              <dd className="mt-1 font-medium capitalize">{fact.value}</dd>
+            </div>
+          ))}
+      </dl>
 
       <FactPanel facts={competition.profile.facts} />
 
@@ -106,6 +161,15 @@ export default async function CompetitionPage({
       )}
 
       <RankingPanel rankings={competition.profile.rankings} sportSlug={sportSlug} />
+
+      {/* An honest empty state. Winners and records come from enrichment, which
+          has not reached every competition, and a page that simply stops after
+          the header reads as broken rather than as incomplete. */}
+      {!hasDetail && (
+        <p className="rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground">
+          We do not have the honours or records for this competition yet.
+        </p>
+      )}
 
       {competition.seasons.length > 0 && (
         <section>

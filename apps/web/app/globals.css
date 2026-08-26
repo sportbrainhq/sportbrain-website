@@ -189,3 +189,33 @@
     box-shadow: var(--shadow-elevation-3);
   }
 }
+
+@layer components {
+  /* A slimmer scrollbar for the horizontal strips: filter pills, category
+     tabs, wide tables. The platform default is as tall as the pills it sits
+     under, which reads as a divider rather than as a control. Kept visible
+     rather than hidden, since it is the only affordance saying the row
+     continues past the edge. */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border) transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    height: 4px;
+    width: 4px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: var(--color-border);
+    border-radius: 9999px;
+  }
+
+  .scrollbar-thin:hover::-webkit-scrollbar-thumb {
+    background-color: color-mix(in oklab, var(--color-foreground) 30%, transparent);
+  }
+}

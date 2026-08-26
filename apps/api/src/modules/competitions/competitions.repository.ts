@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, asc, count, desc, eq, sql, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import type { CompetitionRecord, CompetitionSummary, EntityListQuery } from '@sportbrain/contracts';
 import { DatabaseService } from '../../database/database.service';
 import { nameSearch } from '../shared/name-search';
@@ -13,6 +13,23 @@ import {
   team,
 } from '../../database/schema';
 
+/**
+ * The filter groups offered on the competitions tab, expanded to stored kinds.
+ *
+ * The split is by who competes, not by how far the competition travels.
+ * "International" is national teams only; the continental club cups sit with
+ * the leagues because the Champions League is contested by Real Madrid and
+ * Bayern, the same clubs as La Liga and the Bundesliga, and grouping it with
+ * the World Cup put club and country in one list again.
+ *
+ * `friendly` belongs to no group deliberately: an exhibition match is not what
+ * anyone opening this tab is looking for, and the curated list contains none.
+ */
+const COMPETITION_KIND_GROUPS: Record<string, ('international' | 'domestic' | 'continental')[]> = {
+  international: ['international'],
+  league: ['domestic', 'continental'],
+};
+
 @Injectable()
 export class CompetitionsRepository {
   constructor(private readonly database: DatabaseService) {}
@@ -23,8 +40,14 @@ export class CompetitionsRepository {
   ): Promise<{ rows: CompetitionSummary[]; total: number }> {
     const predicates: SQL[] = [eq(sport.slug, sportSlug)];
 
-    // `kind` separates international from domestic, matching the tab grouping.
-    if (query.kind) predicates.push(eq(competition.kind, query.kind as never));
+    // The reader's two groupings, which are coarser than the stored `kind`.
+    // "International" has to cover both national-team tournaments and the
+    // continental club cups: the World Cup and the Champions League are one
+    // category to a reader and two values in the enum, so an equality filter
+    // could not express the tab at all.
+    const kindGroup = COMPETITION_KIND_GROUPS[query.kind ?? ''];
+    if (kindGroup) predicates.push(inArray(competition.kind, kindGroup));
+    else if (query.kind) predicates.push(eq(competition.kind, query.kind as never));
     if (query.country) predicates.push(eq(competition.country, query.country));
     if (query.q) {
       const match = nameSearch(query.q, [competition.name], { aliases: competition.aliases });

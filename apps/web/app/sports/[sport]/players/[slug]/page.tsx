@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { FactPanel, RankingPanel, SectionPanel } from '@/components/sports/entity-profile';
-import { HonoursList } from '@/components/sports/entity-card';
+import { CareerStatusBadge, HonoursPanel } from '@/components/sports/player-profile';
 import { Avatar } from '@/components/sports/avatar';
 import { StatisticsPanel } from '@/components/sports/statistics-panel';
 import { ApiError, fetchPlayer } from '@/lib/api';
@@ -43,7 +43,29 @@ export default async function PlayerPage({
 
   // Only strings are rendered: `attributes` is an open JSONB payload and a
   // nested object would render as "[object Object]".
+  // `careerEnd` is a contract end date for anyone still playing, not a
+  // retirement, and 461 active football players carry one. Rendered as "Career
+  // End" it read as a retirement date on the page of a player mid-career, so it
+  // is shown only once the person is actually retired.
+  //
+  // `currentClub` goes the same way for a retired player: the provider records
+  // the last club someone played for, and the club history below says so
+  // properly with its dates.
+  //
+  // `currentClub` also goes for a sport that says its players do not have one:
+  // a cricketer turns out for a national side, a first-class side and one or
+  // more franchises at once, so a single box naming one of them is a choice the
+  // page has no basis to make. Tendulkar's read "Marylebone Cricket Club".
+  const showsCurrentClub =
+    player.sport.traits.playersHaveCurrentClub !== false && player.careerStatus !== 'retired';
+
+  const hidden = new Set<string>([
+    ...(player.careerStatus === 'active' ? ['careerEnd'] : []),
+    ...(showsCurrentClub ? [] : ['currentClub']),
+  ]);
+
   const facts = Object.entries(player.attributes)
+    .filter(([key]) => !hidden.has(key))
     .filter(([, value]) => typeof value === 'string' || typeof value === 'number')
     .slice(0, 6);
 
@@ -68,9 +90,10 @@ export default async function PlayerPage({
               {player.sport.name} player
             </Link>
           </p>
-          <h1 className="mt-1.5 text-3xl font-black tracking-tight sm:text-4xl">
-            {player.fullName}
-          </h1>
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-2">
+            <h1 className="text-3xl font-black tracking-tight sm:text-4xl">{player.fullName}</h1>
+            <CareerStatusBadge status={player.careerStatus} />
+          </div>
           <p className="mt-1 text-sm text-muted-foreground">
             {[player.nationality, player.dateOfBirth && `born ${formatDate(player.dateOfBirth)}`]
               .filter(Boolean)
@@ -90,7 +113,7 @@ export default async function PlayerPage({
         </dl>
       )}
 
-      <FactPanel facts={player.profile.facts} />
+      <FactPanel facts={player.profile.facts} suppressCurrentClub={!showsCurrentClub} />
 
       <SectionPanel sections={player.profile.sections} />
 
@@ -108,7 +131,7 @@ export default async function PlayerPage({
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
             Honours
           </h2>
-          <HonoursList honours={player.honours} />
+          <HonoursPanel honours={player.honours} />
         </section>
       )}
 
@@ -118,8 +141,18 @@ export default async function PlayerPage({
             Career
           </h2>
           <ul className="space-y-1.5">
-            {player.teams.map((entry) => (
-              <li key={`${entry.team.id}-${entry.startDate ?? ''}`} className="flex gap-3 text-sm">
+            {player.teams.map((entry, index) => (
+              // Keyed by index as well as identity: a club and a start date do
+              // not identify a spell, because the same spell can be held twice
+              // with different end-date precision (Carragher's Liverpool years
+              // end both 2013-01-01 and 2013-12-31). Role and end date are in
+              // the database's own unique index and would be enough here, but
+              // the index keeps the key stable even if a further duplicate slips
+              // through, since a duplicate key breaks rendering outright.
+              <li
+                key={`${entry.team.id}-${entry.role ?? ''}-${entry.startDate ?? ''}-${entry.endDate ?? ''}-${index}`}
+                className="flex gap-3 text-sm"
+              >
                 <Link
                   href={`/sports/${sportSlug}/teams/${entry.team.slug}`}
                   className="font-medium hover:underline"
@@ -139,12 +172,10 @@ export default async function PlayerPage({
 
       <RankingPanel rankings={player.profile.rankings} sportSlug={sportSlug} />
 
-      <section>
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-          Statistics
-        </h2>
-        <StatisticsPanel groups={player.statistics} summary={player.careerSummary} />
-      </section>
+      {/* No "Statistics" heading of its own. Where a career divides into formats
+          the panel renders a titled table per format and department, and a
+          heading above them was a second label for the same thing. */}
+      <StatisticsPanel groups={player.statistics} summary={player.careerSummary} />
     </article>
   );
 }

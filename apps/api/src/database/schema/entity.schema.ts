@@ -105,6 +105,20 @@ export const person = pgTable(
     imageUrl: text('image_url'),
 
     /**
+     * Whether the person is still competing.
+     *
+     * `active`, `retired`, or null where the evidence does not say. Null is a
+     * real state and not a placeholder: the page shows no badge at all rather
+     * than guessing, because a wrong "Active" on someone who retired twenty
+     * years ago is worse than no badge.
+     *
+     * Derived from a career end year, the end of a final club spell, or a date
+     * of death, all of which come from the provider rather than from inference
+     * about age.
+     */
+    careerStatus: text('career_status'),
+
+    /**
      * Sitelink count as the provider reported it.
      *
      * Kept separate from `notability` because the two are different things and
@@ -196,6 +210,26 @@ export const team = pgTable(
      *
      * Zero means unmeasured rather than obscure: entities ingested before this
      * existed carry no score until they are refreshed.
+     */
+    /**
+     * Raw Wikidata sitelink count, as ingested.
+     *
+     * Separate from `notability` for the reason the person table records: the
+     * derivation reads this and writes that, and while they were one column
+     * the derivation consumed its own output and the raw signal was gone after
+     * the first run. Teams had exactly that problem, `notability` holding raw
+     * sitelinks with nothing derived from them at all.
+     */
+    sitelinks: integer('sitelinks').notNull().default(0),
+
+    /**
+     * Ranking score for list ordering, derived from `sitelinks` and sporting
+     * evidence. See `deriveTeamPriority`.
+     *
+     * Not raw sitelinks, which measure how many language editions wrote an
+     * article rather than how much the team matters: Mumbai Indians, with five
+     * IPL titles, scored 4 while Punjab Kings, with none, scored 25, so the
+     * Teams tab listed the most successful franchise in the competition last.
      */
     notability: integer('notability').notNull().default(0),
 

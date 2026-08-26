@@ -86,6 +86,32 @@ describe('WikipediaProvider.crestFileFrom', () => {
     expect(provider.crestFileFrom(box('| fullname = Some Football Club'))).toBeNull();
   });
 
+  it('drops the pipe-escape suffix competition infoboxes append', () => {
+    // FIFA World Cup, Copa America. `{{!}}` is a template standing in for a
+    // literal pipe, so the rendering option stays attached to the filename and
+    // the extension test would otherwise reject a perfectly good wordmark.
+    expect(
+      provider.crestFileFrom(
+        box('| image = FIFA World Cup wordmark (2023).svg{{!}}class=skin-invert'),
+      ),
+    ).toBe('File:FIFA World Cup wordmark (2023).svg');
+  });
+
+  it('reads a competition wordmark from the logo field', () => {
+    // Argentine Primera Division, where the field is `logo` rather than `image`.
+    expect(provider.crestFileFrom(box('| logo = Liga_profesional_afa_logo26.png'))).toBe(
+      'File:Liga_profesional_afa_logo26.png',
+    );
+  });
+
+  it('decodes a filename written with percent escapes', () => {
+    // Copa America. The API refuses the escaped form outright: "The requested
+    // page title contains invalid characters".
+    expect(provider.crestFileFrom(box('| image = Logo de la Conmebol Copa Am%C3%A9rica.svg'))).toBe(
+      'File:Logo de la Conmebol Copa América.svg',
+    );
+  });
+
   it('returns null when there is no infobox', () => {
     expect(provider.crestFileFrom("'''Some club''' is a football club.")).toBeNull();
   });

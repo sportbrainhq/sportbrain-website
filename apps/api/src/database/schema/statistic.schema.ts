@@ -501,10 +501,37 @@ export const honour = pgTable(
 
     /** Editorial framing, for records that carry context no provider supplies. */
     note: text('note'),
+
+    /**
+     * Which provider supplied the row.
+     *
+     * Needed because the two sources label a season differently and neither is
+     * wrong: Wikidata records the European Golden Shoe of season 2007-08 as
+     * 2008, Wikipedia as 2007. Stored together they look like two wins, and
+     * without a source column there is no way to tell a genuine pair of
+     * consecutive victories from one win counted twice.
+     */
+    source: text('source'),
+
+    /**
+     * How much the honour is worth, 1 (highest) to 4, or null if unranked.
+     *
+     * Wikidata says nothing about prestige, so a Ballon d'Or arrives
+     * indistinguishable from a regional player-of-the-year vote, and a page
+     * ordered by year alone put "diamond Konex award" above Messi's eight
+     * Ballons d'Or. The tier is assigned from a curated list per sport, which
+     * keeps it auditable: an honour ranked wrongly is one line to correct.
+     *
+     * Null means "not on the list", which is the honest default for the long
+     * tail rather than pretending to a judgement we have not made.
+     */
+    prestige: integer('prestige'),
     ...timestamps,
   },
   (table) => [
     index('honour_person_idx').on(table.personId, table.year),
+    /** The profile query: a person's honours, best first. */
+    index('honour_prestige_idx').on(table.personId, table.prestige, table.year),
     index('honour_team_idx').on(table.teamId, table.year),
     index('honour_competition_idx').on(table.competitionId),
     /**

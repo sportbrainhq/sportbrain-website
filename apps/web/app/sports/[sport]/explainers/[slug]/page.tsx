@@ -1,7 +1,12 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import { ArticleSection, ExplainerSources, RelatedConcepts } from '@/components/sports/explainer';
+import {
+  ArticleSection,
+  ExplainerSources,
+  RelatedConcepts,
+  RuleProvenance,
+} from '@/components/sports/explainer';
 import { ApiError, fetchExplainerDetail } from '@/lib/api';
 import { buildMetadata } from '@/lib/seo';
 
@@ -16,7 +21,12 @@ export async function generateMetadata({
     return buildMetadata({
       // "Offside Explained" rather than "Offside": the page answers a question,
       // and the title is what a reader sees in a list of search results.
-      title: `${explainer.title} Explained`,
+      // "LBW Explained" answers a question in a way "LBW" does not, and the
+      // subtitle earns its place where the concept has a formal name the reader
+      // may have searched for instead: "LBW Explained: Leg before wicket".
+      title: explainer.subtitle
+        ? `${explainer.title} Explained: ${explainer.subtitle}`
+        : `${explainer.title} Explained`,
       description:
         explainer.shortDescription ??
         `What ${explainer.title.toLowerCase()} means and how it works.`,
@@ -87,6 +97,12 @@ export default async function ExplainerPage({
           {explainer.readMinutes ? ` · ${explainer.readMinutes} min read` : ''}
         </p>
       </header>
+
+      <RuleProvenance
+        isRuleSensitive={explainer.isRuleSensitive}
+        sourceRevision={explainer.sourceRevision}
+        lastReviewedAt={explainer.lastReviewedAt}
+      />
 
       {explainer.sections.map((section) => (
         <ArticleSection key={section.type} section={section} title={explainer.title} />

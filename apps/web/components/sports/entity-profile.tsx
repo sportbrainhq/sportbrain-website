@@ -10,12 +10,43 @@ import type { EntityProfile, EntityRanking } from '@sportbrain/contracts';
  * chairman and an owner, while a smaller club may have a name and a country.
  */
 
-/** Ingested facts, grouped by category. */
-export function FactPanel({ facts }: { facts: EntityProfile['facts'] }) {
-  if (facts.length === 0) return null;
+/**
+ * Fact keys that state a present-tense club affiliation.
+ *
+ * `country` is deliberately absent: a cricketer's country is the fact their
+ * profile is built on and survives suppression, while the club does not.
+ */
+const CURRENT_CLUB_KEYS = new Set(['current_club', 'currentclub', 'club']);
 
-  const byCategory = new Map<string, typeof facts>();
-  for (const fact of facts) {
+/** Ingested facts, grouped by category. */
+export function FactPanel({
+  facts,
+  suppressCurrentClub = false,
+}: {
+  facts: EntityProfile['facts'];
+  /**
+   * Drops the current-club fact.
+   *
+   * Set for a retired competitor, because the provider records the last club a
+   * person played for and the page presented it as present tense: Zidane's
+   * profile read "Current club: Juventus FC", a club he left in 2001, and the
+   * club history immediately below it said so. The history is the honest
+   * rendering of the same fact.
+   */
+  suppressCurrentClub?: boolean;
+}) {
+  // Every key that names the club a person turns out for. Three of them,
+  // because the fact arrives from three infobox fields and dropping only
+  // `current_club` left a cricketer's page showing the same claim under
+  // "Club": the heading changed and the arbitrariness did not.
+  const visible = suppressCurrentClub
+    ? facts.filter((fact) => !CURRENT_CLUB_KEYS.has(fact.key))
+    : facts;
+
+  if (visible.length === 0) return null;
+
+  const byCategory = new Map<string, typeof visible>();
+  for (const fact of visible) {
     byCategory.set(fact.category, [...(byCategory.get(fact.category) ?? []), fact]);
   }
 
@@ -25,6 +56,12 @@ export function FactPanel({ facts }: { facts: EntityProfile['facts'] }) {
     venue: 'Home',
     commercial: 'Club',
     profile: 'Profile',
+    // Named explicitly, because the fallback rendered the raw category and a
+    // player's page carried two headings called "Career": this block, which
+    // holds the current club, and the club history below it. Where the club has
+    // been suppressed the block holds the person's country instead, and calling
+    // that "Current club" would be the same wrong label one level up.
+    career: suppressCurrentClub ? 'Affiliation' : 'Current club',
   };
 
   return (
@@ -139,10 +176,17 @@ function RankingTable({ ranking, sportSlug }: { ranking: EntityRanking; sportSlu
         )}
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-border">
+      {/* Every entry is rendered, inside a scrolling box rather than cut off at
+          a fixed count. These tables used to stop at fifteen rows, which was
+          fine while they were open-ended leaderboards and wrong once they
+          became complete records: the World Cup roll of honour holds 23
+          champions, and truncating it silently dropped the first eight
+          tournaments, Uruguay's 1930 title among them. A reader could not tell
+          the difference between a list that ended and a list that was cut. */}
+      <div className="scrollbar-thin max-h-[30rem] overflow-auto rounded-lg border border-border">
         <table className="w-full text-sm">
           <tbody>
-            {ranking.entries.slice(0, 15).map((entry) => (
+            {ranking.entries.map((entry) => (
               <tr
                 key={`${entry.rank}-${entry.name}`}
                 className="border-b border-border last:border-0"
@@ -150,14 +194,20 @@ function RankingTable({ ranking, sportSlug }: { ranking: EntityRanking; sportSlu
                 <td className="w-10 px-3 py-2 text-right font-mono text-xs tabular-nums text-muted-foreground">
                   {entry.rank}
                 </td>
-                {/* Linked only where the player resolved to a page we hold.
-                    The rest stay plain text rather than becoming links to a
-                    404, which is why the slug is resolved server-side instead
-                    of guessed from the name here. */}
+                {/* Linked only where the row resolved to a page we hold. A
+                    roll of honour names teams and a scorers table names
+                    players, so either kind of slug may be set; the rest stay
+                    plain text rather than becoming links to a 404, which is
+                    why the slug is resolved server-side instead of guessed
+                    from the name here. */}
                 <td className="px-3 py-2 font-medium">
-                  {sportSlug && entry.playerSlug ? (
+                  {sportSlug && (entry.playerSlug || entry.teamSlug) ? (
                     <Link
-                      href={`/sports/${sportSlug}/players/${entry.playerSlug}`}
+                      href={
+                        entry.playerSlug
+                          ? `/sports/${sportSlug}/players/${entry.playerSlug}`
+                          : `/sports/${sportSlug}/teams/${entry.teamSlug}`
+                      }
                       className="underline decoration-border underline-offset-4 transition-colors hover:decoration-foreground"
                     >
                       {entry.name}

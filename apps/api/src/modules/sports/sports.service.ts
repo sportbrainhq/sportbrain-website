@@ -36,13 +36,18 @@ export class SportsService {
       async () => {
         const sport = await this.findBySlug(slug);
 
-        // Four independent reads, so they run together rather than in series.
-        const [quickFacts, sections, history, governance] = await Promise.all([
-          this.overview.facts(sport.id),
-          this.overview.sections(sport.id),
-          this.overview.timeline(sport.id),
-          this.overview.governance(sport.id),
-        ]);
+        // Independent reads, so they run together rather than in series.
+        const [quickFacts, sections, history, governance, formats, concepts, membership, featured] =
+          await Promise.all([
+            this.overview.facts(sport.id),
+            this.overview.sections(sport.id),
+            this.overview.timeline(sport.id),
+            this.overview.governance(sport.id),
+            this.overview.formats(sport.id),
+            this.overview.concepts(sport.id),
+            this.overview.membership(sport.id),
+            this.overview.featured(sport.id, sport.slug),
+          ]);
 
         // Only sources the page actually cites are listed, which is what makes
         // the provenance panel meaningful rather than a dump of every row.
@@ -63,6 +68,10 @@ export class SportsService {
           sections,
           history,
           governance,
+          formats,
+          concepts,
+          membership,
+          featured,
           sources: await this.overview.sources(sourceIds),
         };
       },
