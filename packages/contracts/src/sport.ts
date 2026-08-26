@@ -28,6 +28,15 @@ export const sportTraitsSchema = z
     hasTeams: z.boolean().optional(),
     hasLeagueTable: z.boolean().optional(),
     individualCompetitors: z.boolean().optional(),
+    /**
+     * Whether a player's club is a fact worth showing as a present-tense one.
+     *
+     * False for cricket, and not a data gap: a cricketer belongs to a national
+     * side, a first-class side and one or more franchises at the same time, and
+     * a single "Current club" box picks one of them arbitrarily. Football has
+     * one club at a time and the box means something there.
+     */
+    playersHaveCurrentClub: z.boolean().optional(),
     scoringModel: z.string().optional(),
   })
   .passthrough();
@@ -118,8 +127,21 @@ export const entityRankingSchema = z.object({
        * the guessing the mapping table exists to avoid. Null where the player
        * is not in the database, which is most of the long tail, and the row is
        * then rendered as plain text.
+       *
+       * Where no source link exists, as on the curated competition tables, the
+       * name itself is matched against the players we hold and is only accepted
+       * when exactly one matches.
        */
       playerSlug: z.string().nullable().optional(),
+      /**
+       * Slug of the team's own page, when we hold one.
+       *
+       * A roll of honour lists clubs and nations rather than people, so the
+       * same row can resolve to a team instead of a player. Never both: a name
+       * that matches an entity of each type is left unlinked rather than
+       * guessed at.
+       */
+      teamSlug: z.string().nullable().optional(),
     }),
   ),
 });
@@ -249,7 +271,12 @@ export const playerSummarySchema = z.object({
 export type PlayerSummary = z.infer<typeof playerSummarySchema>;
 
 export const playerDetailSchema = playerSummarySchema.extend({
-  sport: z.object({ slug: z.string(), name: z.string() }),
+  /**
+   * Traits travel with the player so the page can ask what kind of sport this
+   * is rather than testing the slug: whether a current club is a fact worth
+   * showing, for one, which is false for cricket and true for football.
+   */
+  sport: z.object({ slug: z.string(), name: z.string(), traits: sportTraitsSchema }),
   dateOfDeath: z.string().nullable(),
   /**
    * `active`, `retired`, or null where the evidence does not say.
@@ -526,6 +553,125 @@ export const overviewSectionSchema = z.object({
 });
 export type OverviewSection = z.infer<typeof overviewSectionSchema>;
 
+/**
+ * One node in a sport's format taxonomy.
+ *
+ * `matchClass` and `isInternational` are separate fields because they vary
+ * independently, and collapsing them is the single most common error in cricket
+ * data. Test and first-class cricket share a match class and differ only in
+ * international status; ODI and List A likewise; T20I and domestic T20 likewise.
+ * A client that renders only one of the two will state something false.
+ *
+ * `isInternational` is nullable rather than defaulted: null means the question
+ * does not apply, which is the correct answer for a grouping node such as
+ * "limited-overs cricket" and is not the same answer as false.
+ */
+export const sportFormatSchema: z.ZodType<{
+  id: string;
+  key: string;
+  label: string;
+  matchClass: string;
+  isInternational: boolean | null;
+  oversPerSide: number | null;
+  inningsPerSide: number | null;
+  maxDays: number | null;
+  drawPossible: boolean | null;
+  description: string | null;
+  conditionsAuthority: string | null;
+  children: unknown[];
+}> = z.object({
+  id: z.string(),
+  key: z.string(),
+  label: z.string(),
+  /** `multi_day` or `limited_overs`. What kind of match it is. */
+  matchClass: z.string(),
+  /** Whether national sides contest it. Null where the question does not apply. */
+  isInternational: z.boolean().nullable(),
+  oversPerSide: z.number().int().nullable(),
+  inningsPerSide: z.number().int().nullable(),
+  maxDays: z.number().int().nullable(),
+  drawPossible: z.boolean().nullable(),
+  description: z.string().nullable(),
+  /**
+   * Which document governs it: `mcc` for the Laws, `icc` for international
+   * playing conditions, a board or competition otherwise.
+   *
+   * Carried to the client because the Laws and a competition's playing
+   * conditions are different documents, and presenting an over limit as a Law
+   * of Cricket is wrong.
+   */
+  conditionsAuthority: z.string().nullable(),
+  children: z.array(z.lazy(() => sportFormatSchema)),
+});
+export type SportFormat = z.infer<typeof sportFormatSchema>;
+
+/**
+ * A term the Overview introduces before the Explainers teach it.
+ *
+ * `explainerSlug` is present only when an Explainer with that slug actually
+ * exists, resolved server-side. The Overview is written before the Explainer
+ * library is, so the alternative is a page full of links to nothing.
+ */
+export const sportConceptSchema = z.object({
+  key: z.string(),
+  term: z.string(),
+  summary: z.string(),
+  /** `role`, `equipment`, `area` or `structure`. Groups the concepts. */
+  category: z.string(),
+  /**
+   * Set where the term carries more than one meaning.
+   *
+   * Cricket's "wicket" is the motivating case: the stumps, a dismissal, and
+   * colloquially the pitch. A single definition teaches something a reader will
+   * have to unlearn.
+   */
+  ambiguityNote: z.string().nullable(),
+  /** Only populated when the target Explainer exists. */
+  explainerSlug: z.string().nullable(),
+});
+export type SportConcept = z.infer<typeof sportConceptSchema>;
+
+/**
+ * A class of membership within a governing body.
+ *
+ * Distinct from `governingBodySchema` because a membership class is not a body
+ * in the hierarchy. The ICC's Full and Associate Membership grades its members;
+ * FIFA's confederations divide the world geographically. Modelling the former
+ * as children of the world body would say something false about both.
+ *
+ * `asOf` is mandatory, not decorative. Membership changes, and four sources
+ * consulted for the ICC's own figures gave four different totals, so a count
+ * without a date is a claim that quietly expires.
+ */
+export const membershipTierSchema = z.object({
+  tier: z.string(),
+  label: z.string(),
+  count: z.number().int().nonnegative(),
+  /** ISO date the count was read from the governing body. */
+  asOf: z.string(),
+  description: z.string(),
+});
+export type MembershipTier = z.infer<typeof membershipTierSchema>;
+
+/**
+ * A canonical entity featured on the Overview.
+ *
+ * `href` is present only where the entity resolved to a real row, so a card
+ * either links to a page that exists or renders as plain text. The client never
+ * has to construct a URL and hope.
+ */
+export const overviewEntityRefSchema = z.object({
+  section: z.string(),
+  entityType: z.enum(['person', 'team', 'competition']),
+  displayName: z.string(),
+  blurb: z.string().nullable(),
+  meta: z.string().nullable(),
+  /** Relative path to the entity's page, or null where we hold no such row. */
+  href: z.string().nullable(),
+  imageUrl: z.string().nullable(),
+});
+export type OverviewEntityRef = z.infer<typeof overviewEntityRefSchema>;
+
 export const sportOverviewSchema = z.object({
   sport: sportSchema,
   /** Structured quick facts, grouped by category for display. */
@@ -535,6 +681,29 @@ export const sportOverviewSchema = z.object({
   history: z.array(timelineEventSchema),
   /** The world body with its confederations nested. */
   governance: z.array(governingBodySchema),
+  /**
+   * The format taxonomy, nested as a tree. Empty for a sport played one way.
+   *
+   * Required rather than optional, and the API always sends it: an empty array
+   * for football, a populated tree for cricket. Neither `.default()` nor
+   * `.catch()` is used, both for the same reason the recursive `governance`
+   * field avoids them. A default makes the field optional on the schema's input
+   * type while leaving it required on the output, so `z.infer` and the parser
+   * disagree; and either wrapper around an array of a recursively-annotated
+   * `z.ZodType` erases the element type back to `unknown`.
+   */
+  formats: z.array(sportFormatSchema),
+  /** Vocabulary a newcomer needs. Empty where none has been authored. */
+  concepts: z.array(sportConceptSchema),
+  /** Membership classes of the world body, where it grades its members. */
+  membership: z.array(membershipTierSchema),
+  /**
+   * Featured people, clubs and competitions, keyed by the block they appear in.
+   *
+   * Empty for a sport with none authored, which is what football and cricket
+   * currently return.
+   */
+  featured: z.array(overviewEntityRefSchema),
   sources: z.array(contentSourceSchema),
 });
 export type SportOverview = z.infer<typeof sportOverviewSchema>;

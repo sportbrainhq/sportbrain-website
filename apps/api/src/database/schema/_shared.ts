@@ -80,11 +80,32 @@ export const publicationStatusEnum = pgEnum('publication_status', [
  * `franchise` is separated from `club` on purpose: IPL and BBL sides are drafted
  * franchises without the continuous historical identity a football club has, and
  * flattening them into `club` makes "oldest club" style queries wrong.
+ *
+ * `representative` and `development` were added for cricket, where the football
+ * club/franchise pair does not cover the ground:
+ *
+ *   - **`representative`** is a state, county, province, region or territory
+ *     side: Yorkshire, Queensland, Otago, Bengal. It is neither a club, having
+ *     no members and no independent existence, nor a franchise, having not been
+ *     created for a competition. One value rather than one per territory type,
+ *     because the schema must not assert that every country organises domestic
+ *     cricket the same way; England has counties and India has states, and which
+ *     it is belongs on the team rather than in this enum.
+ *   - **`development`** is an age-group, academy or A-side. Separated because an
+ *     under-19 record and a senior record are not the same career, and because
+ *     these otherwise inflate a "teams" count that readers reasonably take as a
+ *     measure of how much of a sport is covered.
+ *
+ * Both were introduced correcting a real defect: cricket ingestion defaulted
+ * every non-national side to `franchise`, which labelled 814 teams a franchise
+ * when most were representative sides or clubs.
  */
 export const teamKindEnum = pgEnum('team_kind', [
   'international',
   'club',
   'franchise',
+  'representative',
+  'development',
   'invitational',
 ]);
 

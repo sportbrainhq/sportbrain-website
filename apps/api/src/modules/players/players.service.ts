@@ -68,7 +68,15 @@ export class PlayersService {
             row.careerStatus === 'active' || row.careerStatus === 'retired'
               ? row.careerStatus
               : null,
-          sport: { slug: row.sportSlug, name: row.sportName },
+          // Traits travel with the player, so the page can ask what kind of
+          // sport this is rather than testing the slug. A cricketer has no
+          // current club to show and a footballer does, and that difference
+          // belongs in the sport's own record.
+          sport: {
+            slug: row.sportSlug,
+            name: row.sportName,
+            traits: (row.sportTraits ?? {}) as Record<string, unknown>,
+          },
           honours,
           careerSummary,
           statistics,

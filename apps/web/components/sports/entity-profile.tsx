@@ -10,6 +10,14 @@ import type { EntityProfile, EntityRanking } from '@sportbrain/contracts';
  * chairman and an owner, while a smaller club may have a name and a country.
  */
 
+/**
+ * Fact keys that state a present-tense club affiliation.
+ *
+ * `country` is deliberately absent: a cricketer's country is the fact their
+ * profile is built on and survives suppression, while the club does not.
+ */
+const CURRENT_CLUB_KEYS = new Set(['current_club', 'currentclub', 'club']);
+
 /** Ingested facts, grouped by category. */
 export function FactPanel({
   facts,
@@ -27,7 +35,13 @@ export function FactPanel({
    */
   suppressCurrentClub?: boolean;
 }) {
-  const visible = suppressCurrentClub ? facts.filter((fact) => fact.key !== 'current_club') : facts;
+  // Every key that names the club a person turns out for. Three of them,
+  // because the fact arrives from three infobox fields and dropping only
+  // `current_club` left a cricketer's page showing the same claim under
+  // "Club": the heading changed and the arbitrariness did not.
+  const visible = suppressCurrentClub
+    ? facts.filter((fact) => !CURRENT_CLUB_KEYS.has(fact.key))
+    : facts;
 
   if (visible.length === 0) return null;
 
@@ -44,9 +58,10 @@ export function FactPanel({
     profile: 'Profile',
     // Named explicitly, because the fallback rendered the raw category and a
     // player's page carried two headings called "Career": this block, which
-    // holds only the current club, and the club history below it. The two are
-    // different things and now say so.
-    career: 'Current club',
+    // holds the current club, and the club history below it. Where the club has
+    // been suppressed the block holds the person's country instead, and calling
+    // that "Current club" would be the same wrong label one level up.
+    career: suppressCurrentClub ? 'Affiliation' : 'Current club',
   };
 
   return (
@@ -168,7 +183,7 @@ function RankingTable({ ranking, sportSlug }: { ranking: EntityRanking; sportSlu
           champions, and truncating it silently dropped the first eight
           tournaments, Uruguay's 1930 title among them. A reader could not tell
           the difference between a list that ended and a list that was cut. */}
-      <div className="max-h-[30rem] overflow-auto rounded-lg border border-border">
+      <div className="scrollbar-thin max-h-[30rem] overflow-auto rounded-lg border border-border">
         <table className="w-full text-sm">
           <tbody>
             {ranking.entries.map((entry) => (
@@ -179,14 +194,20 @@ function RankingTable({ ranking, sportSlug }: { ranking: EntityRanking; sportSlu
                 <td className="w-10 px-3 py-2 text-right font-mono text-xs tabular-nums text-muted-foreground">
                   {entry.rank}
                 </td>
-                {/* Linked only where the player resolved to a page we hold.
-                    The rest stay plain text rather than becoming links to a
-                    404, which is why the slug is resolved server-side instead
-                    of guessed from the name here. */}
+                {/* Linked only where the row resolved to a page we hold. A
+                    roll of honour names teams and a scorers table names
+                    players, so either kind of slug may be set; the rest stay
+                    plain text rather than becoming links to a 404, which is
+                    why the slug is resolved server-side instead of guessed
+                    from the name here. */}
                 <td className="px-3 py-2 font-medium">
-                  {sportSlug && entry.playerSlug ? (
+                  {sportSlug && (entry.playerSlug || entry.teamSlug) ? (
                     <Link
-                      href={`/sports/${sportSlug}/players/${entry.playerSlug}`}
+                      href={
+                        entry.playerSlug
+                          ? `/sports/${sportSlug}/players/${entry.playerSlug}`
+                          : `/sports/${sportSlug}/teams/${entry.teamSlug}`
+                      }
                       className="underline decoration-border underline-offset-4 transition-colors hover:decoration-foreground"
                     >
                       {entry.name}

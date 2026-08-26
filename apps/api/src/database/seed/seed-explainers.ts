@@ -149,12 +149,16 @@ export async function seedExplainerLibrary(
     const [row] = await db.execute<{ id: string }>(sql`
       INSERT INTO explainer (
         sport_id, slug, title, subtitle, short_description, type, difficulty,
-        primary_category_id, read_minutes, is_start_here, is_featured, status, display_order
+        primary_category_id, read_minutes, is_start_here, is_featured,
+        is_rule_sensitive, source_revision, last_reviewed_at,
+        status, display_order
       ) VALUES (
         ${sportId}, ${entry.slug}, ${entry.title}, ${entry.subtitle ?? null},
         ${entry.shortDescription ?? null}, ${entry.type}, ${entry.difficulty},
         ${categoryIds.get(entry.category) ?? null}, ${entry.readMinutes ?? null},
         ${entry.isStartHere ? 'true' : 'false'}, ${entry.isFeatured ? 'true' : 'false'},
+        ${entry.ruleSensitive ? 'true' : 'false'}, ${entry.sourceRevision ?? null},
+        ${entry.lastReviewedAt ?? null},
         ${isPublished ? 'published' : 'draft'}, ${entry.order ?? 100}
       )
       ON CONFLICT (sport_id, slug) DO UPDATE SET
@@ -167,6 +171,9 @@ export async function seedExplainerLibrary(
         read_minutes = EXCLUDED.read_minutes,
         is_start_here = EXCLUDED.is_start_here,
         is_featured = EXCLUDED.is_featured,
+        is_rule_sensitive = EXCLUDED.is_rule_sensitive,
+        source_revision = EXCLUDED.source_revision,
+        last_reviewed_at = EXCLUDED.last_reviewed_at,
         status = EXCLUDED.status,
         display_order = EXCLUDED.display_order,
         updated_at = now()

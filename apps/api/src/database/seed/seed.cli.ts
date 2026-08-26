@@ -40,18 +40,71 @@ import {
   FOOTBALL_SECTIONS,
   FOOTBALL_SOURCES,
   FOOTBALL_TIMELINE,
+  type GoverningBodySeed,
+  type SectionSeed,
+  type SourceSeed,
+  type TimelineSeed,
 } from './football-overview';
+import {
+  CRICKET_CONCEPTS,
+  CRICKET_FACTS,
+  CRICKET_FORMATS,
+  CRICKET_GOVERNANCE,
+  CRICKET_MEMBERSHIP,
+  CRICKET_SECTIONS,
+  CRICKET_SOURCES,
+  CRICKET_TIMELINE,
+  type ConceptSeed,
+  type FactSeed,
+  type FormatSeed,
+  type MembershipTierSeed,
+} from './cricket-overview';
+import {
+  BASKETBALL_CONCEPTS,
+  BASKETBALL_FACTS,
+  BASKETBALL_FORMATS,
+  BASKETBALL_GOVERNANCE,
+  BASKETBALL_MEMBERSHIP,
+  BASKETBALL_SECTIONS,
+  BASKETBALL_SOURCES,
+  BASKETBALL_TIMELINE,
+  BASKETBALL_FEATURED,
+  type FeaturedEntitySeed,
+} from './basketball-overview';
 import {
   FOOTBALL_EXPLAINER_CATEGORIES,
   FOOTBALL_EXPLAINER_TOPICS,
 } from './football-explainer-taxonomy';
 import { FOOTBALL_EXPLAINERS, FOOTBALL_EXPLAINER_SOURCES } from './football-explainers';
 import { FOOTBALL_SEEDED_AWARDS } from './football-competition-awards';
-import { FOOTBALL_CURATED_COMPETITIONS, FOOTBALL_CURATED_SLUGS } from './football-competitions';
+import { WikipediaClient } from '../../integrations/providers/wikipedia/wikipedia.client';
+import { CRICKET_COMPETITION_RANKING_SEEDS } from './cricket-competition-rankings';
+import { CRICKET_CURATED_COMPETITIONS, CRICKET_CURATED_SLUGS } from './cricket-competitions';
+import {
+  FOOTBALL_CURATED_COMPETITIONS,
+  FOOTBALL_CURATED_SLUGS,
+  type CuratedCompetition,
+} from './football-competitions';
+import {
+  CRICKET_EXPLAINER_CATEGORIES,
+  CRICKET_EXPLAINER_TOPICS,
+} from './cricket-explainer-taxonomy';
+import { CRICKET_EXPLAINERS, CRICKET_EXPLAINER_SOURCES } from './cricket-explainers';
+import {
+  BASKETBALL_EXPLAINER_CATEGORIES,
+  BASKETBALL_EXPLAINER_TOPICS,
+} from './basketball-explainer-taxonomy';
+import { BASKETBALL_EXPLAINERS, BASKETBALL_EXPLAINER_SOURCES } from './basketball-explainers';
+import { BASKETBALL_RULES_AND_COURT } from './basketball-rules-and-court';
+import { BASKETBALL_PLAY_AND_STATS } from './basketball-play-and-stats';
+import { BASKETBALL_LEAGUES } from './basketball-leagues';
 import { seedExplainerLibrary } from './seed-explainers';
+import { basketballHonourTier } from './basketball-honour-tiers';
+import { cricketHonourTier } from './cricket-honour-tiers';
 import { honourTier } from './football-honour-tiers';
 import { STATISTIC_REGISTRY } from './statistic-registry';
 import { TEAM_RANKING_SEEDS } from './team-rankings';
+import { COMPETITION_RANKING_SEEDS, type CompetitionRankingSeed } from './competition-rankings';
 
 for (const candidate of [resolve(process.cwd(), '../../.env'), resolve(process.cwd(), '.env')]) {
   if (existsSync(candidate)) loadDotenv({ path: candidate });
@@ -63,11 +116,16 @@ async function main(): Promise<void> {
   const db = drizzle(client, { schema });
 
   try {
-    const competitions = await seedFootballCompetitions(db);
-    process.stdout.write(
-      `Competitions: ${competitions.created} created, ${competitions.updated} curated, ` +
-        `${competitions.deleted} removed\n`,
-    );
+    for (const [slug, curated, slugs] of [
+      ['football', FOOTBALL_CURATED_COMPETITIONS, FOOTBALL_CURATED_SLUGS],
+      ['cricket', CRICKET_CURATED_COMPETITIONS, CRICKET_CURATED_SLUGS],
+    ] as const) {
+      const competitions = await seedCuratedCompetitions(db, slug, [...curated], slugs);
+      process.stdout.write(
+        `Competitions: ${slug} — ${competitions.created} created, ` +
+          `${competitions.updated} curated, ${competitions.deleted} removed\n`,
+      );
+    }
 
     const awards = await seedCompetitionAwards(db);
     process.stdout.write(
@@ -83,14 +141,24 @@ async function main(): Promise<void> {
     const spans = await deriveCareerSpans(db);
     process.stdout.write(`Derived:  ${spans} career spans written\n`);
 
-    const ranked = await derivePersonPriority(db);
-    process.stdout.write(`Derived:  ${ranked} people re-prioritised\n`);
-
+    // Deduplicate, then tier, then prioritise. The order is load-bearing and
+    // used to be wrong: both priority passes weight honours by `prestige`, and
+    // they ran *before* `deriveHonourPrestige` assigned it. Every run therefore
+    // scored teams from the previous run's tiers, and on a fresh database the
+    // first run scored every honour flat, which is the defect that put Real
+    // Madrid Baloncesto above the Lakers. Deduplication comes first so a
+    // merged honour is not tiered and then counted twice.
     const merged = await deduplicateHonours(db);
     process.stdout.write(`Derived:  ${merged} duplicate honours merged\n`);
 
     const tiered = await deriveHonourPrestige(db);
     process.stdout.write(`Derived:  ${tiered} honours tiered\n`);
+
+    const ranked = await derivePersonPriority(db);
+    process.stdout.write(`Derived:  ${ranked} people re-prioritised\n`);
+
+    const rankedTeams = await deriveTeamPriority(db);
+    process.stdout.write(`Derived:  ${rankedTeams} teams re-prioritised\n`);
 
     const statuses = await derivePersonStatus(db);
     process.stdout.write(`Derived:  ${statuses} career statuses set\n`);
@@ -110,11 +178,62 @@ async function main(): Promise<void> {
         `${seededRankings.skipped} teams not in the database\n`,
     );
 
-    const overview = await seedFootballOverview(db);
+    const competitionRankings = await seedCompetitionRankings(db);
     process.stdout.write(
-      `Overview: ${overview.sources} sources, ${overview.timeline} timeline events, ` +
-        `${overview.bodies} governing bodies, ${overview.sections} sections\n`,
+      `Rankings: ${competitionRankings.written} competition leaderboards, ` +
+        `${competitionRankings.removed} superseded tables removed, ` +
+        `${competitionRankings.skipped} competitions not in the database\n`,
     );
+
+    // Football, then cricket, then basketball. Order is irrelevant to
+    // correctness: the source prune is scoped by URL and every other prune by
+    // sport_id, so no sport's seed can touch another's rows. They are listed
+    // rather than looped so that adding a sport stays an explicit decision.
+    for (const [slug, content] of [
+      [
+        'football',
+        {
+          sources: FOOTBALL_SOURCES,
+          timeline: FOOTBALL_TIMELINE,
+          governance: FOOTBALL_GOVERNANCE,
+          sections: FOOTBALL_SECTIONS,
+        },
+      ],
+      [
+        'cricket',
+        {
+          sources: CRICKET_SOURCES,
+          timeline: CRICKET_TIMELINE,
+          governance: CRICKET_GOVERNANCE,
+          sections: CRICKET_SECTIONS,
+          formats: CRICKET_FORMATS,
+          concepts: CRICKET_CONCEPTS,
+          facts: CRICKET_FACTS,
+          membership: CRICKET_MEMBERSHIP,
+        },
+      ],
+      [
+        'basketball',
+        {
+          sources: BASKETBALL_SOURCES,
+          timeline: BASKETBALL_TIMELINE,
+          governance: BASKETBALL_GOVERNANCE,
+          sections: BASKETBALL_SECTIONS,
+          formats: BASKETBALL_FORMATS,
+          concepts: BASKETBALL_CONCEPTS,
+          facts: BASKETBALL_FACTS,
+          membership: BASKETBALL_MEMBERSHIP,
+          featured: BASKETBALL_FEATURED,
+        },
+      ],
+    ] as const) {
+      const overview = await seedSportOverview(db, slug, content);
+      process.stdout.write(
+        `Overview: ${slug} — ${overview.sources} sources, ${overview.timeline} timeline events, ` +
+          `${overview.bodies} governing bodies, ${overview.sections} sections, ` +
+          `${overview.formats} formats, ${overview.concepts} concepts, ${overview.facts} facts\n`,
+      );
+    }
 
     const library = await seedExplainerLibrary(
       db,
@@ -129,11 +248,91 @@ async function main(): Promise<void> {
         `(${library.published} published), ${library.sections} sections, ` +
         `${library.aliases} aliases, ${library.relations} relations\n`,
     );
+
+    // Cricket runs through the same function with its own taxonomy and content.
+    // That the call is identical is the point: a third sport is one more block
+    // here and two data files, with no schema, API or frontend work.
+    const cricketLibrary = await seedExplainerLibrary(
+      db,
+      'cricket',
+      CRICKET_EXPLAINER_CATEGORIES,
+      CRICKET_EXPLAINER_TOPICS,
+      CRICKET_EXPLAINERS,
+      CRICKET_EXPLAINER_SOURCES,
+    );
+    process.stdout.write(
+      `Explainers: ${cricketLibrary.categories} cricket categories, ` +
+        `${cricketLibrary.explainers} concepts (${cricketLibrary.published} published), ` +
+        `${cricketLibrary.sections} sections, ${cricketLibrary.aliases} aliases, ` +
+        `${cricketLibrary.relations} relations\n`,
+    );
+    // Basketball, through the same function again. That the call is identical
+    // to football's and cricket's is the point: a third library is two data
+    // files and one block here, with no schema, API or frontend work beyond the
+    // court diagram, which is a visual the other two sports do not need.
+    const basketballLibrary = await seedExplainerLibrary(
+      db,
+      'basketball',
+      BASKETBALL_EXPLAINER_CATEGORIES,
+      BASKETBALL_EXPLAINER_TOPICS,
+      [
+        ...BASKETBALL_EXPLAINERS,
+        ...BASKETBALL_RULES_AND_COURT,
+        ...BASKETBALL_PLAY_AND_STATS,
+        ...BASKETBALL_LEAGUES,
+      ],
+      BASKETBALL_EXPLAINER_SOURCES,
+    );
+    process.stdout.write(
+      `Explainers: ${basketballLibrary.categories} basketball categories, ` +
+        `${basketballLibrary.explainers} concepts (${basketballLibrary.published} published), ` +
+        `${basketballLibrary.sections} sections, ${basketballLibrary.aliases} aliases, ` +
+        `${basketballLibrary.relations} relations\n`,
+    );
+    await revalidateCaches();
   } catch (error) {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     process.exitCode = 1;
   } finally {
     await client.end({ timeout: 5 });
+  }
+}
+
+/**
+ * Drops the web app's cached pages after a seed run.
+ *
+ * The seed derives ordering (`deriveTeamPriority`, `derivePersonPriority`) and
+ * rewrites editorial content, and both are read through a one-hour cache. Until
+ * this existed the effect was invisible for that hour: `deriveTeamPriority` put
+ * Mumbai Indians top of the franchises and the Teams tab went on showing the old
+ * order, which looks exactly like the derivation not having worked.
+ *
+ * Best effort, matching the ingestion service's own revalidation: seeding
+ * having succeeded is the valuable outcome, and a web app that is not running
+ * must not fail the run. Absent configuration is silent, because that is the
+ * normal state in CI.
+ */
+async function revalidateCaches(): Promise<void> {
+  const url = process.env.WEB_URL;
+  const secret = process.env.REVALIDATE_SECRET;
+  if (!url || !secret) return;
+
+  try {
+    const response = await fetch(new URL('/api/revalidate', url), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${secret}` },
+      body: JSON.stringify({ tags: ['sports', 'teams', 'players', 'competitions', 'content'] }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    process.stdout.write(
+      response.ok
+        ? 'Cache:    web pages revalidated\n'
+        : `Cache:    revalidation returned ${response.status}; pages may serve stale data\n`,
+    );
+  } catch (error) {
+    process.stdout.write(
+      `Cache:    revalidation failed (${error instanceof Error ? error.message : String(error)})\n`,
+    );
   }
 }
 
@@ -320,6 +519,10 @@ async function deriveHonourCounts(db: Db): Promise<number> {
  *   - **Career evidence as a small bonus.** Enough to lift a real player above
  *     a politician with a similar article count, not enough to reorder players
  *     among themselves.
+ *   - **Sport affiliation, weighted to clear the sitelink cap.** A club naming
+ *     the sport, or a recorded position, is proof the person had a career in it
+ *     rather than a stray Wikidata statement. This is what puts Archie Jackson
+ *     above Arthur Conan Doyle.
  *
  * Reads `sitelinks` and writes `notability`, which are now separate columns.
  * They were the same one, so this function consumed its own output and the raw
@@ -340,21 +543,174 @@ async function derivePersonPriority(db: Db): Promise<number> {
           JOIN external_mapping m
             ON m.entity_id = p.id AND m.entity_type = 'person' AND m.provider = 'wikipedia'
           WHERE r.entity_type = 'team' AND e->>'link' = m.external_id
-        ) AS ranked
+        ) AS ranked,
+        -- Evidence that the person played *this* sport rather than merely
+        -- having a statement saying they once did.
+        --
+        -- Wikidata's sport statement is true of anybody who played the game at
+        -- all, which is why the cricket catalogue contains a novelist, a king
+        -- and a playwright. Capping sitelinks stopped them opening the list; it
+        -- did not stop them outranking several thousand actual Test players,
+        -- because a cap of 40 still beats a county professional's nine.
+        --
+        -- Matched against the sport's own team catalogue rather than against
+        -- the sport's name.
+        --
+        -- Name-matching was tried first and is wrong: an IPL franchise is not
+        -- called "... cricket team", so Virat Kohli ("Royal Challengers
+        -- Bengaluru"), Adam Gilchrist ("Punjab Kings") and AB de Villiers
+        -- ("Delhi Capitals") all failed the test and were demoted below
+        -- journeymen whose club happened to carry the word. Resolving the club
+        -- against the team table fixes that and is strictly better evidence:
+        -- the club is one we actually hold for this sport.
+        EXISTS (
+          SELECT 1 FROM team tm
+          WHERE tm.sport_id = p.primary_sport_id
+            AND p.attributes->>'currentClub' IS NOT NULL
+            AND (
+              lower(tm.name) = lower(p.attributes->>'currentClub')
+              OR lower(p.attributes->>'currentClub') = ANY (
+                SELECT lower(alias) FROM unnest(coalesce(tm.aliases, '{}'::text[])) AS alias
+              )
+            )
+        ) AS affiliated,
+        (p.attributes->>'position' IS NOT NULL) AS positioned
       FROM person p
+      LEFT JOIN sport s ON s.id = p.primary_sport_id
     )
     UPDATE person p SET
       notability =
-        evidence.sitelinks * 20
+        -- Capped, and the cap is the point.
+        --
+        -- Uncapped, global fame swamps every sporting signal, because Wikidata
+        -- sitelinks measure how many languages wrote about somebody rather than
+        -- how good they were. A sport statement is true of anyone who played the
+        -- game at all, so the cricket catalogue contains Arthur Conan Doyle
+        -- (183 sitelinks), Charles III (176) and Samuel Beckett (140), all of
+        -- whom played first-class cricket and none of whom anybody opens a
+        -- cricket site to read about. At 20 a link they scored 3,660, 3,520 and
+        -- 2,800 against Tendulkar's 1,700, so the Players tab opened with a
+        -- novelist, a king and a playwright.
+        --
+        -- 40 is set above the most-documented actual sportsperson we hold and
+        -- below the incidental-cricketer polymaths, so it costs a genuine star
+        -- nothing and removes the distortion.
+        least(evidence.sitelinks, 40) * 20
         + least(evidence.honours, 150) * 12
-        -- Flat bonuses, not multipliers. Being in a records table at all says
-        -- "verified footballer"; being in four says our coverage is good.
-        + CASE WHEN evidence.ranked THEN 250 ELSE 0 END
-        + least(evidence.clubs, 6) * 25,
+        -- Raised from 250, which was too small to matter once sitelinks reached
+        -- three figures. Appearing in a team's records table is the strongest
+        -- evidence available that somebody played the sport seriously rather
+        -- than incidentally, and it is now weighted to say so.
+        + CASE WHEN evidence.ranked THEN 900 ELSE 0 END
+        + least(evidence.clubs, 6) * 25
+        -- Weighted to clear the sitelink cap on its own: 40 links score 800, so
+        -- an affiliated player with no other evidence still outranks a polymath
+        -- with the maximum. Deliberately not larger, because it must not
+        -- reorder genuine players among themselves.
+        + CASE WHEN evidence.affiliated THEN 850 ELSE 0 END
+        + CASE WHEN evidence.positioned THEN 60 ELSE 0 END,
       updated_at = now()
     FROM evidence
     WHERE evidence.id = p.id
       AND p.confidence <> 'curated'
+    RETURNING 1 AS count
+  `);
+
+  return rows.length;
+}
+
+/**
+ * Scores every team for list ordering.
+ *
+ * The team counterpart of `derivePersonPriority`, added because teams had no
+ * such pass at all: `notability` held the raw sitelink count and the Teams tab
+ * was ordered by it directly. That measures how many language editions wrote an
+ * article, which tracks a football club's standing tolerably and a cricket
+ * franchise's not at all. Mumbai Indians, with five IPL titles, scored 4 while
+ * Punjab Kings, with none, scored 25, so the tab put the competition's most
+ * successful side last among the IPL teams.
+ *
+ * The weights follow the person formula deliberately, so the two orderings
+ * behave alike:
+ *
+ *   - **Sitelinks** stay the base signal. They are a genuine popularity measure
+ *     and the only one available for every team we hold.
+ *   - **Honours** are what sitelinks miss, and they are weighted heavily enough
+ *     to reorder the franchises: a title is the thing a reader is looking for
+ *     when they scan a list of teams. Weighted by the honour's **prestige tier**
+ *     rather than counted, because counting made a state side with fifty
+ *     domestic titles outrank a Test nation with two World Cups.
+ *   - **Squad size and leaderboards** are flat bonuses rather than multipliers,
+ *     as in the person pass. Holding players or a records table says our
+ *     coverage of that team is real, which is worth surfacing; holding twice as
+ *     many does not make the team twice as important.
+ *   - **Being active** breaks ties towards sides a reader can still watch.
+ *     Defunct franchises keep their honours and sink below their peers.
+ *
+ * Reads `sitelinks` and writes `notability`, which are separate columns as of
+ * migration 0023. Skips curated rows, so a hand-set order survives.
+ */
+async function deriveTeamPriority(db: Db): Promise<number> {
+  const rows = await db.execute<{ count: string }>(sql`
+    WITH evidence AS (
+      SELECT
+        t.id,
+        t.sitelinks,
+        t.is_active,
+        -- Weighted by prestige rather than counted.
+        --
+        -- A flat count says a Sheffield Shield and a World Cup are the same
+        -- thing, and with 48 of the former New South Wales outranked every Test
+        -- nation. Tier 1 is worth twelve of a tier 4, which is roughly the ratio
+        -- a reader would expect between a world title and a defunct sponsor cup.
+        --
+        -- Unranked honours score 1, not 0: an honour we have not judged is still
+        -- evidence the team won something, and zeroing them would penalise a
+        -- team for a gap in our curation rather than in its trophy cabinet.
+        (
+          SELECT coalesce(sum(
+            CASE h.prestige
+              WHEN 1 THEN 12
+              WHEN 2 THEN 6
+              WHEN 3 THEN 2
+              WHEN 4 THEN 1
+              ELSE 1
+            END
+          ), 0)
+          FROM honour h WHERE h.team_id = t.id
+        ) AS honour_weight,
+        (SELECT count(*) FROM honour h WHERE h.team_id = t.id) AS honours,
+        (SELECT count(DISTINCT pt.person_id) FROM person_team pt WHERE pt.team_id = t.id) AS squad,
+        (
+          SELECT count(*) FROM entity_ranking r
+          WHERE r.entity_type = 'team' AND r.entity_id = t.id
+        ) AS tables
+      FROM team t
+    )
+    UPDATE team t SET
+      notability =
+        evidence.sitelinks * 20
+        -- Capped low on purpose.
+        --
+        -- Honours are the right tiebreak between comparable teams and the wrong
+        -- primary signal, because trophy counts scale with a competition's age
+        -- rather than a team's standing. New South Wales has 48 Sheffield
+        -- Shields going back to 1896; India has eight honours including two
+        -- World Cups. With a generous cap the Shields still won, and a state
+        -- side sat above every Test nation.
+        --
+        -- At 40 a team reaches the cap with roughly three world titles or twenty
+        -- domestic ones, so honours can lift a decorated side past an
+        -- undecorated peer without ever outweighing the reach that sitelinks
+        -- measure.
+        + least(evidence.honour_weight, 40) * 20
+        + CASE WHEN evidence.tables > 0 THEN 150 ELSE 0 END
+        + least(evidence.squad, 30) * 5
+        + CASE WHEN evidence.is_active THEN 40 ELSE 0 END,
+      updated_at = now()
+    FROM evidence
+    WHERE evidence.id = t.id
+      AND t.confidence <> 'curated'
     RETURNING 1 AS count
   `);
 
@@ -409,25 +765,41 @@ async function deduplicateHonours(db: Db): Promise<number> {
 }
 
 /**
- * Assigns a prestige tier to every football honour.
+ * Assigns a prestige tier to every honour, per sport.
  *
- * Applied here rather than at ingestion so the curated list can be revised and
+ * Applied here rather than at ingestion so the curated lists can be revised and
  * re-applied without re-fetching anything. Recomputed from the title each run,
  * so an honour that moves tier moves everywhere.
  */
 async function deriveHonourPrestige(db: Db): Promise<number> {
-  const rows = await db.execute<{ id: string; title: string }>(sql`
-    SELECT h.id, h.title
+  const rows = await db.execute<{ id: string; title: string; sport: string }>(sql`
+    SELECT h.id, h.title, s.slug AS sport
     FROM honour h
     JOIN sport s ON s.id = h.sport_id
-    WHERE s.slug = 'football'
+    WHERE s.slug IN ('football', 'cricket', 'basketball')
   `);
+
+  // One curated list per sport, because the competitions have nothing in common.
+  // Cricket was omitted originally, which left all 464 of its team honours
+  // unranked and therefore counted flat by `deriveTeamPriority`: New South
+  // Wales's 48 Sheffield Shields outscored India's two World Cups and a state
+  // side opened the Teams tab.
+  //
+  // Basketball was omitted for the same reason and produced the same defect:
+  // all 760 of its honours were unranked, so Real Madrid Baloncesto's 102 Liga
+  // ACB and Copa del Rey titles outscored the Lakers' 17 NBA championships and
+  // two European clubs opened basketball's Teams tab.
+  const tierFor: Record<string, (title: string) => number | null> = {
+    football: honourTier,
+    cricket: cricketHonourTier,
+    basketball: basketballHonourTier,
+  };
 
   // Grouped by tier so the update is one statement per tier rather than per
   // honour: there are thousands of honours and four tiers.
   const byTier = new Map<number, string[]>();
   for (const row of rows) {
-    const tier = honourTier(row.title);
+    const tier = tierFor[row.sport]?.(row.title) ?? null;
     if (tier === null) continue;
     byTier.set(tier, [...(byTier.get(tier) ?? []), row.id]);
   }
@@ -492,7 +864,13 @@ async function derivePersonStatus(db: Db): Promise<number> {
         WHEN evidence.spells > 0
              AND evidence.last_end_year IS NOT NULL
              AND evidence.last_end_year < extract(year FROM now()) - 2 THEN 'retired'
-        ELSE NULL
+        -- Keep what is already there rather than clearing it. Cricketers'
+        -- statuses are read from the article's own playing span by the
+        -- wiki cricket-careers command, because their squads carry no dates and
+        -- none
+        -- of the signals above fire; a plain NULL here erased every one of them
+        -- on the next seed run.
+        ELSE p.career_status
       END,
       updated_at = now()
     FROM evidence
@@ -672,6 +1050,110 @@ async function seedTeamRankings(db: Db): Promise<{ written: number; skipped: num
 }
 
 /**
+ * Publishes the curated leaderboards for the major club competitions.
+ *
+ * Rows are written with `MANUAL_RANKING_SOURCE` rather than the article URL,
+ * which is what stops the next crawl replacing them. The URL is not lost: it
+ * goes into the note, which is what the page actually shows as provenance.
+ *
+ * A competition listed in the seed has *only* the tables the seed names. Any
+ * other leaderboard it holds is deleted, because the tables being replaced here
+ * are not merely out of date. Ingestion built league rolls of honour from
+ * Wikidata edition items labelled by the season's start year, so every row was
+ * a year out, and it left behind single-row award tables and an `award:goal`
+ * table of thirty unlabelled names that no reader could interpret. Leaving
+ * those in place beside the seeded tables would show two contradictory answers
+ * on one page.
+ */
+async function seedCompetitionRankings(db: Db): Promise<{
+  written: number;
+  removed: number;
+  skipped: number;
+}> {
+  let written = 0;
+  let removed = 0;
+  let skipped = 0;
+
+  // Keyed by sport, because a competition slug is unique per sport rather than
+  // globally. Looking one up without the sport would match whichever row came
+  // first, which is the kind of bug that only shows up once a second sport has
+  // a competition with a similar name.
+  const bySport: [string, Record<string, CompetitionRankingSeed[]>][] = [
+    ['football', COMPETITION_RANKING_SEEDS],
+    ['cricket', CRICKET_COMPETITION_RANKING_SEEDS],
+  ];
+
+  for (const [sportSlug, seeds] of bySport) {
+    for (const [slug, rankings] of Object.entries(seeds)) {
+      const [competition] = await db.execute<{ id: string }>(
+        sql`
+          SELECT competition.id
+          FROM competition
+          INNER JOIN sport ON sport.id = competition.sport_id
+          WHERE competition.slug = ${slug} AND sport.slug = ${sportSlug}
+          LIMIT 1
+        `,
+      );
+      if (!competition) {
+        process.stdout.write(`  skipped competition "${slug}": not in the database\n`);
+        skipped += 1;
+        continue;
+      }
+
+      for (const ranking of rankings) {
+        const entries = ranking.entries.map((entry) => ({
+          rank: entry.rank,
+          name: entry.name,
+          value: entry.value,
+          detail: entry.detail,
+        }));
+
+        // The source and the date it was true, because a table of active
+        // players' totals is only correct on the day it was read.
+        const note = [
+          `Compiled from ${ranking.source}, correct as of ${ranking.asOf}.`,
+          ranking.caveat,
+        ]
+          .filter(Boolean)
+          .join(' ');
+
+        await db.execute(sql`
+          INSERT INTO entity_ranking (
+            entity_type, entity_id, kind, label, entries, confidence, note, source_title
+          ) VALUES (
+            'competition', ${competition.id}, ${ranking.kind}, ${ranking.label},
+            ${JSON.stringify(entries)}::jsonb, 'high', ${note}, ${MANUAL_RANKING_SOURCE}
+          )
+          ON CONFLICT (entity_type, entity_id, kind) DO UPDATE SET
+            label = EXCLUDED.label,
+            entries = EXCLUDED.entries,
+            confidence = EXCLUDED.confidence,
+            note = EXCLUDED.note,
+            source_title = EXCLUDED.source_title,
+            updated_at = now()
+        `);
+        written += 1;
+      }
+
+      const kinds = rankings.map((ranking) => ranking.kind);
+      const stale = await db.execute<{ kind: string }>(sql`
+        DELETE FROM entity_ranking
+        WHERE entity_type = 'competition'
+          AND entity_id = ${competition.id}
+          AND kind <> ALL(${sql.raw(pgTextArray(kinds))})
+        RETURNING kind
+      `);
+      for (const row of stale) {
+        process.stdout.write(`  removed "${slug}" table ${row.kind}: superseded by the seed\n`);
+      }
+      removed += stale.length;
+    }
+  }
+
+  return { written, removed, skipped };
+}
+
+/**
  * Publishes the authored sections for flagship entities.
  *
  * Written to `entity_section`, which enrichment never touches, so an ingestion
@@ -737,20 +1219,72 @@ function pgTextArray(values: string[]): string {
   return `ARRAY[${escaped.join(', ')}]::text[]`;
 }
 
-async function seedFootballOverview(db: Db): Promise<{
+/**
+ * Writes one sport's overview: sources, timeline, governance, formats,
+ * concepts, quick facts and prose.
+ *
+ * Generalised from a football-only function when cricket arrived, because
+ * cricket needed the same eight upserts against different rows and a second
+ * copy would have been a second place for the pruning logic to drift. The sport
+ * slug is a parameter and every statement is scoped by the resolved id.
+ *
+ * ## Pruning, and the bug this fixes
+ *
+ * Timeline events and governing bodies are pruned by `sport_id`, so seeding
+ * cricket cannot disturb football's rows. Sources are different: `content_source`
+ * is shared across sports by design, one row per provider and URL.
+ *
+ * The football-only version ended by deleting every unreferenced source whose
+ * URL was not in *its* seed list. With two sports calling it, that statement
+ * deletes the other sport's sources on every run: seed football, and cricket's
+ * unreferenced rows go; seed cricket, and football's do. The prune is therefore
+ * scoped to sources this call actually owns, and only those left referencing
+ * nothing.
+ */
+async function seedSportOverview(
+  db: Db,
+  sportSlug: string,
+  content: {
+    sources: SourceSeed[];
+    timeline: TimelineSeed[];
+    governance: GoverningBodySeed[];
+    sections: SectionSeed[];
+    formats?: FormatSeed[];
+    concepts?: ConceptSeed[];
+    facts?: FactSeed[];
+    membership?: MembershipTierSeed[];
+    featured?: FeaturedEntitySeed[];
+  },
+): Promise<{
   sources: number;
   timeline: number;
   bodies: number;
   sections: number;
+  formats: number;
+  concepts: number;
+  facts: number;
 }> {
-  const [sportRow] = await db.execute<{ id: string }>(
-    sql`SELECT id FROM sport WHERE slug = 'football' LIMIT 1`,
-  );
-  if (!sportRow) return { sources: 0, timeline: 0, bodies: 0, sections: 0 };
+  const empty = {
+    sources: 0,
+    timeline: 0,
+    bodies: 0,
+    sections: 0,
+    formats: 0,
+    concepts: 0,
+    facts: 0,
+  };
 
-  // Sources first: the timeline and governance rows reference them.
+  const [sportRow] = await db.execute<{ id: string }>(
+    sql`SELECT id FROM sport WHERE slug = ${sportSlug} LIMIT 1`,
+  );
+  if (!sportRow) {
+    process.stdout.write(`  skipped ${sportSlug} overview: sport not in the database\n`);
+    return empty;
+  }
+
+  // Sources first: everything below references them.
   const sourceIds = new Map<string, string>();
-  for (const source of FOOTBALL_SOURCES) {
+  for (const source of content.sources) {
     const [row] = await db.execute<{ id: string }>(sql`
       INSERT INTO content_source (provider, title, url, external_id, license, retrieved_at)
       VALUES (${source.provider}, ${source.title}, ${source.url},
@@ -767,7 +1301,7 @@ async function seedFootballOverview(db: Db): Promise<{
   }
 
   let timeline = 0;
-  for (const [index, event] of FOOTBALL_TIMELINE.entries()) {
+  for (const [index, event] of content.timeline.entries()) {
     await db.execute(sql`
       INSERT INTO sport_timeline_event (
         sport_id, year, end_year, title, short_description, category,
@@ -801,7 +1335,7 @@ async function seedFootballOverview(db: Db): Promise<{
   // "seeded" and leave both copies in place.
   // Separated by a control character rather than NUL: Postgres rejects NUL in
   // text values outright, and a printable separator could occur in a title.
-  const seededKeys = FOOTBALL_TIMELINE.map((event) => `${event.year}\u001f${event.title}`);
+  const seededKeys = content.timeline.map((event) => `${event.year}\u001f${event.title}`);
   await db.execute(sql`
     DELETE FROM sport_timeline_event
     WHERE sport_id = ${sportRow.id}
@@ -813,7 +1347,7 @@ async function seedFootballOverview(db: Db): Promise<{
   const bodyIds = new Map<string, string>();
   let bodies = 0;
   for (const pass of ['world', 'continental'] as const) {
-    for (const body of FOOTBALL_GOVERNANCE.filter((entry) => entry.level === pass)) {
+    for (const body of content.governance.filter((entry) => entry.level === pass)) {
       const [row] = await db.execute<{ id: string }>(sql`
         INSERT INTO governing_body (
           sport_id, parent_id, slug, short_name, name, level, region,
@@ -842,15 +1376,198 @@ async function seedFootballOverview(db: Db): Promise<{
     }
   }
 
-  const seededSlugs = FOOTBALL_GOVERNANCE.map((body) => body.slug);
+  // Membership classes, stored in the same table with a tier set.
+  //
+  // Not part of the hierarchy: Full Membership is a status the world body
+  // grants, not a body sitting beneath it, and the API filters these out of the
+  // governance tree. `member_count_as_of` is written from the seed's own date
+  // rather than `now()`, because the date that matters is when the figure was
+  // read from the governing body, not when the seed last ran.
+  //
+  // Anchored to UTC midnight rather than cast straight to timestamptz. A bare
+  // 'YYYY-MM-DD' going into a timestamptz column is read as midnight in the
+  // server's zone and stored as the corresponding UTC instant, so on a server
+  // set to Asia/Kolkata '2026-08-23' becomes 2026-08-22T18:30Z and the API,
+  // which renders the date by slicing the ISO string, published the day before
+  // the one the figure was actually read on. `AT TIME ZONE 'UTC'` makes the
+  // stored instant midnight UTC, so the calendar date survives the round trip
+  // whatever zone the server happens to run in.
+  for (const tier of content.membership ?? []) {
+    const [row] = await db.execute<{ id: string }>(sql`
+      INSERT INTO governing_body (
+        sport_id, parent_id, slug, short_name, name, level, region,
+        member_count, member_count_as_of, membership_tier, source_id, display_order
+      ) VALUES (
+        ${sportRow.id}, ${bodyIds.get(content.governance[0]?.slug ?? '') ?? null},
+        ${`membership-${tier.tier}`}, ${tier.label}, ${tier.label}, 'membership',
+        ${tier.description}, ${tier.count},
+        (${tier.asOf}::date)::timestamp AT TIME ZONE 'UTC', ${tier.tier},
+        ${sourceIds.get(tier.sourceKey) ?? null}, ${tier.order}
+      )
+      ON CONFLICT (sport_id, slug) DO UPDATE SET
+        name = EXCLUDED.name,
+        region = EXCLUDED.region,
+        member_count = EXCLUDED.member_count,
+        member_count_as_of = EXCLUDED.member_count_as_of,
+        membership_tier = EXCLUDED.membership_tier,
+        source_id = EXCLUDED.source_id,
+        display_order = EXCLUDED.display_order,
+        updated_at = now()
+      RETURNING id
+    `);
+    if (row) bodies += 1;
+  }
+
+  const seededSlugs = [
+    ...content.governance.map((body) => body.slug),
+    ...(content.membership ?? []).map((tier) => `membership-${tier.tier}`),
+  ];
   await db.execute(sql`
     DELETE FROM governing_body
     WHERE sport_id = ${sportRow.id}
       AND NOT (slug = ANY (${sql.raw(pgTextArray(seededSlugs))}))
   `);
 
+  // Formats, in two passes for the same parent-before-child reason as above.
+  // A format's parent is always declared before it in the seed, so one ordered
+  // pass over roots then children resolves every reference.
+  const formatIds = new Map<string, string>();
+  let formats = 0;
+  const formatSeeds = content.formats ?? [];
+  for (const pass of [false, true]) {
+    for (const format of formatSeeds.filter((entry) => !!entry.parentKey === pass)) {
+      const [row] = await db.execute<{ id: string }>(sql`
+        INSERT INTO sport_format (
+          sport_id, parent_id, key, label, match_class, is_international,
+          overs_per_side, innings_per_side, max_days, draw_possible,
+          description, conditions_authority, source_id, display_order
+        ) VALUES (
+          ${sportRow.id},
+          ${format.parentKey ? (formatIds.get(format.parentKey) ?? null) : null},
+          ${format.key}, ${format.label}, ${format.matchClass},
+          ${format.isInternational ?? null}, ${format.oversPerSide ?? null},
+          ${format.inningsPerSide ?? null}, ${format.maxDays ?? null},
+          ${format.drawPossible ?? null}, ${format.description ?? null},
+          ${format.conditionsAuthority ?? null},
+          ${format.sourceKey ? (sourceIds.get(format.sourceKey) ?? null) : null},
+          ${format.order ?? 100}
+        )
+        ON CONFLICT (sport_id, key) DO UPDATE SET
+          parent_id = EXCLUDED.parent_id,
+          label = EXCLUDED.label,
+          match_class = EXCLUDED.match_class,
+          is_international = EXCLUDED.is_international,
+          overs_per_side = EXCLUDED.overs_per_side,
+          innings_per_side = EXCLUDED.innings_per_side,
+          max_days = EXCLUDED.max_days,
+          draw_possible = EXCLUDED.draw_possible,
+          description = EXCLUDED.description,
+          conditions_authority = EXCLUDED.conditions_authority,
+          source_id = EXCLUDED.source_id,
+          display_order = EXCLUDED.display_order,
+          updated_at = now()
+        RETURNING id
+      `);
+      if (row) formatIds.set(format.key, row.id);
+      formats += 1;
+    }
+  }
+
+  if (formatSeeds.length > 0) {
+    await db.execute(sql`
+      DELETE FROM sport_format
+      WHERE sport_id = ${sportRow.id}
+        AND NOT (key = ANY (${sql.raw(pgTextArray(formatSeeds.map((entry) => entry.key)))}))
+    `);
+  }
+
+  let concepts = 0;
+  const conceptSeeds = content.concepts ?? [];
+  for (const concept of conceptSeeds) {
+    await db.execute(sql`
+      INSERT INTO sport_concept (
+        sport_id, key, term, summary, category, ambiguity_note,
+        explainer_slug, source_id, display_order
+      ) VALUES (
+        ${sportRow.id}, ${concept.key}, ${concept.term}, ${concept.summary},
+        ${concept.category}, ${concept.ambiguityNote ?? null},
+        ${concept.explainerSlug ?? null},
+        ${concept.sourceKey ? (sourceIds.get(concept.sourceKey) ?? null) : null},
+        ${concept.order ?? 100}
+      )
+      ON CONFLICT (sport_id, key) DO UPDATE SET
+        term = EXCLUDED.term,
+        summary = EXCLUDED.summary,
+        category = EXCLUDED.category,
+        ambiguity_note = EXCLUDED.ambiguity_note,
+        explainer_slug = EXCLUDED.explainer_slug,
+        source_id = EXCLUDED.source_id,
+        display_order = EXCLUDED.display_order,
+        updated_at = now()
+    `);
+    concepts += 1;
+  }
+
+  if (conceptSeeds.length > 0) {
+    await db.execute(sql`
+      DELETE FROM sport_concept
+      WHERE sport_id = ${sportRow.id}
+        AND NOT (key = ANY (${sql.raw(pgTextArray(conceptSeeds.map((entry) => entry.key)))}))
+    `);
+  }
+
+  /*
+   * Curated quick facts.
+   *
+   * These replace, rather than supplement, whatever Wikipedia's infobox
+   * ingestion left behind. For cricket that was seven fragments including "16th
+   * century; South East England" as an origin, "Cricket field" as a venue and a
+   * bare "1900, 2028" for Olympic status.
+   *
+   * The delete clears *every* sport-level fact, not merely the keys being
+   * rewritten, and that is deliberate. A first pass deleted only the curated
+   * keys, which left five ingested fragments in place under keys the curated
+   * set does not use: `first_played` survived beside the more careful
+   * `first_recorded`, and `team_members` beside `players_per_side`, so the panel
+   * showed the same fact twice, once well and once badly. Taking the whole set
+   * makes the seed the single authority for a sport's quick facts.
+   *
+   * Sport-level only. `entity_fact` also holds team, person and competition
+   * facts, and those are ingested rather than authored; the predicate is scoped
+   * by `entity_type` and `entity_id` so none of them is touched.
+   *
+   * Written with source `curated`, which marks them as not-for-overwrite by a
+   * later ingestion run.
+   */
+  let facts = 0;
+  const factSeeds = content.facts ?? [];
+  if (factSeeds.length > 0) {
+    await db.execute(sql`
+      DELETE FROM entity_fact
+      WHERE entity_type = 'sport' AND entity_id = ${sportRow.id}
+    `);
+
+    for (const fact of factSeeds) {
+      await db.execute(sql`
+        INSERT INTO entity_fact (
+          entity_type, entity_id, key, label, value, category, source, display_order
+        ) VALUES (
+          'sport', ${sportRow.id}, ${fact.key}, ${fact.label}, ${fact.value},
+          ${fact.category}, 'curated', ${fact.order ?? 100}
+        )
+        ON CONFLICT (entity_type, entity_id, key, value) DO UPDATE SET
+          label = EXCLUDED.label,
+          category = EXCLUDED.category,
+          source = EXCLUDED.source,
+          display_order = EXCLUDED.display_order,
+          updated_at = now()
+      `);
+      facts += 1;
+    }
+  }
+
   let sections = 0;
-  for (const section of FOOTBALL_SECTIONS) {
+  for (const section of content.sections) {
     await db.execute(sql`
       INSERT INTO entity_section (
         entity_type, entity_id, kind, heading, body, status, display_order
@@ -867,23 +1584,97 @@ async function seedFootballOverview(db: Db): Promise<{
     sections += 1;
   }
 
-  // Sources are shared across sports, so this cannot prune by sport the way the
-  // two above do. It removes only rows that nothing references at all, which is
-  // what a moved URL leaves behind once its dependants have been repointed.
+  /*
+   * Featured entities.
+   *
+   * Each card names a canonical row by slug, and the lookup is allowed to fail.
+   * Entity coverage is ingested and uneven, so a card whose entity is missing
+   * is written with a null `entity_id` and renders without a link rather than
+   * disappearing. Dropping it instead would let an ingestion gap silently edit
+   * an editorial list, which is the opposite of what the seed is for.
+   *
+   * People are keyed on `primary_sport_id`; teams and competitions on
+   * `sport_id`. That asymmetry is in the schema, not here: a person can appear
+   * in more than one sport and a club cannot.
+   */
+  const featuredSeeds = content.featured ?? [];
+  let unresolved = 0;
+  for (const entry of featuredSeeds) {
+    let entityId: string | null = null;
+
+    if (entry.slug) {
+      const [row] = await db.execute<{ id: string }>(
+        entry.entityType === 'person'
+          ? sql`SELECT id FROM person WHERE primary_sport_id = ${sportRow.id} AND slug = ${entry.slug} LIMIT 1`
+          : entry.entityType === 'team'
+            ? sql`SELECT id FROM team WHERE sport_id = ${sportRow.id} AND slug = ${entry.slug} LIMIT 1`
+            : sql`SELECT id FROM competition WHERE sport_id = ${sportRow.id} AND slug = ${entry.slug} LIMIT 1`,
+      );
+      entityId = row?.id ?? null;
+    }
+    if (!entityId) unresolved += 1;
+
+    await db.execute(sql`
+      INSERT INTO overview_entity_ref (
+        sport_id, section, entity_type, entity_id, entity_slug,
+        display_name, blurb, meta, display_order
+      ) VALUES (
+        ${sportRow.id}, ${entry.section}, ${entry.entityType}, ${entityId},
+        ${entry.slug ?? null}, ${entry.name}, ${entry.blurb ?? null},
+        ${entry.meta ?? null}, ${entry.order}
+      )
+      ON CONFLICT (sport_id, section, display_name) DO UPDATE SET
+        entity_type = EXCLUDED.entity_type,
+        entity_id = EXCLUDED.entity_id,
+        entity_slug = EXCLUDED.entity_slug,
+        blurb = EXCLUDED.blurb,
+        meta = EXCLUDED.meta,
+        display_order = EXCLUDED.display_order,
+        updated_at = now()
+    `);
+  }
+
+  if (featuredSeeds.length > 0) {
+    await db.execute(sql`
+      DELETE FROM overview_entity_ref
+      WHERE sport_id = ${sportRow.id}
+        AND NOT (display_name = ANY (${sql.raw(pgTextArray(featuredSeeds.map((e) => e.name)))}))
+    `);
+    // Reported rather than silent: an unresolved card is a real gap in the
+    // entity tables, and the number is how anybody would notice it grew.
+    if (unresolved > 0) {
+      process.stdout.write(
+        `  ${sportSlug}: ${unresolved} of ${featuredSeeds.length} featured entities have no canonical row yet\n`,
+      );
+    }
+  }
+
+  // Sources are shared across sports, so this prunes only rows this call owns
+  // and that nothing references any more. Scoping by URL is what stops seeding
+  // one sport from deleting another's citations, which is what the earlier
+  // football-only version did once a second sport existed.
   await db.execute(sql`
     DELETE FROM content_source cs
-    WHERE NOT EXISTS (SELECT 1 FROM sport_timeline_event e WHERE e.source_id = cs.id)
+    WHERE cs.url = ANY (${sql.raw(pgTextArray(content.sources.map((source) => source.url)))})
+      AND NOT EXISTS (SELECT 1 FROM sport_timeline_event e WHERE e.source_id = cs.id)
       AND NOT EXISTS (SELECT 1 FROM governing_body g WHERE g.source_id = cs.id)
-      AND NOT (cs.url = ANY (${sql.raw(pgTextArray(FOOTBALL_SOURCES.map((source) => source.url)))}))
+      AND NOT EXISTS (SELECT 1 FROM sport_format f WHERE f.source_id = cs.id)
+      AND NOT EXISTS (SELECT 1 FROM sport_concept c WHERE c.source_id = cs.id)
   `);
 
-  return { sources: sourceIds.size, timeline, bodies, sections };
+  return { sources: sourceIds.size, timeline, bodies, sections, formats, concepts, facts };
 }
 
 void main();
 
 /**
- * Applies the curated competition list, and removes everything not on it.
+ * Applies a sport's curated competition list, and removes everything not on it.
+ *
+ * Takes the sport and its list as arguments rather than naming football, so
+ * cricket reuses the same upsert, mapping and prune logic. That mattered:
+ * cricket's tab was missing every international tournament and had English club
+ * leagues filed as international, which is the same pair of defects this
+ * function was written to fix for football.
  *
  * Three steps, in order. Competitions on the list are upserted with their
  * curated `kind`, `tier`, `notability` and corrected names; the ones marked
@@ -900,26 +1691,33 @@ void main();
  * would reset `kind` to its country-derived guess and flatten `tier` back to
  * the default that caused the original ordering problem.
  */
-async function seedFootballCompetitions(
+async function seedCuratedCompetitions(
   db: Db,
+  sportSlug: string,
+  curated: CuratedCompetition[],
+  curatedSlugs: ReadonlySet<string>,
 ): Promise<{ updated: number; created: number; deleted: number }> {
   const [sportRow] = await db.execute<{ id: string }>(
-    sql`SELECT id FROM sport WHERE slug = 'football' LIMIT 1`,
+    sql`SELECT id FROM sport WHERE slug = ${sportSlug} LIMIT 1`,
   );
   if (!sportRow) {
-    process.stdout.write('  skipped competitions: no football sport row\n');
+    process.stdout.write(`  skipped competitions: no ${sportSlug} sport row\n`);
     return { updated: 0, created: 0, deleted: 0 };
   }
 
   const sportId = sportRow.id;
   let updated = 0;
   let created = 0;
+  const curatedLogos = new Map<string, string>();
 
   // The fields this file is authoritative on. Anything else about a
   // competition stays ingestion's to fill.
   const locked = ['kind', 'tier', 'notability', 'name', 'country', 'format'];
+  // `logo_url` is locked only for the entries that set one, so the backfill
+  // stays free to fill the rest.
+  const lockedWithLogo = [...locked, 'logo_url'];
 
-  for (const entry of FOOTBALL_CURATED_COMPETITIONS) {
+  for (const entry of curated) {
     const rows = await db.execute<{ id: string }>(
       sql`INSERT INTO competition (
             sport_id, slug, name, kind, format, country,
@@ -929,7 +1727,8 @@ async function seedFootballCompetitions(
             ${sportId}, ${entry.slug}, ${entry.name ?? entry.slug},
             ${entry.kind}::competition_kind, ${entry.format}::competition_format,
             ${entry.country}, ${entry.foundedYear ?? null},
-            ${entry.tier}, ${entry.notability}, 'curated', ${sql.raw(pgTextArray(locked))}
+            ${entry.tier}, ${entry.notability}, 'curated',
+            ${sql.raw(pgTextArray(entry.logoFile ? lockedWithLogo : locked))}
           )
           ON CONFLICT (sport_id, slug) DO UPDATE SET
             name = COALESCE(${entry.name ?? null}, competition.name),
@@ -940,7 +1739,7 @@ async function seedFootballCompetitions(
             tier = ${entry.tier},
             notability = ${entry.notability},
             confidence = 'curated',
-            locked_fields = ${sql.raw(pgTextArray(locked))},
+            locked_fields = ${sql.raw(pgTextArray(entry.logoFile ? lockedWithLogo : locked))},
             updated_at = now()
           RETURNING (xmax = 0) AS id`,
     );
@@ -974,9 +1773,36 @@ async function seedFootballCompetitions(
         );
       }
     }
+
+    if (entry.logoFile) curatedLogos.set(entry.slug, `File:${entry.logoFile}`);
   }
 
-  const slugs = [...FOOTBALL_CURATED_SLUGS];
+  // Curated logos, resolved in one batch.
+  //
+  // Only for the competitions whose article carries no logo in a field the
+  // backfill reads, which is why this is a short list rather than the whole
+  // catalogue. Resolved through the same client the backfill uses so the
+  // filename normalisation it handles — underscores, percent escapes and
+  // typographic apostrophes — applies here too. The Cricket World Cup's file
+  // name contains a curly apostrophe, and a hand-built URL got it wrong.
+  if (curatedLogos.size > 0) {
+    const client = new WikipediaClient();
+    const resolved = await client.fetchThumbnails([...curatedLogos.values()], 512);
+
+    for (const [slug, file] of curatedLogos) {
+      const url = resolved.get(file);
+      if (!url) {
+        process.stdout.write(`  logo unresolved for ${slug}: ${file}\n`);
+        continue;
+      }
+      await db.execute(
+        sql`UPDATE competition SET logo_url = ${url}, updated_at = now()
+            WHERE sport_id = ${sportId} AND slug = ${slug}`,
+      );
+    }
+  }
+
+  const slugs = [...curatedSlugs];
   const removed = await db.execute<{ id: string }>(
     sql`DELETE FROM competition
         WHERE sport_id = ${sportId} AND slug <> ALL(${sql.raw(pgTextArray(slugs))})

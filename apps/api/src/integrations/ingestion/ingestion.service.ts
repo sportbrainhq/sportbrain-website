@@ -815,7 +815,9 @@ export class IngestionService {
           country: sql`CASE WHEN 'country' = ANY(${team.lockedFields}) THEN ${team.country} ELSE ${item.fields.country ?? null} END`,
           foundedYear: sql`CASE WHEN 'foundedYear' = ANY(${team.lockedFields}) THEN ${team.foundedYear} ELSE ${item.fields.foundedYear ?? null} END`,
           logoUrl: sql`CASE WHEN 'logoUrl' = ANY(${team.lockedFields}) THEN ${team.logoUrl} ELSE ${item.fields.logoUrl ?? null} END`,
-          notability: item.notability ?? 0,
+          // Raw count refreshed; the derived score is left to the seed pass, so
+          // re-ingesting a team does not undo its ordering.
+          sitelinks: item.notability ?? 0,
           updatedAt: new Date(),
         })
         .where(eq(team.id, existingId));
@@ -879,7 +881,12 @@ export class IngestionService {
         country: item.fields.country,
         foundedYear: item.fields.foundedYear,
         logoUrl: item.fields.logoUrl,
-        notability: item.notability ?? 0,
+        // The provider's figure is a sitelink count, so it is stored as one.
+        // `notability` is derived from this by `deriveTeamPriority` and is not
+        // written here: while ingestion wrote the raw count straight into
+        // `notability`, the Teams tab was ordered by article translations and
+        // listed Mumbai Indians last of the IPL sides.
+        sitelinks: item.notability ?? 0,
         // Provisional until corroborated: a single free source is not enough to
         // put a row in front of the public.
         confidence: 'provisional',
@@ -994,6 +1001,14 @@ export class IngestionService {
         nationality: item.fields.nationality,
         imageUrl: item.fields.imageUrl,
         attributes: item.fields.attributes ?? {},
+        // The provider's figure is a sitelink count, so it is stored as one.
+        // `notability` is derived from this by `derivePersonPriority`.
+        //
+        // Written to both on insert, and only to `sitelinks` on conflict below.
+        // A new row needs an ordering value immediately, because the derivation
+        // runs at seed time and a person ingested between two seeds would
+        // otherwise sort last regardless of who they are.
+        sitelinks: item.notability ?? 0,
         notability: item.notability ?? 0,
         confidence: 'provisional',
       })
@@ -1006,7 +1021,10 @@ export class IngestionService {
         target: [person.primarySportId, person.slug],
         set: {
           displayName: item.fields.displayName,
-          notability: item.notability ?? 0,
+          // Raw count refreshed; the derived score is left alone, so
+          // re-ingesting a person does not discard the evidence-weighted
+          // ordering the seed computed from their honours and career.
+          sitelinks: item.notability ?? 0,
           nationality: item.fields.nationality,
           imageUrl: item.fields.imageUrl,
           updatedAt: new Date(),

@@ -113,6 +113,125 @@
       "when": 1787225718453,
       "tag": "0015_dark_bastion",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1787466858931,
+      "tag": "0017_sport_formats_and_concepts",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1787466859931,
+      "tag": "0018_cricket_team_kinds",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1787590119129,
+      "tag": "0016_cricket_explainers",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1787590120129,
+      "tag": "0019_scorecard_section_types",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1787590121129,
+      "tag": "0021_cricket_team_cleanup",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1787590122129,
+      "tag": "0022_drop_stale_cricket_appearances",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1787648368530,
+      "tag": "0023_cricket_team_kinds_and_abbreviations",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1787648369530,
+      "tag": "0023_team_sitelinks_and_priority",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1787653649686,
+      "tag": "0024_cricket_list_a_discipline",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1787653650686,
+      "tag": "0025_cricket_nationality_corrections",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1787653651686,
+      "tag": "0026_cricket_has_no_current_club",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1787653652686,
+      "tag": "0027_cricket_first_class_discipline",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1787653653686,
+      "tag": "0028_merge_duplicate_ipl_competition",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1787653654686,
+      "tag": "0029_add_missing_ipl_franchises",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1787653655686,
+      "tag": "0030_disambiguate_steve_smith",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1787653655687,
+      "tag": "0031_basketball_explainer_types",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1787653655688,
+      "tag": "0032_overview_entity_refs",
+      "breakpoints": true
     }
   ]
 }

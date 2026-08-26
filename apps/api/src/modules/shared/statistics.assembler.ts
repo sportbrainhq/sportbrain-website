@@ -269,6 +269,13 @@ export class StatisticsAssembler {
    * Definitions scoped to the row's own discipline win over sport-wide ones with
    * the same key, which is what lets `batting_average` mean something slightly
    * different in Test and T20 while sharing a key.
+   *
+   * The result is ordered by category and then by the registry's display order
+   * within it, which is what the website reads as the columns of a record
+   * table. Sorting only by display order interleaved the departments, because
+   * the numbers restart per category: a cricketer's Test block arrived as
+   * matches, catches, wickets, balls, runs, so a batting table began with a
+   * bowling average.
    */
   private render(
     stats: Record<string, unknown>,
@@ -288,7 +295,7 @@ export class StatisticsAssembler {
       byKey.set(definition.key, definition);
     }
 
-    const values: StatisticValue[] = [];
+    const values: (StatisticValue & { order: number })[] = [];
 
     for (const [key, definition] of byKey) {
       // The sport's fixed set leads the statistics section already. Leaving
@@ -310,10 +317,29 @@ export class StatisticsAssembler {
         higherIsBetter: definition.higherIsBetter,
         description: definition.description,
         value: typeof raw === 'number' || typeof raw === 'string' ? raw : null,
+        order: definition.displayOrder,
       });
     }
 
-    return values;
+    // Categories keep the order they were first declared in, and the statistics
+    // within a category keep the registry's own. The category order is taken
+    // from the first definition carrying it rather than from a separate field,
+    // so a sport that reorders its statistics reorders its tables with them.
+    const categoryOrder = new Map<string, number>();
+    for (const value of values) {
+      const category = value.category ?? '';
+      if (!categoryOrder.has(category)) categoryOrder.set(category, categoryOrder.size);
+    }
+
+    return values
+      .sort((left, right) => {
+        const byCategory =
+          (categoryOrder.get(left.category ?? '') ?? 0) -
+          (categoryOrder.get(right.category ?? '') ?? 0);
+
+        return byCategory !== 0 ? byCategory : left.order - right.order;
+      })
+      .map(({ order: _order, ...value }) => value);
   }
 }
 

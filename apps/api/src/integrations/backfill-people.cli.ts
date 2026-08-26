@@ -155,7 +155,7 @@ async function main(): Promise<void> {
       const query = `
 SELECT ?item ?itemLabel ?sitelinks
        (SAMPLE(?birth) AS ?birthDate) (SAMPLE(?death) AS ?deathDate)
-       (MIN(?natLabel) AS ?nationality) (SAMPLE(?image) AS ?imageUrl)
+       (SAMPLE(?natLabel) AS ?nationality) (SAMPLE(?image) AS ?imageUrl)
        (SAMPLE(?posLabel) AS ?position)
 WHERE {
   VALUES ?item { ${values} }
@@ -170,6 +170,11 @@ WHERE {
   OPTIONAL { ?item wdt:P569 ?birth } OPTIONAL { ?item wdt:P570 ?death }
   # P1532 (country for sport) rather than P27 (citizenship): see the note in
   # peopleDetailQuery. Citizenship published Messi as Spain and Klose as Poland.
+  #
+  # Aggregated with SAMPLE rather than MIN, matching peopleDetailQuery. MIN takes
+  # the alphabetically first label, which is not a fact about the person: Bob
+  # Simpson holds more than one and was published as Bermuda rather than
+  # Australia purely because B sorts before A.
   OPTIONAL { ?item wdt:P1532 ?ni . ?ni rdfs:label ?natLabel . FILTER(LANG(?natLabel) = "en") }
   OPTIONAL { ?item wdt:P18 ?image }
   OPTIONAL { ?item wdt:P413 ?pi . ?pi rdfs:label ?posLabel . FILTER(LANG(?posLabel) = "en") }
@@ -226,10 +231,25 @@ GROUP BY ?item ?itemLabel ?sitelinks`.trim();
         const isDate = (value?: string) =>
           value && /^-?\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
 
+        // Sitelinks go in `sitelinks`, not in `notability`.
+        //
+        // They were written to `notability`, which is a derived column:
+        // `derivePersonPriority` recomputes it from `sitelinks` on every seed
+        // and therefore overwrote whatever this wrote. Since `sitelinks` was
+        // left at its default of 0, the raw signal was discarded and the
+        // derivation had nothing to work from.
+        //
+        // The visible effect was 1,915 cricketers — Archie Jackson, Ian
+        // Johnson, Ashok Mankad, real Test players — sitting at notability 0
+        // and sorting last alphabetically on the Players tab.
+        //
+        // Updated on conflict as well as on insert, because the rows this has
+        // to repair already exist: an insert-only fix would leave every player
+        // already in the database at zero.
         const [created] = await db.execute<{ id: string }>(sql`
           INSERT INTO person (
             primary_sport_id, slug, full_name, display_name, date_of_birth, date_of_death,
-            nationality, image_url, attributes, notability, confidence
+            nationality, image_url, attributes, sitelinks, confidence
           ) VALUES (
             ${sportRow.id}, ${slug}, ${name}, ${name}, ${isDate(birth)}, ${isDate(death)},
             ${row.nationality?.value ?? null}, ${row.imageUrl?.value ?? null},
@@ -238,7 +258,10 @@ GROUP BY ?item ?itemLabel ?sitelinks`.trim();
           )
           ON CONFLICT (primary_sport_id, slug) DO UPDATE SET
             display_name = EXCLUDED.display_name,
-            notability = EXCLUDED.notability,
+            -- Highest wins rather than last-write-wins: a person can be reached
+            -- by more than one query in a run, and a query that happened to
+            -- return no sitelink count should not zero a good value.
+            sitelinks = greatest(person.sitelinks, EXCLUDED.sitelinks),
             updated_at = now()
           RETURNING id
         `);

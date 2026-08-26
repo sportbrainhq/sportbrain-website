@@ -42,7 +42,7 @@ async function main(): Promise<void> {
 
   if (!command) {
     process.stderr.write(
-      'Usage: wiki <map|facts|crests|logos|rankings|cricket-stats|basketball-stats|careers|career-totals|scan-totals|titles|all> [entityType] [sport] [limit]\n',
+      'Usage: wiki <map|facts|crests|logos|rankings|cricket-team-rankings|cricket-stats|cricket-careers|basketball-stats|careers|career-totals|scan-totals|titles|all> [entityType] [sport] [limit]\n',
     );
     process.exitCode = 1;
     return;
@@ -130,6 +130,39 @@ async function main(): Promise<void> {
       case 'basketball-stats': {
         const result = await ingestion.ingestBasketballStats(Number(args[0] ?? 200));
         process.stdout.write(`${result.players} players, ${result.blocks} stat blocks\n`);
+        break;
+      }
+
+      /**
+       * Cricket sides' per-format leaderboards.
+       *
+       * Separate from `rankings`, which is football-shaped: two tables a team,
+       * appearances and goals. Cricket has up to nine, because matches, runs
+       * and wickets each mean something different in Test, ODI and T20I
+       * cricket and must never be merged.
+       */
+      case 'cricket-team-rankings': {
+        const result = await ingestion.ingestCricketTeamRankings(Number(args[0] ?? 40));
+        process.stdout.write(
+          `${result.teams} teams, ${result.rankings} tables, ${result.skipped} with no parseable source\n`,
+        );
+        break;
+      }
+
+      /**
+       * A cricketer's playing span, and the Active or Retired badge with it.
+       *
+       * Separate from `cricket-stats` because it reads different fields and is
+       * worth re-running on its own: an active player's status changes when
+       * they retire, and their statistics do not.
+       */
+      case 'cricket-careers': {
+        // An optional slug, so one wrong page can be corrected in seconds
+        // rather than behind a crawl of seven thousand articles.
+        const result = await ingestion.ingestCricketCareerSpans(Number(args[0] ?? 200), args[1]);
+        process.stdout.write(
+          `${result.players} players, ${result.active} active, ${result.retired} retired\n`,
+        );
         break;
       }
 

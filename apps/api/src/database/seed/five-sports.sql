@@ -14,11 +14,11 @@
 -- ---------------------------------------------------------------------------
 INSERT INTO sport (id, slug, name, short_code, display_order, is_launched, traits) VALUES
  ('50000000-0000-0000-0000-000000000001','football','Football','FB',10,true,
-  '{"hasTeams":true,"hasLeagueTable":true,"individualCompetitors":false,"scoringModel":"goals"}'),
+  '{"hasTeams":true,"hasLeagueTable":true,"individualCompetitors":false,"playersHaveCurrentClub":true,"scoringModel":"goals"}'),
  ('50000000-0000-0000-0000-000000000002','cricket','Cricket','CR',20,true,
-  '{"hasTeams":true,"hasLeagueTable":true,"individualCompetitors":false,"scoringModel":"runs"}'),
+  '{"hasTeams":true,"hasLeagueTable":true,"individualCompetitors":false,"playersHaveCurrentClub":false,"scoringModel":"runs"}'),
  ('50000000-0000-0000-0000-000000000003','basketball','Basketball','BK',30,true,
-  '{"hasTeams":true,"hasLeagueTable":true,"individualCompetitors":false,"scoringModel":"points"}'),
+  '{"hasTeams":true,"hasLeagueTable":true,"individualCompetitors":false,"playersHaveCurrentClub":true,"scoringModel":"points"}'),
  ('50000000-0000-0000-0000-000000000004','tennis','Tennis','TN',40,true,
   '{"hasTeams":false,"hasLeagueTable":false,"individualCompetitors":true,"scoringModel":"ranking_points","hasDraw":true}'),
  ('50000000-0000-0000-0000-000000000005','formula-1','Formula 1','F1',50,true,
@@ -31,10 +31,15 @@ INSERT INTO discipline (id, sport_id, key, label, kind, display_order) VALUES
  -- Football: role split. A goalkeeper's stat set is disjoint from an outfielder's.
  ('d1000000-0000-0000-0000-000000000001','50000000-0000-0000-0000-000000000001','outfield','Outfield','role',10),
  ('d1000000-0000-0000-0000-000000000002','50000000-0000-0000-0000-000000000001','goalkeeper','Goalkeeper','role',20),
- -- Cricket: format split. Same player, three incomparable careers.
+ -- Cricket: format split. Same player, five incomparable careers. The domestic
+ -- pair sits alongside the internationals rather than inside them: every Test
+ -- is a first-class match and every ODI a List A one, most of each are not,
+ -- and the averages differ.
  ('d2000000-0000-0000-0000-000000000001','50000000-0000-0000-0000-000000000002','test','Test','format',10),
  ('d2000000-0000-0000-0000-000000000002','50000000-0000-0000-0000-000000000002','odi','ODI','format',20),
  ('d2000000-0000-0000-0000-000000000003','50000000-0000-0000-0000-000000000002','t20i','T20I','format',30),
+ ('d2000000-0000-0000-0000-000000000005','50000000-0000-0000-0000-000000000002','first_class','First Class','format',40),
+ ('d2000000-0000-0000-0000-000000000004','50000000-0000-0000-0000-000000000002','list_a','List A','format',50),
  -- Tennis: surface changes what a win is worth and is how tennis records are kept.
  ('d4000000-0000-0000-0000-000000000001','50000000-0000-0000-0000-000000000004','hard','Hard','surface',10),
  ('d4000000-0000-0000-0000-000000000002','50000000-0000-0000-0000-000000000004','clay','Clay','surface',20),
@@ -60,12 +65,21 @@ INSERT INTO sport_section (id, sport_id, tab, label, slug, display_order) VALUES
 -- ---------------------------------------------------------------------------
 -- TEAMS
 -- ---------------------------------------------------------------------------
+-- `country` is spelled the way the Wikidata ingest spells it ("United States",
+-- not "USA"), and `confidence` is 'provisional' rather than 'verified', for the
+-- Celtics row below. Both mattered: the row owns the `boston-celtics` slug for
+-- basketball, the team ingest upserts with
+-- `onConflictDoNothing(sportId, slug)`, and `deriveTeamPriority` skips anything
+-- not 'provisional'. So this fixture silently blocked the real Boston Celtics
+-- (Q131371, 78 sitelinks, 17 championships) from ever being ingested and pinned
+-- its notability at the floor, which is why the most successful franchise in
+-- the NBA was absent from the Teams tab while 400 college programmes were on it.
 INSERT INTO team (id, sport_id, kind, section_id, slug, name, short_name, country, founded_year, confidence) VALUES
  ('7e000000-0000-0000-0000-000000000001','50000000-0000-0000-0000-000000000001','international','5e000000-0000-0000-0000-000000000001','argentina','Argentina','ARG','Argentina',1893,'verified'),
  ('7e000000-0000-0000-0000-000000000002','50000000-0000-0000-0000-000000000001','club','5e000000-0000-0000-0000-000000000002','real-madrid','Real Madrid','RMA','Spain',1902,'verified'),
  ('7e000000-0000-0000-0000-000000000003','50000000-0000-0000-0000-000000000002','international','5e000000-0000-0000-0000-000000000003','india','India','IND','India',1926,'verified'),
  ('7e000000-0000-0000-0000-000000000004','50000000-0000-0000-0000-000000000002','franchise','5e000000-0000-0000-0000-000000000004','chennai-super-kings','Chennai Super Kings','CSK','India',2008,'verified'),
- ('7e000000-0000-0000-0000-000000000005','50000000-0000-0000-0000-000000000003','club','5e000000-0000-0000-0000-000000000005','boston-celtics','Boston Celtics','BOS','USA',1946,'verified'),
+ ('7e000000-0000-0000-0000-000000000005','50000000-0000-0000-0000-000000000003','club','5e000000-0000-0000-0000-000000000005','boston-celtics','Boston Celtics','BOS','United States',1946,'provisional'),
  ('7e000000-0000-0000-0000-000000000006','50000000-0000-0000-0000-000000000005','club','5e000000-0000-0000-0000-000000000006','mercedes','Mercedes-AMG Petronas','MER','Germany',2010,'verified');
 
 -- ---------------------------------------------------------------------------

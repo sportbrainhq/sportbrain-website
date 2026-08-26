@@ -79,6 +79,7 @@ export class PlayersRepository {
         sportId: person.primarySportId,
         sportSlug: sport.slug,
         sportName: sport.name,
+        sportTraits: sport.traits,
       })
       .from(person)
       .innerJoin(sport, eq(sport.id, person.primarySportId))

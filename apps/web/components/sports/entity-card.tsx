@@ -20,13 +20,50 @@ export function TeamCard({ sportSlug, team }: { sportSlug: string; team: TeamSum
       <Avatar text={team.name} imageUrl={team.logoUrl} />
       <span className="min-w-0">
         <span className="block truncate font-medium">{team.name}</span>
-        <span className="block truncate text-xs text-muted-foreground">
-          {[team.country, team.foundedYear].filter(Boolean).join(' · ') || 'Team'}
-        </span>
+        <span className="block truncate text-xs text-muted-foreground">{teamSubtitle(team)}</span>
       </span>
     </Link>
   );
 }
+
+/**
+ * The card's secondary line.
+ *
+ * Differs by kind, because the useful identifier does. A national side is
+ * identified by its country; a county or state side by the country it plays
+ * in; a franchise by its **abbreviation**, which is how the team is actually
+ * referred to. "India · 2008" told a reader nothing that distinguished Punjab
+ * Kings from four other 2008 IPL sides, and the founding year of a franchise is
+ * closer to trivia than to identification.
+ *
+ * Falls back to country where no abbreviation is recorded, and to the kind
+ * label rather than a bare "Team", so an unlabelled card still says something.
+ */
+function teamSubtitle(team: TeamSummary): string {
+  if (team.kind === 'franchise') {
+    // Only an abbreviation, and only a real one: a "short name" as long as the
+    // name itself is not an abbreviation and helps nobody.
+    const abbreviation =
+      team.shortName && team.shortName.length <= 6 && team.shortName !== team.name
+        ? team.shortName
+        : null;
+    return abbreviation ?? team.country ?? 'Franchise';
+  }
+
+  return (
+    [team.country, team.foundedYear].filter(Boolean).join(' · ') || KIND_LABELS[team.kind] || 'Team'
+  );
+}
+
+/** Human labels for the team kinds, for the fallback line. */
+const KIND_LABELS: Record<string, string> = {
+  international: 'International',
+  representative: 'Domestic',
+  franchise: 'Franchise',
+  club: 'Club',
+  development: 'Age-group',
+  invitational: 'Invitational',
+};
 
 export function PlayerCard({ sportSlug, player }: { sportSlug: string; player: PlayerSummary }) {
   // Position lives in `attributes` because it means different things per sport

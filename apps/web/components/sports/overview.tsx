@@ -1,9 +1,13 @@
 import Link from 'next/link';
 import type {
   ContentSource,
+  OverviewEntityRef,
   EntityFact,
   GoverningBody,
+  MembershipTier,
   OverviewSection,
+  SportConcept,
+  SportFormat,
   TimelineEvent,
 } from '@sportbrain/contracts';
 
@@ -24,11 +28,26 @@ export function EditorialSection({ section }: { section: OverviewSection }) {
     <section>
       <h2 className="text-xl font-bold tracking-tight">{section.heading}</h2>
       <div className="mt-3 max-w-2xl space-y-4 leading-relaxed text-foreground/90">
-        {section.body.split(/\n\n+/).map((paragraph, index) => (
-          <p key={index}>{renderInline(paragraph)}</p>
-        ))}
+        <EditorialSectionBody body={section.body} />
       </div>
     </section>
+  );
+}
+
+/**
+ * A section's paragraphs without its heading or wrapper.
+ *
+ * Split out so prose can be placed inside a block that already has its own
+ * heading, which is what the at-a-glance section does: the facts grid and the
+ * paragraph explaining it belong under one heading rather than two.
+ */
+export function EditorialSectionBody({ body }: { body: string }) {
+  return (
+    <>
+      {body.split(/\n\n+/).map((paragraph, index) => (
+        <p key={index}>{renderInline(paragraph)}</p>
+      ))}
+    </>
   );
 }
 
@@ -61,12 +80,30 @@ function renderInline(text: string): React.ReactNode[] {
  * heights. Stacking the label gives every value the full cell width, and one
  * rule under each cell keeps the block reading as a single table.
  */
-export function QuickFacts({ facts }: { facts: EntityFact[] }) {
-  if (facts.length === 0) return null;
+export function QuickFacts({
+  facts,
+  categories,
+}: {
+  facts: EntityFact[];
+  /**
+   * Render only these categories, in this order.
+   *
+   * Omitted renders everything, which is what football and cricket do and what
+   * the ingested fact sets need. Basketball authors its facts in two groups and
+   * shows them as two separate blocks: the identity strip under the hero, and
+   * the "at a glance" grid further down. Filtering here rather than at the API
+   * keeps one query serving both.
+   */
+  categories?: string[];
+}) {
+  const selected = categories
+    ? categories.flatMap((category) => facts.filter((fact) => fact.category === category))
+    : facts;
+  if (selected.length === 0) return null;
 
   return (
     <dl className="grid grid-cols-1 gap-x-8 gap-y-0 border-t border-border sm:grid-cols-2 lg:grid-cols-3">
-      {facts.map((fact) => (
+      {selected.map((fact) => (
         <div key={`${fact.key}-${fact.value}`} className="border-b border-border py-3">
           <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             {fact.label}
@@ -126,7 +163,7 @@ export function MilestoneStrip({ events }: { events: TimelineEvent[] }) {
   if (milestones.length === 0) return null;
 
   return (
-    <div className="overflow-x-auto">
+    <div className="scrollbar-thin overflow-x-auto">
       <ol className="flex min-w-max gap-px bg-border">
         {milestones.map((event) => (
           <li key={event.id} className="min-w-[9rem] flex-1 bg-card px-4 py-3">
@@ -230,7 +267,15 @@ function hasConfederationCounts(body: GoverningBody): boolean {
 /** Internal navigation. The call to action matters more than any count. */
 export function ExploreCards({ sportSlug, sportName }: { sportSlug: string; sportName: string }) {
   const destinations = [
-    { label: 'Teams', hint: 'Clubs and national sides', href: `/sports/${sportSlug}/teams` },
+    // "Clubs and national sides" was football's vocabulary and understates a
+    // sport whose teams also include states, counties and franchises. Kept
+    // general rather than enumerated per sport: the Teams tab's own filters
+    // name the kinds it actually holds.
+    {
+      label: 'Teams',
+      hint: 'National sides and domestic teams',
+      href: `/sports/${sportSlug}/teams`,
+    },
     { label: 'Players', hint: 'Careers and statistics', href: `/sports/${sportSlug}/players` },
     {
       label: 'Competitions',
@@ -304,5 +349,262 @@ export function SourceList({ sources }: { sources: ContentSource[] }) {
         </ul>
       </div>
     </details>
+  );
+}
+
+/**
+ * The format taxonomy.
+ *
+ * A nested tree rather than a row of cards, because the nesting carries the
+ * meaning. Test cricket sits *beneath* multi-day cricket and *beside*
+ * first-class cricket, and a flat list of six formats would lose exactly the
+ * relationships the section exists to teach.
+ *
+ * The international/domestic badge is rendered on every leaf that declares one,
+ * because it is the field that separates the pairs a reader most often
+ * conflates. A grouping node declares null and gets no badge: "limited-overs
+ * cricket" is neither international nor domestic, and a badge saying either
+ * would be false.
+ */
+export function FormatTaxonomy({ formats }: { formats: SportFormat[] }) {
+  if (formats.length === 0) return null;
+
+  return (
+    <div className="space-y-6">
+      {formats.map((branch) => (
+        <div key={branch.id} className="border-t border-border pt-4">
+          <div className="flex flex-wrap items-baseline gap-x-3">
+            <h3 className="text-base font-bold">{branch.label}</h3>
+            <FormatMetrics format={branch} />
+          </div>
+          {branch.description && (
+            <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+              {branch.description}
+            </p>
+          )}
+          {branch.children.length > 0 && (
+            <ul className="mt-4 space-y-3 border-l border-border pl-5">
+              {(branch.children as SportFormat[]).map((child) => (
+                <FormatNode key={child.id} format={child} />
+              ))}
+            </ul>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** One format and its children. Recursive: the tree is three deep for cricket. */
+function FormatNode({ format }: { format: SportFormat }) {
+  return (
+    <li>
+      <div className="flex flex-wrap items-baseline gap-x-2.5">
+        <span className="font-semibold">{format.label}</span>
+        {format.isInternational !== null && (
+          <span className="rounded-full border border-border px-2 py-0.5 text-2xs uppercase tracking-wide text-muted-foreground">
+            {format.isInternational ? 'International' : 'Domestic'}
+          </span>
+        )}
+        <FormatMetrics format={format} />
+      </div>
+      {format.description && (
+        <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+          {format.description}
+        </p>
+      )}
+      {format.children.length > 0 && (
+        <ul className="mt-3 space-y-3 border-l border-border pl-5">
+          {(format.children as SportFormat[]).map((child) => (
+            <FormatNode key={child.id} format={child} />
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+}
+
+/**
+ * The numbers that distinguish one format from another.
+ *
+ * Each is omitted when absent rather than shown as a zero or a dash. A Test has
+ * no over limit, and printing "0 overs" would be worse than printing nothing.
+ */
+function FormatMetrics({ format }: { format: SportFormat }) {
+  const parts = [
+    format.oversPerSide && `${format.oversPerSide} overs`,
+    format.inningsPerSide && `${format.inningsPerSide} inn/side`,
+    format.maxDays && `up to ${format.maxDays} ${format.maxDays === 1 ? 'day' : 'days'}`,
+    format.drawPossible === true && 'draw possible',
+  ].filter(Boolean);
+
+  if (parts.length === 0) return null;
+
+  return (
+    <span className="font-mono text-2xs tabular-nums text-muted-foreground">
+      {parts.join(' · ')}
+    </span>
+  );
+}
+
+/**
+ * The vocabulary grid.
+ *
+ * Each concept links to its Explainer only where the API resolved one, which is
+ * what keeps the Overview honest while the Explainer library is still being
+ * written: an unresolved concept renders as plain text rather than as a link to
+ * a 404.
+ *
+ * `ambiguityNote` gets its own line and its own weight. A term meaning three
+ * things is the single most useful thing an Overview can tell a newcomer, and
+ * burying it inside the summary would waste it.
+ */
+export function ConceptGrid({
+  concepts,
+  sportSlug,
+}: {
+  concepts: SportConcept[];
+  sportSlug: string;
+}) {
+  if (concepts.length === 0) return null;
+
+  return (
+    <dl className="grid grid-cols-1 gap-x-8 gap-y-0 border-t border-border sm:grid-cols-2">
+      {concepts.map((concept) => (
+        <div key={concept.key} className="border-b border-border py-3">
+          <dt className="flex flex-wrap items-baseline gap-x-2">
+            <span className="font-semibold">{concept.term}</span>
+            <span className="text-2xs uppercase tracking-wide text-muted-foreground">
+              {concept.category}
+            </span>
+          </dt>
+          <dd className="mt-1 space-y-1.5">
+            <p className="text-sm leading-relaxed text-muted-foreground">{concept.summary}</p>
+            {concept.ambiguityNote && (
+              <p className="border-l-2 border-border pl-3 text-sm leading-relaxed">
+                <span className="font-medium">More than one meaning. </span>
+                <span className="text-muted-foreground">{concept.ambiguityNote}</span>
+              </p>
+            )}
+            {concept.explainerSlug && (
+              <Link
+                href={`/sports/${sportSlug}/explainers/${concept.explainerSlug}`}
+                className="inline-flex items-center gap-1 text-sm font-medium hover:underline"
+              >
+                {concept.term} explained
+                <span aria-hidden>→</span>
+              </Link>
+            )}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/**
+ * Membership classes of a world governing body.
+ *
+ * Separate from `GovernanceHierarchy` because a membership class is not a place
+ * in the hierarchy: the ICC does not contain a body called "Full Members", it
+ * grades its members that way.
+ *
+ * The as-of date is printed rather than hidden. Membership changes, and four
+ * sources consulted while writing this gave four different totals, so a count
+ * presented as timeless would be a quiet falsehood. Dating it turns a stale
+ * number into a historical fact, which is the honest failure mode.
+ */
+export function MembershipTiers({ tiers }: { tiers: MembershipTier[] }) {
+  if (tiers.length === 0) return null;
+
+  const asOf = tiers[0]?.asOf;
+
+  return (
+    <div>
+      <ul className="grid gap-2 sm:grid-cols-2">
+        {tiers.map((tier) => (
+          <li key={tier.tier} className="rounded-lg border border-border bg-card p-4">
+            <div className="flex items-baseline gap-2">
+              <span className="font-mono text-2xl font-bold tabular-nums">{tier.count}</span>
+              <span className="font-semibold">{tier.label}</span>
+            </div>
+            <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+              {tier.description}
+            </p>
+          </li>
+        ))}
+      </ul>
+      {asOf && (
+        <p className="mt-3 text-xs text-muted-foreground">
+          Membership as recorded by the governing body on {formatAsOf(asOf)}. Boards are admitted,
+          suspended and expelled, so these figures change.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** ISO date to a readable one, without pulling in a date library. */
+function formatAsOf(iso: string): string {
+  const parsed = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return iso;
+  return parsed.toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+}
+
+/**
+ * Featured entities: icons, clubs, competitions.
+ *
+ * A card links to the canonical entity where one exists and renders as plain
+ * text where it does not, which is what `href` on the payload decides. The two
+ * look almost identical on purpose: a reader should not be able to tell that
+ * our ingestion has a gap, only that some names are clickable.
+ *
+ * Deliberately name, context and one line only. Everything else about a player
+ * or a club belongs on their own page, and repeating it here is how two places
+ * end up disagreeing.
+ */
+export function FeaturedEntities({ entities }: { entities: OverviewEntityRef[] }) {
+  if (entities.length === 0) return null;
+
+  return (
+    <ul className="grid grid-cols-1 gap-px bg-border sm:grid-cols-2 lg:grid-cols-3">
+      {entities.map((entity) => {
+        const body = (
+          <>
+            <span className="block font-semibold">{entity.displayName}</span>
+            {entity.meta && (
+              <span className="mt-0.5 block text-2xs uppercase tracking-wide text-muted-foreground">
+                {entity.meta}
+              </span>
+            )}
+            {entity.blurb && (
+              <span className="mt-1.5 block text-sm leading-relaxed text-muted-foreground">
+                {entity.blurb}
+              </span>
+            )}
+          </>
+        );
+
+        return (
+          <li key={`${entity.section}-${entity.displayName}`} className="bg-card">
+            {entity.href ? (
+              <Link
+                href={entity.href}
+                className="block h-full p-4 transition-colors hover:bg-muted/50"
+              >
+                {body}
+              </Link>
+            ) : (
+              <div className="h-full p-4">{body}</div>
+            )}
+          </li>
+        );
+      })}
+    </ul>
   );
 }

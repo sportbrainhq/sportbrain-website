@@ -5,6 +5,36 @@ import { ExplainerSearch } from '@/components/sports/explainer-search';
 import { ApiError, fetchExplainerLibrary } from '@/lib/api';
 import { buildMetadata } from '@/lib/seo';
 
+/**
+ * Per-sport landing copy.
+ *
+ * The library structure is identical for every sport, but the standfirst and the
+ * search placeholder should name the things a reader of *that* sport would
+ * actually type. Keyed by slug with a generic fallback, so a new sport gets a
+ * working page immediately and a better one when somebody writes two lines.
+ */
+const LANDING_COPY: Record<string, { standfirst: string; placeholder: string }> = {
+  football: {
+    standfirst: 'Rules, tactics, positions, terminology and concepts, explained clearly.',
+    placeholder: 'Search offside, xG, false nine, pressing...',
+  },
+  cricket: {
+    standfirst:
+      'Rules, batting, bowling, field positions, tactics, statistics and terminology, explained clearly.',
+    placeholder: 'Search LBW, googly, powerplay, strike rate...',
+  },
+  basketball: {
+    standfirst:
+      'Rules, the court, positions, offence, defence, statistics and league concepts, explained clearly.',
+    placeholder: 'Search pick and roll, traveling, TS%, shot clock...',
+  },
+};
+
+const FALLBACK_COPY = {
+  standfirst: 'Rules, tactics, terminology and concepts, explained clearly.',
+  placeholder: 'Search for a rule, a tactic or a term...',
+};
+
 export async function generateMetadata({
   params,
 }: {
@@ -47,6 +77,7 @@ export default async function ExplainersPage({ params }: { params: Promise<{ spo
   }
 
   const { sport, startHere, categories, searchIndex } = library;
+  const copy = LANDING_COPY[slug] ?? FALLBACK_COPY;
 
   return (
     <div className="space-y-10">
@@ -58,15 +89,11 @@ export default async function ExplainersPage({ params }: { params: Promise<{ spo
           Understand {sport.name}
         </h1>
         <p className="mt-3 max-w-2xl text-lg leading-relaxed text-muted-foreground">
-          Rules, tactics, positions, terminology and concepts, explained clearly.
+          {copy.standfirst}
         </p>
       </header>
 
-      <ExplainerSearch
-        sportSlug={slug}
-        index={searchIndex}
-        placeholder="Search offside, xG, false nine, pressing..."
-      />
+      <ExplainerSearch sportSlug={slug} index={searchIndex} placeholder={copy.placeholder} />
 
       {startHere.length > 0 && (
         <section>

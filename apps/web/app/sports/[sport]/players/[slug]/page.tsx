@@ -51,9 +51,17 @@ export default async function PlayerPage({
   // `currentClub` goes the same way for a retired player: the provider records
   // the last club someone played for, and the club history below says so
   // properly with its dates.
+  //
+  // `currentClub` also goes for a sport that says its players do not have one:
+  // a cricketer turns out for a national side, a first-class side and one or
+  // more franchises at once, so a single box naming one of them is a choice the
+  // page has no basis to make. Tendulkar's read "Marylebone Cricket Club".
+  const showsCurrentClub =
+    player.sport.traits.playersHaveCurrentClub !== false && player.careerStatus !== 'retired';
+
   const hidden = new Set<string>([
     ...(player.careerStatus === 'active' ? ['careerEnd'] : []),
-    ...(player.careerStatus === 'retired' ? ['currentClub'] : []),
+    ...(showsCurrentClub ? [] : ['currentClub']),
   ]);
 
   const facts = Object.entries(player.attributes)
@@ -105,10 +113,7 @@ export default async function PlayerPage({
         </dl>
       )}
 
-      <FactPanel
-        facts={player.profile.facts}
-        suppressCurrentClub={player.careerStatus === 'retired'}
-      />
+      <FactPanel facts={player.profile.facts} suppressCurrentClub={!showsCurrentClub} />
 
       <SectionPanel sections={player.profile.sections} />
 
@@ -167,12 +172,10 @@ export default async function PlayerPage({
 
       <RankingPanel rankings={player.profile.rankings} sportSlug={sportSlug} />
 
-      <section>
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-          Statistics
-        </h2>
-        <StatisticsPanel groups={player.statistics} summary={player.careerSummary} />
-      </section>
+      {/* No "Statistics" heading of its own. Where a career divides into formats
+          the panel renders a titled table per format and department, and a
+          heading above them was a second label for the same thing. */}
+      <StatisticsPanel groups={player.statistics} summary={player.careerSummary} />
     </article>
   );
 }

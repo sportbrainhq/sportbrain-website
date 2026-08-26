@@ -70,14 +70,21 @@ export interface ParsedRow {
 }
 
 /**
- * Extracts the first infobox from wikitext.
+ * Extracts an infobox from wikitext.
  *
  * Brace-counted rather than regex-matched. Infoboxes contain nested templates
  * (`{{ubl|...}}`, `{{cr|AUS}}`), and a non-greedy match to the first `}}`
  * truncates the box at the first nested template, silently dropping most of it.
+ *
+ * `prefer` names the template wanted, and matters more than it sounds: an
+ * article may carry several infoboxes and the first is not always the one about
+ * the sport. MS Dhoni's article opens with `Infobox officeholder`, for an
+ * honorary army rank, and his `Infobox cricketer` is second, so reading the
+ * first returned no statistics at all for one of the most-viewed cricketers on
+ * the site. Falls back to the first infobox where no preferred one is present.
  */
-export function parseInfobox(wikitext: string): Infobox | null {
-  const start = wikitext.search(/\{\{\s*Infobox/i);
+export function parseInfobox(wikitext: string, prefer?: string): Infobox | null {
+  const start = infoboxStart(wikitext, prefer);
   if (start === -1) return null;
 
   let depth = 0;
@@ -159,6 +166,23 @@ export function parseInfobox(wikitext: string): Infobox | null {
   }
 
   return Object.keys(fields).length > 0 ? fields : null;
+}
+
+/**
+ * Where the wanted infobox begins.
+ *
+ * The preferred template first, then any infobox at all. Matched on the
+ * template name only, so `{{Infobox cricketer}}` and
+ * `{{Infobox cricketer\n| name = ...}}` both hit.
+ */
+function infoboxStart(wikitext: string, prefer?: string): number {
+  if (prefer) {
+    const preferred = new RegExp(`\\{\\{\\s*Infobox\\s+${prefer}\\b`, 'i');
+    const match = wikitext.search(preferred);
+    if (match !== -1) return match;
+  }
+
+  return wikitext.search(/\{\{\s*Infobox/i);
 }
 
 /**

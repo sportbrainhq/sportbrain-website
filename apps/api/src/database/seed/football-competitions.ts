@@ -70,7 +70,16 @@
  */
 
 export type CompetitionKind = 'international' | 'domestic' | 'continental';
-export type CompetitionFormat = 'league' | 'knockout' | 'group_knockout';
+/**
+ * Mirrors `competitionFormatEnum` in the schema.
+ *
+ * Originally listed only the three shapes football uses. Widened to the full
+ * enum because cricket needs `series` for a bilateral Test series such as the
+ * Ashes, and `championship` for the World Test Championship, whose league table
+ * feeds a single final rather than deciding the title itself.
+ */
+export type CompetitionFormat =
+  'league' | 'knockout' | 'group_knockout' | 'series' | 'championship' | 'tour';
 
 export interface CuratedCompetition {
   /** Matches `competition.slug`, which is unique per sport. */
@@ -100,6 +109,20 @@ export interface CuratedCompetition {
    * facts.
    */
   wikidata?: string;
+  /**
+   * A Commons or Wikipedia file name for the competition's logo.
+   *
+   * Only for the competitions whose article does not carry one in a field the
+   * logo backfill reads. That backfill takes `image`, `logo`, `crest` or
+   * `badge` from the infobox and rejects a `.jpg`, so that a trophy photograph
+   * or a squad shot never becomes a logo. Both rules are right and both leave
+   * gaps: the Cricket World Cup's `image` field is empty upstream, and The
+   * Ashes carries only a photograph of the urn.
+   *
+   * Set here rather than by a one-off UPDATE so the value survives a reseed and
+   * is visible beside the rest of the competition's curation.
+   */
+  logoFile?: string;
   /** Set when the competition is missing from the database and has to be inserted. */
   create?: true;
 }

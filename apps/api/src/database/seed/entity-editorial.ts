@@ -110,4 +110,18 @@ That commercial split is why English league records divide at 1992. A club's "le
 Twenty clubs play each other home and away, thirty-eight matches, three points for a win. The bottom three are relegated. There are no play-offs at the top: the team with most points wins.`,
     },
   ],
+  'cricket-world-cup': [
+    {
+      kind: 'history',
+      heading: 'About the competition',
+      order: 10,
+      body: `The ICC ODI Cricket World Cup is cricket's global championship in the fifty-over format, held every four years since 1975. It is organised by the International Cricket Council and is the format's defining tournament: a One Day International career is measured against it the way a Test career is measured against the Ashes.
+
+The first three editions were played in England, over sixty overs a side and in white clothing with a red ball. The tournament has since moved around the game's major nations, settled at fifty overs, and adopted coloured clothing and a white ball.
+
+**Australia have won it six times**, more than twice any other nation. India and the West Indies have won twice each; the West Indies took the first two, and India's 1983 victory is generally credited with shifting the sport's commercial centre to the subcontinent.
+
+The format has varied more than the trophy suggests. Recent editions have used a single round-robin group followed by semi-finals, which guarantees every side nine matches and makes an early upset survivable; earlier ones used group stages feeding a Super Six or Super Eight round. It should not be confused with the **T20 World Cup**, a separate ICC event in the twenty-over format, or with the **World Test Championship**, which is decided over a two-year cycle.`,
+    },
+  ],
 };

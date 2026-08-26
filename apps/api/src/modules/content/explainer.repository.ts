@@ -150,7 +150,16 @@ export class ExplainerRepository {
     return [...byCategory.values()];
   }
 
-  /** The beginner path, in display order. */
+  /**
+   * The beginner path, in display order.
+   *
+   * Capped at twelve rather than eight. A sport's path is a deliberately
+   * ordered sequence, and truncating it mid-way leaves the reader without the
+   * concepts the later entries were chosen to reach: basketball's ends with the
+   * shot clock, the pick and roll and the box score, which is most of what a
+   * newcomer actually needs. Sports with a shorter path are unaffected, since
+   * the limit only bounds how many rows can be returned.
+   */
   async startHere(sportId: string): Promise<ExplainerSummary[]> {
     const rows = await this.database.db.execute<SummaryRow>(sql`
       SELECT e.id, e.slug, e.title, e.subtitle, e.short_description, e.type::text,
@@ -162,7 +171,7 @@ export class ExplainerRepository {
         AND e.status = 'published'
         AND e.is_start_here = 'true'
       ORDER BY e.display_order, e.title
-      LIMIT 8
+      LIMIT 12
     `);
     return rows.map((row) => this.toSummary(row));
   }
@@ -181,14 +190,28 @@ export class ExplainerRepository {
              e.difficulty::text, e.read_minutes,
              c.slug AS home_slug, c.name AS home_name,
              coalesce(
-               array_agg(a.normalised) FILTER (WHERE a.normalised IS NOT NULL),
+               (
+                 -- Aliases and every category the concept appears under, so
+                 -- typing "dismissals" finds LBW and typing "leg before
+                 -- wicket" finds it through the same path. Category terms are
+                 -- normalised in SQL to match what the seed writes for
+                 -- aliases, since the client scores both with one comparison.
+                 SELECT array_agg(DISTINCT term) FROM (
+                   SELECT a.normalised AS term
+                   FROM explainer_alias a
+                   WHERE a.explainer_id = e.id
+                   UNION
+                   SELECT trim(regexp_replace(lower(cat.name), '[^a-z0-9]+', ' ', 'g'))
+                   FROM explainer_category_link l
+                   JOIN explainer_category cat ON cat.id = l.category_id
+                   WHERE l.explainer_id = e.id
+                 ) AS terms
+               ),
                '{}'
              ) AS terms
       FROM explainer e
       LEFT JOIN explainer_category c ON c.id = e.primary_category_id
-      LEFT JOIN explainer_alias a ON a.explainer_id = e.id
       WHERE e.sport_id = ${sportId} AND e.status = 'published'
-      GROUP BY e.id, c.slug, c.name
       ORDER BY e.display_order, e.title
     `);
 
@@ -203,9 +226,16 @@ export class ExplainerRepository {
    * unwritten concept a 404 rather than an empty page.
    */
   async detail(sportId: string, slug: string): Promise<ExplainerDetail | undefined> {
-    const [row] = await this.database.db.execute<SummaryRow>(sql`
+    const [row] = await this.database.db.execute<
+      SummaryRow & {
+        is_rule_sensitive: string;
+        source_revision: string | null;
+        last_reviewed_at: string | null;
+      }
+    >(sql`
       SELECT e.id, e.slug, e.title, e.subtitle, e.short_description, e.type::text,
              e.difficulty::text, e.read_minutes,
+             e.is_rule_sensitive, e.source_revision, e.last_reviewed_at,
              c.slug AS home_slug, c.name AS home_name
       FROM explainer e
       LEFT JOIN explainer_category c ON c.id = e.primary_category_id
@@ -281,6 +311,9 @@ export class ExplainerRepository {
 
     return {
       ...this.toSummary(row),
+      isRuleSensitive: row.is_rule_sensitive === 'true',
+      sourceRevision: row.source_revision ?? null,
+      lastReviewedAt: row.last_reviewed_at ?? null,
       sections: sections.map((section) => ({
         type: section.type,
         heading: section.heading,

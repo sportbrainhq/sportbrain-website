@@ -17,6 +17,18 @@ export const explainerTypeSchema = z.enum([
   'tactical_concept',
   'statistic',
   'position_role',
+  'dismissal',
+  'bowling_delivery',
+  'batting_technique',
+  'field_position',
+  'format',
+  'technology',
+  // Basketball. `play` is a designed action with actors and a sequence, which
+  // carries a diagram; `court_area` is a region of the floor; `officiating`
+  // covers violations and fouls.
+  'play',
+  'court_area',
+  'officiating',
 ]);
 export type ExplainerType = z.infer<typeof explainerTypeSchema>;
 
@@ -91,6 +103,16 @@ export const explainerSourceSchema = contentSourceSchema.extend({
 export type ExplainerSource = z.infer<typeof explainerSourceSchema>;
 
 export const explainerDetailSchema = explainerSummarySchema.extend({
+  /**
+   * Rule provenance, for content that goes out of date.
+   *
+   * Surfaced to the reader rather than kept internal: a no-ball explainer that
+   * names the Law edition it was written against is honest about the one thing
+   * it cannot guarantee, which is that nothing has changed since.
+   */
+  isRuleSensitive: z.boolean(),
+  sourceRevision: z.string().nullable(),
+  lastReviewedAt: z.string().nullable(),
   sections: z.array(explainerSectionSchema),
   related: z.array(explainerRelatedSchema),
   sources: z.array(explainerSourceSchema),

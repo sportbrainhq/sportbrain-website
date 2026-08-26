@@ -211,6 +211,26 @@ export const team = pgTable(
      * Zero means unmeasured rather than obscure: entities ingested before this
      * existed carry no score until they are refreshed.
      */
+    /**
+     * Raw Wikidata sitelink count, as ingested.
+     *
+     * Separate from `notability` for the reason the person table records: the
+     * derivation reads this and writes that, and while they were one column
+     * the derivation consumed its own output and the raw signal was gone after
+     * the first run. Teams had exactly that problem, `notability` holding raw
+     * sitelinks with nothing derived from them at all.
+     */
+    sitelinks: integer('sitelinks').notNull().default(0),
+
+    /**
+     * Ranking score for list ordering, derived from `sitelinks` and sporting
+     * evidence. See `deriveTeamPriority`.
+     *
+     * Not raw sitelinks, which measure how many language editions wrote an
+     * article rather than how much the team matters: Mumbai Indians, with five
+     * IPL titles, scored 4 while Punjab Kings, with none, scored 25, so the
+     * Teams tab listed the most successful franchise in the competition last.
+     */
     notability: integer('notability').notNull().default(0),
 
     /**

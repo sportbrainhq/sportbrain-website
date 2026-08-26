@@ -51,6 +51,32 @@ export const explainerTypeEnum = pgEnum('explainer_type', [
   /** A metric. Needs the provider-differences section that others do not. */
   'statistic',
   'position_role',
+  /**
+   * The cricket templates.
+   *
+   * Added rather than folded into `rule` and `standard` because each one is a
+   * genuinely different page. A dismissal has a decision sequence; a delivery
+   * has a release and what the batter expects; a fielding position has
+   * coordinates on a circular field, which no football type carries.
+   */
+  'dismissal',
+  'bowling_delivery',
+  'batting_technique',
+  'field_position',
+  'format',
+  'technology',
+  /**
+   * The basketball templates.
+   *
+   * `play` is a designed action with actors and a sequence, which is a
+   * different page from a `tactical_concept` like spacing: it carries a
+   * diagram and steps. `court_area` is a region of the floor. `officiating`
+   * covers violations and fouls, whose shape is what it is, how it is judged,
+   * and how the competitions differ.
+   */
+  'play',
+  'court_area',
+  'officiating',
 ]);
 
 /** Reader level. Data rather than a UI constant, so it can be filtered on. */
@@ -102,6 +128,66 @@ export const explainerSectionTypeEnum = pgEnum('explainer_section_type', [
   // Tactical.
   'tactical_application',
   'historical_context',
+  // ── Cricket ──────────────────────────────────────────────────────────────
+  // Shared additions. Format differences is the one every cricket concept
+  // needs: a statistic, a tactic and a rule all mean different things in a
+  // Test and a T20, and burying that inside `how_it_works` is how a reader
+  // ends up applying a T20 benchmark to a Test average.
+  'format_differences',
+  'when_you_will_see_it',
+  'step_by_step',
+  /** The decision sequence for a dismissal, one clause at a time. */
+  'decision_sequence',
+  /** How the officials and the technology handle the concept. */
+  'reviews_and_technology',
+  // Deliveries and technique.
+  'grip_and_release',
+  'what_the_batter_expects',
+  'what_actually_happens',
+  'how_batters_counter_it',
+  'footwork_and_bat_path',
+  'scoring_area',
+  'risk',
+  'common_mistakes',
+  // Fielding positions.
+  'position_on_the_field',
+  'purpose',
+  'when_it_is_used',
+  // Formats and structure.
+  'duration_and_structure',
+  'result_types',
+  'who_plays_it',
+  // Scoring.
+  /**
+   * Worked readings of a scoreline, driven by structured data.
+   *
+   * Three types rather than one, because the unique index on
+   * (explainer_id, type) means one explainer can hold only one section per
+   * type, and the scoring explainer needs to show a team score, a batting line
+   * and a bowling analysis side by side.
+   */
+  'reading_the_score',
+  'reading_a_batting_line',
+  'reading_a_bowling_analysis',
+  // ── Basketball ───────────────────────────────────────────────────────────
+  /**
+   * How the leagues differ on this concept.
+   *
+   * The basketball equivalent of `format_differences`, and the section that
+   * keeps one concept on one page. Travelling, the shot clock and a quarter's
+   * length are all officiated or timed differently by the NBA, FIBA, the NCAA
+   * and the WNBA, and an explainer that silently describes only the NBA teaches
+   * the reader that the NBA's rules are basketball's rules.
+   */
+  'rule_differences',
+  /** Reading a box score or a shooting split, as opposed to computing one. */
+  'how_to_read_it',
+  /** The sequence of an offensive action, usually with a diagram per step. */
+  'the_action',
+  'how_it_is_defended',
+  'counters',
+  /** Which part of the floor a concept belongs to. */
+  'where_it_happens',
 ]);
 
 /**
@@ -204,12 +290,41 @@ export const explainer = pgTable(
     isStartHere: text('is_start_here').notNull().default('false'),
     isFeatured: text('is_featured').notNull().default('false'),
 
+    /**
+     * Whether the content depends on a rule that changes.
+     *
+     * A no-ball, a powerplay and a DRS protocol are all rewritten periodically
+     * by the MCC or by a competition's playing conditions; a cover drive is
+     * not. Flagged as data rather than inferred from the type, because the two
+     * do not line up: the powerplay explainer is a tactical concept and still
+     * needs auditing when the playing conditions change.
+     */
+    isRuleSensitive: text('is_rule_sensitive').notNull().default('false'),
+
+    /**
+     * Which edition of the governing text this was written against.
+     *
+     * Free text ("MCC 2017 Code, 4th edition, 2022") rather than a foreign key,
+     * because the same explainer can be pinned to a Law edition and a set of
+     * playing conditions at once, and the value is for a human auditor.
+     */
+    sourceRevision: text('source_revision'),
+
+    /** When somebody last checked the content against the current rules. */
+    lastReviewedAt: text('last_reviewed_at'),
+
     status: publicationStatusEnum('status').notNull().default('draft'),
     displayOrder: integer('display_order').notNull().default(100),
     ...timestamps,
   },
   (table) => [
     uniqueIndex('explainer_slug_idx').on(table.sportId, table.slug),
+    /** The audit query: everything rule-sensitive, oldest review first. */
+    index('explainer_rule_review_idx').on(
+      table.sportId,
+      table.isRuleSensitive,
+      table.lastReviewedAt,
+    ),
     /** The landing-page query: published explainers for a sport, in order. */
     index('explainer_listing_idx').on(table.sportId, table.status, table.displayOrder),
     index('explainer_category_lookup_idx').on(table.primaryCategoryId, table.status),
