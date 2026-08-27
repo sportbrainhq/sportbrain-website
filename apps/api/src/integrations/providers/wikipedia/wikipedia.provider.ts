@@ -512,13 +512,24 @@ export class WikipediaProvider {
    * and national team infoboxes do not agree on the field name, and reading only
    * `image` misses a share of them.
    *
-   * **Photographs are rejected.** The point of this is a crest, and an infobox
-   * `image` is not guaranteed to be one: Wikidata's equivalent field gave a
-   * training-ground JPG for Barcelona and a squad photo for France. A raster
-   * extension is the signal that separates the two, since crests are drawn as
-   * SVG almost without exception while photographs are JPEG. PNG is allowed
-   * because a minority of genuine crests are only available as PNG, but a `.jpg`
-   * is a photograph and is never a crest.
+   * **Photographs are rejected, but the test depends on the field.** An infobox
+   * `image` is not guaranteed to be a crest: Wikidata's equivalent field gave a
+   * training-ground JPG for Barcelona and a squad photo for France. For `image`
+   * the extension is therefore the signal, since crests are drawn as SVG almost
+   * without exception while photographs are JPEG, and PNG is allowed because a
+   * minority of genuine crests are only available as PNG.
+   *
+   * `logo`, `crest` and `badge` are different, and treating them like `image`
+   * was losing real badges. A field *named* logo does not hold a squad photo:
+   * whoever filled it in was naming the badge. 43 of basketball's 82 logo-less
+   * teams carried one there as a JPG, and the filenames say plainly what they
+   * are ("Kenya Basketball Federation.jpg", "Libyan Basketball Federation.jpg",
+   * "Cyprus bball.jpg"). National federations outside the major leagues
+   * routinely upload their badge as a JPG, so rejecting the extension in these
+   * fields rejected the only image those teams have.
+   *
+   * So: `image` accepts SVG and PNG only; `logo`, `crest` and `badge` accept JPG
+   * as well. The Barcelona and France cases are unaffected, both being `image`.
    */
   /** Raw wikitext for a page, for callers that parse it themselves. */
   async fetchWikitextFor(title: string): Promise<string | null> {
@@ -537,6 +548,11 @@ export class WikipediaProvider {
     const box = parseInfobox(wikitext);
     if (!box) return null;
 
+    // `image` may hold a photograph, so it is restricted to vector and PNG.
+    // A field named for the badge is taken at its word and may be a JPG.
+    const extensionsFor = (field: string): string =>
+      field === 'image' ? 'svg|png' : 'svg|png|jpe?g';
+
     // A minority of articles embed a full image link rather than a bare
     // filename: `| image = [[File:Tottenham Hotspur.svg|frameless|upright=0.5]]`.
     // `cleanWikitext` reduces a link to its display label, which for an image is
@@ -547,7 +563,9 @@ export class WikipediaProvider {
         new RegExp(`\\|\\s*${field}\\s*=\\s*\\[\\[\\s*(?:File|Image):([^|\\]]+)`, 'i'),
       );
       const file = linked?.[1]?.trim();
-      if (file && /\.(svg|png)$/i.test(file)) return `File:${decodeFilename(file)}`;
+      if (file && new RegExp(`\\.(?:${extensionsFor(field)})$`, 'i').test(file)) {
+        return `File:${decodeFilename(file)}`;
+      }
     }
 
     for (const field of ['image', 'logo', 'crest', 'badge']) {
@@ -577,10 +595,13 @@ export class WikipediaProvider {
       // field. Anchoring on the extension kept the World Cup and the Copa
       // America without a logo while the leagues had one.
       //
-      // The extension is still what rejects a photograph: a `.jpg` never
-      // matches, so an infobox whose image is a squad photo or a trophy shot
-      // yields nothing, which is the intended outcome.
-      const name = value.match(/^(.*?\.(?:svg|png))(?:\s|$)/i)?.[1]?.trim();
+      // The extension still rejects a photograph in `image`, so an infobox whose
+      // image is a squad photo or a trophy shot yields nothing there, which is
+      // the intended outcome. In `logo`, `crest` and `badge` a JPG is accepted:
+      // see the note above on federation badges.
+      const name = value
+        .match(new RegExp(`^(.*?\\.(?:${extensionsFor(field)}))(?:\\s|$)`, 'i'))?.[1]
+        ?.trim();
 
       if (!name) continue;
 
