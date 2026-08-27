@@ -40,14 +40,6 @@ export default async function TeamPage({
     throw error;
   }
 
-  // Pulled out of the registry-driven groups rather than read from a fixed
-  // index: the trophy count is the one figure a team reliably has, and the
-  // groups it arrives in are shaped for sports that will later have more.
-  const titles =
-    team.statistics
-      .flatMap((group) => group.statistics)
-      .find((statistic) => statistic.key === 'titles_won') ?? null;
-
   return (
     <article className="space-y-8">
       <header className="flex flex-wrap items-start gap-4">
@@ -96,29 +88,6 @@ export default async function TeamPage({
       )}
 
       <RankingPanel rankings={team.profile.rankings} sportSlug={sportSlug} />
-
-      {/* Titles rather than a "Statistics" section holding a single tile. A
-          team's only figure today is its trophy count, and wrapping one number
-          in a generic heading told a reader nothing the tile did not. */}
-      {titles !== null && (
-        <section>
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-            Titles
-          </h2>
-          {/* No label inside the box: the heading above it already says
-              Titles, and printing the word twice read as a mistake. */}
-          <div
-            className="rounded-lg border border-border bg-card p-4"
-            title={titles.description ?? undefined}
-          >
-            <p className="font-mono text-2xl font-bold tabular-nums">
-              {typeof titles.value === 'number'
-                ? titles.value.toLocaleString('en-GB')
-                : (titles.value ?? '—')}
-            </p>
-          </div>
-        </section>
-      )}
     </article>
   );
 }

@@ -78,6 +78,15 @@ const RANKING_ORDER = [
   // international cricket, and sharing a kind would invite summing the two.
   'club_most_runs',
   'club_most_wickets',
+  // Basketball team tables. The two award rolls lead, because who won the MVP
+  // here is the question a reader opens a franchise page with, and the per-game
+  // leaders follow in the order the sport quotes them: points, rebounds,
+  // assists.
+  'basketball_league_mvp',
+  'basketball_finals_mvp',
+  'basketball_points_per_game',
+  'basketball_rebounds_per_game',
+  'basketball_assists_per_game',
 ];
 
 const rankingOrder = sql`array_position(

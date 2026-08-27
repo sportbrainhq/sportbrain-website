@@ -141,6 +141,11 @@ async function main(): Promise<void> {
     const spans = await deriveCareerSpans(db);
     process.stdout.write(`Derived:  ${spans} career spans written\n`);
 
+    // After career spans, which share the same `person_team` dates the award
+    // attribution windows on.
+    const basketballTables = await deriveBasketballTeamTables(db);
+    process.stdout.write(`Derived:  ${basketballTables} basketball team tables\n`);
+
     // Deduplicate, then tier, then prioritise. The order is load-bearing and
     // used to be wrong: both priority passes weight honours by `prestige`, and
     // they ran *before* `deriveHonourPrestige` assigned it. Every run therefore
@@ -908,6 +913,171 @@ async function deriveCareerSpans(db: Db): Promise<number> {
   `);
 
   return rows.length;
+}
+
+/**
+ * Builds the per-team basketball tables: award rolls and per-game leaders.
+ *
+ * Five tables per team, all derived rather than hand-entered, because the
+ * source rows already exist and a curated list of 30 franchises would go stale
+ * the moment an MVP is awarded.
+ *
+ * ## The award tables
+ *
+ * `honour` records who won an award and in which year, but not which team they
+ * were playing for, so the team is recovered from `person_team`. That join has
+ * to be windowed by date or it fans out across a player's whole career: a plain
+ * join put Shai Gilgeous-Alexander's 2026 MVP on the Clippers and the Kentucky
+ * Wildcats as well as the Thunder, and Julius Erving's on UMass. Restricting it
+ * to the spell that contains the award year fixes every case checked by hand:
+ * Jokic to Denver, Curry to Golden State, Harden to Houston, LeBron's 2012 and
+ * 2013 to Miami.
+ *
+ * Honours with no year cannot be placed in a spell and are dropped rather than
+ * guessed at, which is why these tables are shorter than the raw honour counts.
+ *
+ * ## The per-game tables
+ *
+ * Points, rebounds and assists are **per-game averages, not career totals**,
+ * and the labels say so. This is a real limitation of the data rather than a
+ * choice: exactly one basketball player in the database has career `points`,
+ * `assists` or `rebounds` totals, while 954 have `points_per_game`, because
+ * Wikipedia player infoboxes carry averages and the parser reads `ppg`, `rpg`
+ * and `apg`. Nothing in any current source attributes a career total to a team.
+ *
+ * The consequence a reader has to be told about, and the reason the confidence
+ * is `indicative` and the note is explicit: a player who spent one season at a
+ * club can outrank a fifteen-year franchise scorer, because the average belongs
+ * to the whole career rather than to the spell at this team. These are "the
+ * best averages among players who played here", which is a genuine and
+ * different question from "this club's leading scorers". Ranking by a career
+ * average is also why a minimum of 20 games is required: without it a
+ * three-game call-up with one hot night tops the table.
+ */
+async function deriveBasketballTeamTables(db: Db): Promise<number> {
+  // Rebuilt from scratch each run rather than upserted. These are derived
+  // tables, so a stale row is a wrong row, and the alternative is reconciling
+  // five kinds per team by hand.
+  await db.execute(sql`
+    DELETE FROM entity_ranking
+    WHERE entity_type = 'team'
+      AND kind IN (
+        'basketball_points_per_game', 'basketball_rebounds_per_game',
+        'basketball_assists_per_game', 'basketball_league_mvp',
+        'basketball_finals_mvp'
+      )
+  `);
+
+  const awards: [string, string, string][] = [
+    ['basketball_league_mvp', 'League MVP', 'NBA Most Valuable Player Award'],
+    ['basketball_finals_mvp', 'Finals MVP', 'Bill Russell NBA Finals Most Valuable Player Award'],
+  ];
+
+  let written = 0;
+
+  for (const [kind, label, title] of awards) {
+    const rows = await db.execute<{ count: string }>(sql`
+      WITH won AS (
+        SELECT
+          pt.team_id,
+          p.display_name AS name,
+          p.slug AS player_slug,
+          h.year
+        FROM honour h
+        JOIN person p ON p.id = h.person_id
+        JOIN sport s ON s.id = h.sport_id
+        JOIN person_team pt ON pt.person_id = h.person_id
+        JOIN team t ON t.id = pt.team_id AND t.sport_id = s.id
+        WHERE s.slug = 'basketball'
+          AND h.title = ${title}
+          -- No year means the award cannot be placed in a spell, and placing it
+          -- in every spell is what produced the fan-out this guards against.
+          AND h.year IS NOT NULL
+          AND pt.start_date IS NOT NULL
+          AND extract(year from pt.start_date) <= h.year
+          AND (pt.end_date IS NULL OR extract(year from pt.end_date) >= h.year)
+        -- One row per player per year per team: a player with two spells at the
+        -- same club would otherwise be counted twice for one award.
+        GROUP BY pt.team_id, p.display_name, p.slug, h.year
+      ),
+      ranked AS (
+        SELECT
+          team_id, name, player_slug, year,
+          row_number() OVER (PARTITION BY team_id ORDER BY year DESC) AS rank
+        FROM won
+      )
+      INSERT INTO entity_ranking (entity_type, entity_id, kind, label, entries, confidence, note)
+      SELECT
+        'team', team_id, ${kind}, ${label},
+        jsonb_agg(
+          jsonb_build_object(
+            'rank', rank, 'name', name, 'value', year,
+            'detail', NULL, 'playerSlug', player_slug
+          ) ORDER BY rank
+        ),
+        'high',
+        'Awarded while at this team, matched on the years of the player''s spell.'
+      FROM ranked
+      GROUP BY team_id
+      RETURNING 1 AS count
+    `);
+    written += rows.length;
+  }
+
+  const perGame: [string, string, string][] = [
+    ['basketball_points_per_game', 'Top scorers (points per game)', 'points_per_game'],
+    ['basketball_rebounds_per_game', 'Top rebounders (rebounds per game)', 'rebounds_per_game'],
+    ['basketball_assists_per_game', 'Top assists (assists per game)', 'assists_per_game'],
+  ];
+
+  for (const [kind, label, statKey] of perGame) {
+    const rows = await db.execute<{ count: string }>(sql`
+      WITH averages AS (
+        SELECT DISTINCT ON (pt.team_id, p.id)
+          pt.team_id,
+          p.display_name AS name,
+          p.slug AS player_slug,
+          (ps.stats ->> ${statKey})::numeric AS value
+        FROM person_statistic ps
+        JOIN person p ON p.id = ps.person_id
+        JOIN sport s ON s.id = ps.sport_id
+        JOIN person_team pt ON pt.person_id = p.id
+        JOIN team t ON t.id = pt.team_id AND t.sport_id = s.id
+        WHERE s.slug = 'basketball'
+          AND ps.stats ? ${statKey}
+          AND (ps.stats ->> ${statKey}) ~ '^[0-9]+(\\.[0-9]+)?$'
+          -- A career average over a handful of games is noise: without a floor
+          -- a three-game spell with one good night tops the table.
+          AND coalesce((ps.stats ->> 'games_played')::numeric, 0) >= 20
+        ORDER BY pt.team_id, p.id, value DESC
+      ),
+      ranked AS (
+        SELECT
+          team_id, name, player_slug, value,
+          row_number() OVER (PARTITION BY team_id ORDER BY value DESC, name ASC) AS rank
+        FROM averages
+      )
+      INSERT INTO entity_ranking (entity_type, entity_id, kind, label, entries, confidence, note)
+      SELECT
+        'team', team_id, ${kind}, ${label},
+        jsonb_agg(
+          jsonb_build_object(
+            'rank', rank, 'name', name, 'value', value,
+            'detail', NULL, 'playerSlug', player_slug
+          ) ORDER BY rank
+        ),
+        'indicative',
+        'Career average across a player''s whole career, not their spell at this team, so a short stay can rank highly. Players with fewer than 20 recorded games are excluded.'
+      -- Top five only. These are "best averages among players who played here"
+      -- rather than a complete record, so a long tail adds noise, not detail.
+      FROM ranked WHERE rank <= 5
+      GROUP BY team_id
+      RETURNING 1 AS count
+    `);
+    written += rows.length;
+  }
+
+  return written;
 }
 
 /**

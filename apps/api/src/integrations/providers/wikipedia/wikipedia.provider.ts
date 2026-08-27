@@ -705,12 +705,21 @@ export class WikipediaProvider {
       ['colors', 'Colours', 'identity', 26],
       ['league_champs', 'Championships', 'honours', 50],
       ['conf_champs', 'Conference titles', 'honours', 54],
-      ['div_champs', 'Division titles', 'honours', 56],
+      // `div_champs` is deliberately not mapped. A division title is the
+      // weakest thing an NBA franchise wins and there are far more of them than
+      // anything else, so the fact rendered as a wall of years that dwarfed the
+      // championships above it: the Lakers listed 36 division titles across
+      // eight lines, against 18 championships. The data stays in Wikipedia; it
+      // is simply not a fact worth a panel on a team page.
       ['gm', 'General manager', 'people', 67],
       ['ceo', 'Chief executive', 'people', 68],
       ['president', 'President', 'people', 69],
       ['affiliation', 'Affiliate', 'competition', 76],
-      ['sponsor', 'Sponsor', 'commercial', 82],
+      // `sponsor` is deliberately not mapped either. It was the only fact in the
+      // `commercial` category, so a team with one rendered a whole "Club"
+      // section containing a single shirt-sponsor name, and for the NBA sides
+      // the infobox value is often a partial or stale brand ("Albert" on the
+      // Lakers). A one-row section of low-confidence trivia is worse than none.
     ];
 
     return this.factsFrom(box, map);
