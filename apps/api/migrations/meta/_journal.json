@@ -232,6 +232,34 @@
       "when": 1787653655688,
       "tag": "0032_overview_entity_refs",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1787653655689,
+      "tag": "0033_kobe_bryant_single_mvp",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1787653655690,
+      "tag": "0034_tennis_explainer_types",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1787653655691,
+      "tag": "0035_formula_1_explainer_types",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1787653655692,
+      "tag": "0036_four_new_sports",
+      "breakpoints": true
     }
   ]
 }

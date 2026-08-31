@@ -50,24 +50,29 @@ export class OverviewRepository {
 
   /** Authored prose sections, published only. */
   async sections(sportId: string): Promise<OverviewSection[]> {
-    return this.database.db
-      .select({
-        kind: entitySection.kind,
-        heading: entitySection.heading,
-        body: entitySection.body,
-      })
-      .from(entitySection)
-      .where(
-        and(
-          eq(entitySection.entityType, 'sport'),
-          eq(entitySection.entityId, sportId),
-          // Drafts never reach the public site. Filtered here rather than by
-          // callers, so one forgotten predicate cannot leak unfinished writing.
-          eq(entitySection.status, 'published'),
-        ),
-      )
-      .orderBy(asc(entitySection.displayOrder))
-      .limit(20);
+    return (
+      this.database.db
+        .select({
+          kind: entitySection.kind,
+          heading: entitySection.heading,
+          body: entitySection.body,
+        })
+        .from(entitySection)
+        .where(
+          and(
+            eq(entitySection.entityType, 'sport'),
+            eq(entitySection.entityId, sportId),
+            // Drafts never reach the public site. Filtered here rather than by
+            // callers, so one forgotten predicate cannot leak unfinished writing.
+            eq(entitySection.status, 'published'),
+          ),
+        )
+        .orderBy(asc(entitySection.displayOrder))
+        // Raised from 20 when tennis arrived with exactly 20 authored sections.
+        // A cap equal to the largest sport's section count silently truncates the
+        // next one added, and a dropped section is invisible on the rendered page.
+        .limit(40)
+    );
   }
 
   /**

@@ -1,10 +1,22 @@
 import { Injectable } from '@nestjs/common';
 import { WikipediaClient } from './wikipedia.client';
 import {
+  TENNIS_OTHER_TITLE_FIELDS,
+  TENNIS_SLAM_FIELDS,
+} from '../../../database/seed/tennis-competitions';
+import {
   findTableByHeading,
   parseDefinitionLists,
   parseInfobox,
   parseNumber,
+  parseAllTimeRoster,
+  parseChampionColumn,
+  parseNbaChampions,
+  parseNbaLeaderList,
+  parseNbaSeasonList,
+  parseTournamentFinal,
+  type CareerHighlight,
+  parseCareerHighlights,
   parseTables,
   type Infobox,
   type ParsedList,
@@ -257,6 +269,39 @@ function cricketFormatFrom(context: string): string | null {
  * "248*" both lose their meaning when forced into one figure. The registry
  * declares those keys as `text` and the page prints them verbatim.
  */
+/**
+ * One title a tennis player won, as read from their infobox.
+ *
+ * `discipline` separates singles from doubles because tennis counts them
+ * separately and always has: "23 majors" means 23 singles majors, and a
+ * profile that silently added a player's doubles titles to that number would
+ * be stating something the sport does not recognise. Serena Williams has 23
+ * singles majors and 14 in doubles, and both belong on her page as their own
+ * figures.
+ */
+export interface TennisTitle {
+  /** The curated competition slug, for resolving the honour to a competition. */
+  slug: string;
+  name: string;
+  year: number;
+  discipline: 'singles' | 'doubles';
+}
+
+/** A tennis player's career, as stated by `Infobox tennis biography`. */
+export interface TennisCareer {
+  turnedPro: number | null;
+  retiredYear: number | null;
+  /** Whether the infobox carries a `retired` field at all, which is the status signal. */
+  hasRetiredField: boolean;
+  /** "Right-handed (one-handed backhand)". */
+  plays: string | null;
+  singlesTitles: number | null;
+  doublesTitles: number | null;
+  highestSinglesRanking: number | null;
+  highestDoublesRanking: number | null;
+  titles: TennisTitle[];
+}
+
 export interface WikiStatBlock {
   discipline: string | null;
   stats: Record<string, number | string>;
@@ -531,6 +576,387 @@ export class WikipediaProvider {
    * So: `image` accepts SVG and PNG only; `logo`, `crest` and `badge` accept JPG
    * as well. The Barcelona and France cases are unaffected, both being `image`.
    */
+  /**
+   * A basketball team's all-time leaders in points, rebounds and assists.
+   *
+   * Read from "{Team} all-time roster", which is the only source we have that
+   * attributes career totals to a **team** rather than to a whole career. That
+   * distinction is the whole point: the first version of these tables could
+   * only rank by career per-game average, so Isaiah Thomas topped the Lakers'
+   * scoring on 17 games there because his average came from his Boston peak.
+   *
+   * Coverage is checked rather than assumed. The title is built from the team
+   * name and the page simply may not exist, in which case this returns an empty
+   * array and the team renders no tables instead of wrong ones.
+   *
+   * A player with two spells appears in more than one section of the article, so
+   * rows are merged by taking the **largest** total per player rather than
+   * summing them: the sections are alphabetical rather than chronological, and
+   * on the pages checked a returning player's row already carries his combined
+   * total, so summing double-counts.
+   */
+  async fetchBasketballTeamLeaders(teamName: string): Promise<WikiRanking[]> {
+    // Candidates rather than one guess: Dallas files its page as "…all-time
+    // roster and statistics leaders", so a single title left the franchise with
+    // no tables at all while its data was sitting there under a longer name.
+    const candidates = [
+      `${teamName} all-time roster`,
+      `${teamName} all-time roster and statistics leaders`,
+    ];
+
+    let html: string | null = null;
+    let sourceTitle = candidates[0]!;
+    for (const candidate of candidates) {
+      const fetched = await this.client.fetchHtml(candidate);
+      if (!fetched) continue;
+      const probe = parseAllTimeRoster(fetched);
+      if (probe.length > 0) {
+        html = fetched;
+        sourceTitle = candidate;
+        break;
+      }
+    }
+    if (!html) return [];
+
+    const rows = parseAllTimeRoster(html);
+    if (rows.length === 0) return [];
+
+    // Merged per metric rather than per row, because the layouts disagree about
+    // what a row is. The wide roster gives one row carrying all three totals;
+    // the statistics-leaders layout gives a separate row per metric, so Dwyane
+    // Wade arrives three times with points, rebounds and assists in turn.
+    // Keeping the largest value per metric handles both, and also handles a
+    // player with two spells, whose row on these pages already carries his
+    // combined total, so summing would double-count.
+    const best = new Map<string, (typeof rows)[number]>();
+    for (const row of rows) {
+      const key = row.link ?? row.name;
+      const existing = best.get(key);
+      if (!existing) {
+        best.set(key, { ...row });
+        continue;
+      }
+      existing.points = Math.max(existing.points ?? 0, row.points ?? 0) || null;
+      existing.rebounds = Math.max(existing.rebounds ?? 0, row.rebounds ?? 0) || null;
+      existing.assists = Math.max(existing.assists ?? 0, row.assists ?? 0) || null;
+      existing.games = Math.max(existing.games ?? 0, row.games ?? 0) || null;
+      if (!existing.link && row.link) existing.link = row.link;
+    }
+
+    const merged = [...best.values()];
+
+    const tables: [string, string, 'points' | 'rebounds' | 'assists'][] = [
+      ['basketball_all_time_points', 'All-time points', 'points'],
+      ['basketball_all_time_rebounds', 'All-time rebounds', 'rebounds'],
+      ['basketball_all_time_assists', 'All-time assists', 'assists'],
+    ];
+
+    return tables.flatMap(([kind, label, metric]) => {
+      const ranked = merged
+        .filter((row) => (row[metric] ?? 0) > 0)
+        .sort((a, b) => (b[metric] ?? 0) - (a[metric] ?? 0))
+        .slice(0, 5);
+
+      if (ranked.length === 0) return [];
+
+      return [
+        {
+          kind,
+          label,
+          confidence: 'high' as const,
+          // Regular season only, which the article's own columns are. Saying so
+          // matters for basketball, where playoff totals are quoted separately
+          // and a reader comparing with a career figure elsewhere would
+          // otherwise see a discrepancy and assume this table is wrong.
+          note: 'Regular-season totals for this team only.',
+          sourceTitle,
+          entries: ranked.map((row, index) => ({
+            rank: index + 1,
+            name: row.name,
+            value: row[metric],
+            detail: row.games ? `${row.games.toLocaleString('en-GB')} games` : null,
+            link: row.link ?? undefined,
+          })),
+        },
+      ];
+    });
+  }
+
+  /**
+   * A player's career highlights, as basketball itself summarises them.
+   *
+   * Reads the `highlights` infobox field, which states counts rather than dated
+   * rows: "22× NBA All-Star", "4× NBA champion". Our honours list is built from
+   * Wikidata's `P166` and cannot produce that shape, holds no All-Star
+   * selections at all, and mixes in unrelated awards, so LeBron James's page
+   * carried nineteen ESPY and BET lines and a Golden Raspberry while never
+   * mentioning his All-Star selections.
+   *
+   * Capped at twelve. The field runs to thirty-four lines for Michael Jordan
+   * and the tail is college and high-school honours, which is exactly the
+   * sprawl this replaces. The article orders roughly by prestige with
+   * championships first, so a prefix is the most significant twelve.
+   */
+  async fetchCareerHighlights(title: string): Promise<CareerHighlight[]> {
+    const wikitext = await this.client.fetchWikitext(title);
+    if (!wikitext) return [];
+    return parseCareerHighlights(wikitext).slice(0, 12);
+  }
+
+  /** The lead paragraphs of an article, for an entity's `about` text. */
+  async fetchSummary(title: string): Promise<string | null> {
+    return this.client.fetchSummary(title);
+  }
+
+  /**
+   * The NBA's roll of honour and its record tables.
+   *
+   * Ten tables, each from the league's own list article, because that is where
+   * this data lives in a form worth reading: the roll of champions, five award
+   * rolls and four career leader boards.
+   *
+   * Read here rather than derived from the honours we hold, for two reasons.
+   * The awards are incomplete in Wikidata, which is what the curated MVP list
+   * exists to patch, and three of these have no representation at all: there is
+   * no scoring-champion honour, and no steals figure anywhere in the catalogue.
+   * The career boards are also per-league totals, which the per-team roster
+   * pages cannot give: those hold a player's total *for that club*, so summing
+   * them would undercount anyone who moved.
+   *
+   * A source that fails to parse yields no table rather than a wrong one, and
+   * the caller reports which.
+   */
+  async fetchNbaCompetitionTables(): Promise<WikiRanking[]> {
+    const seasonLists: [string, string, string][] = [
+      ['award:most-valuable-player', 'League MVP', 'NBA Most Valuable Player Award'],
+      ['award:finals-most-valuable-player', 'Finals MVP', 'NBA Finals Most Valuable Player Award'],
+      [
+        'award:scoring-champion',
+        'Scoring title',
+        'List of National Basketball Association season scoring leaders',
+      ],
+      [
+        'award:defensive-player-of-the-year',
+        'Defensive Player of the Year',
+        'NBA Defensive Player of the Year Award',
+      ],
+      ['award:rookie-of-the-year', 'Rookie of the Year', 'NBA Rookie of the Year Award'],
+    ];
+
+    const leaderLists: [string, string, string, string][] = [
+      [
+        'all_time_points',
+        'All-time points',
+        'List of National Basketball Association career scoring leaders',
+        'total points',
+      ],
+      [
+        'all_time_assists',
+        'All-time assists',
+        'List of National Basketball Association career assists leaders',
+        'total assists',
+      ],
+      [
+        'all_time_rebounds',
+        'All-time rebounds',
+        'List of National Basketball Association career rebounding leaders',
+        'total rebounds',
+      ],
+      [
+        'all_time_steals',
+        'All-time steals',
+        'List of National Basketball Association career steals leaders',
+        'total steals',
+      ],
+    ];
+
+    const tables: WikiRanking[] = [];
+
+    const champions = await this.readTable('List of NBA champions', (html) =>
+      parseNbaChampions(html, 200),
+    );
+    if (champions.length > 0) {
+      tables.push(
+        this.toRanking('roll_of_honour', 'Champions', 'List of NBA champions', champions, true),
+      );
+    }
+
+    for (const [kind, label, title] of seasonLists) {
+      const rows = await this.readTable(title, (html) => parseNbaSeasonList(html, 200));
+      if (rows.length > 0) tables.push(this.toRanking(kind, label, title, rows, false));
+    }
+
+    for (const [kind, label, title, header] of leaderLists) {
+      // Ten, as the page asks for. These lists run to fifty and the tail is not
+      // what a reader opens a league page to see.
+      const rows = await this.readTable(title, (html) => parseNbaLeaderList(html, header, 10));
+      if (rows.length > 0) tables.push(this.toRanking(kind, label, title, rows, false));
+    }
+
+    return tables;
+  }
+
+  /**
+   * The other basketball competitions' tables, in the same shapes as the NBA's.
+   *
+   * Coverage is uneven by design, because the sources are. The NBA publishes a
+   * list article per award and per career record; the rest publish what they
+   * publish, and a competition gets the tables its own articles support rather
+   * than a uniform set padded with empties:
+   *
+   *   - **WNBA** mirrors the NBA most closely, having champions, both MVPs, a
+   *     scoring title and career leader boards.
+   *   - **EuroLeague** has champions and two MVP awards, and no career boards:
+   *     the competition keeps no all-time totals in a form Wikipedia tabulates.
+   *   - **NCAA** has champions alone. Its individual awards are national player
+   *     awards rather than tournament ones, and its record books are per-school.
+   *   - **FIBA World Cup** and the **Olympics** have winners alone, which is
+   *     what a quadrennial national-team tournament has: no season awards, and
+   *     no career totals, since players appear a handful of times.
+   *
+   * Three champion shapes are needed, which is why this cannot reuse the NBA
+   * path. The NCAA, WNBA and EuroLeague name the winner in its own column; FIBA
+   * and the Olympics bury it in a `Final` cell alongside the score and venue.
+   */
+  async fetchBasketballCompetitionTables(slug: string): Promise<WikiRanking[]> {
+    const seasonLists: Record<string, [string, string, string, string?][]> = {
+      wnba: [
+        ['award:most-valuable-player', 'League MVP', 'WNBA Most Valuable Player Award'],
+        [
+          'award:finals-most-valuable-player',
+          'Finals MVP',
+          'WNBA Finals Most Valuable Player Award',
+        ],
+        ['award:scoring-champion', 'Scoring title', 'List of WNBA season scoring leaders'],
+        [
+          'award:defensive-player-of-the-year',
+          'Defensive Player of the Year',
+          'WNBA Defensive Player of the Year Award',
+        ],
+        ['award:rookie-of-the-year', 'Rookie of the Year', 'WNBA Rookie of the Year Award'],
+      ],
+      euroleague: [
+        ['award:most-valuable-player', 'League MVP', 'EuroLeague MVP'],
+        [
+          'award:finals-most-valuable-player',
+          'Final Four MVP',
+          'EuroLeague Final Four MVP',
+          // The column is titled after the award rather than "Player".
+          'final four mvp',
+        ],
+      ],
+    };
+
+    const leaderLists: Record<string, [string, string, string, string][]> = {
+      wnba: [
+        [
+          'all_time_points',
+          'All-time points',
+          'List of WNBA career scoring leaders',
+          'total points',
+        ],
+        [
+          'all_time_assists',
+          'All-time assists',
+          'List of WNBA career assists leaders',
+          'total assists',
+        ],
+        [
+          'all_time_rebounds',
+          'All-time rebounds',
+          'List of WNBA career rebounding leaders',
+          'total rebounds',
+        ],
+        [
+          'all_time_steals',
+          'All-time steals',
+          'List of WNBA career steals leaders',
+          'total steals',
+        ],
+      ],
+    };
+
+    // Which article names the champions, and how it names them.
+    const champions: Record<string, { title: string; column?: string }> = {
+      wnba: { title: 'List of WNBA champions', column: 'champions' },
+      euroleague: { title: 'EuroLeague Championship Game', column: 'champion' },
+      'ncaa-division-i': {
+        title: "List of NCAA Division I men's basketball champions",
+        column: 'champion',
+      },
+      'fiba-basketball-world-cup': { title: 'FIBA Basketball World Cup' },
+      'olympic-basketball': { title: 'Basketball at the Summer Olympics' },
+    };
+
+    const tables: WikiRanking[] = [];
+
+    const source = champions[slug];
+    if (source) {
+      const rows = await this.readTable(source.title, (html) =>
+        source.column
+          ? parseChampionColumn(html, source.column, 200)
+          : parseTournamentFinal(html, 200),
+      );
+      if (rows.length > 0) {
+        tables.push(this.toRanking('roll_of_honour', 'Champions', source.title, rows, true));
+      }
+    }
+
+    for (const [kind, label, title, winnerHeader] of seasonLists[slug] ?? []) {
+      const rows = await this.readTable(title, (html) =>
+        parseNbaSeasonList(html, 200, winnerHeader),
+      );
+      if (rows.length > 0) tables.push(this.toRanking(kind, label, title, rows, false));
+    }
+
+    for (const [kind, label, title, header] of leaderLists[slug] ?? []) {
+      const rows = await this.readTable(title, (html) => parseNbaLeaderList(html, header, 10));
+      if (rows.length > 0) tables.push(this.toRanking(kind, label, title, rows, false));
+    }
+
+    return tables;
+  }
+
+  /** Fetches one article and applies a parser, yielding nothing on failure. */
+  private async readTable<T>(title: string, parse: (html: string) => T[]): Promise<T[]> {
+    const html = await this.client.fetchHtml(title);
+    return html ? parse(html) : [];
+  }
+
+  /**
+   * Wraps parsed rows as a ranking.
+   *
+   * `isTeam` decides which slug the assembler will resolve the link against. A
+   * roll of honour names clubs and an award roll names players, and resolving a
+   * club against the person catalogue finds nothing.
+   */
+  private toRanking(
+    kind: string,
+    label: string,
+    sourceTitle: string,
+    rows: { name: string; link: string | null; value: string; detail: string | null }[],
+    isTeam: boolean,
+  ): WikiRanking {
+    return {
+      kind,
+      label,
+      confidence: 'high',
+      note: null,
+      sourceTitle,
+      entries: rows.map((row, index) => ({
+        rank: index + 1,
+        name: row.name,
+        // Kept as text. These are formatted totals ("43,440") and years, and
+        // parsing them to numbers only to format them again loses the
+        // thousands separators the source already applies.
+        value: row.value,
+        detail: row.detail,
+        link: row.link ?? undefined,
+        ...(isTeam ? { isTeam: true } : {}),
+      })),
+    };
+  }
+
   /** Raw wikitext for a page, for callers that parse it themselves. */
   async fetchWikitextFor(title: string): Promise<string | null> {
     return this.client.fetchWikitext(title);
@@ -1381,7 +1807,19 @@ export class WikipediaProvider {
       ['club', 'Club', 'career', 50],
       ['nationalteam', 'National team', 'career', 55],
       ['country', 'Country', 'career', 55],
-      ['career_start', 'Career start', 'career', 60],
+      // `career_start` is deliberately unmapped.
+      //
+      // It is a basketball-only field in practice, and basketball dates a career
+      // by the draft rather than by a first appearance: `draft_year` is the
+      // figure the sport quotes and 386 of the 392 people carrying a career
+      // start carried a draft year too, so the pair rendered the same 2003 twice
+      // on LeBron James's profile.
+      //
+      // The value is also unreliable where it is the only one of the two. Six
+      // people have a career start and no draft year, and most of those are not
+      // a start at all but a whole span: Michael Jordan's reads
+      // "1984-1993, 1995-1998, 2001". `career_end` is kept, being a different
+      // fact and a cleaner one.
       ['career_end', 'Career end', 'career', 65],
       ['debutdate', 'Debut', 'career', 60],
       ['nationalyears', 'International years', 'career', 62],
@@ -2572,6 +3010,160 @@ export class WikipediaProvider {
     if (ranked.length === 0 || Number(ranked[0]?.value ?? 0) <= 0) return [];
 
     return ranked;
+  }
+
+  /**
+   * A tennis player's career: their span, their titles and their major results.
+   *
+   * `Infobox tennis biography` is unusually rich, and it is the only good
+   * source for any of this. Wikidata records slam titles inconsistently and
+   * frequently not at all: Federer's entity carries one honour, an ESPY award,
+   * and none of his twenty majors. The infobox states every one of them in a
+   * structured field.
+   *
+   * The field that matters is the per-major result, which reads
+   * `AustralianOpenresult = W (2004, 2006, 2007, 2010, 2017, 2018)` for a
+   * champion and `SF (2019)` or `4R` for everybody else. Only a `W` is a title,
+   * and the years in the parentheses are the years it was won, so one field
+   * yields both the count and the dates.
+   *
+   * ## On the leading letter
+   *
+   * Matched anchored at the start, because the result codes overlap as
+   * substrings. A value of `W (2008)` is a win; `QF`, `SF` and `F` are not, and
+   * `F` in particular means the player **lost** the final. Federer's Olympic
+   * singles field reads `F (2012)` and his doubles field `W (2008)`, so a
+   * substring test for "W" anywhere would credit him a singles gold he never
+   * won, and one that ignored doubles would miss the gold he did.
+   *
+   * ## On retirement
+   *
+   * `retired` is present for a player who has stopped and absent for one still
+   * competing, which is the signal club spells give in every other sport and
+   * which tennis players do not have. Its format varies: a full date
+   * ("23 September 2022"), a bare year, or a range ("2022–2026") for a player
+   * who came back. The last year mentioned is taken, and a year in the future
+   * is a scheduled farewell rather than a completed retirement.
+   */
+  async fetchTennisCareer(title: string): Promise<TennisCareer | null> {
+    const wikitext = await this.client.fetchWikitext(title);
+    if (!wikitext) return null;
+
+    // The tennis box specifically, and nothing else.
+    //
+    // `parseInfobox` takes a preferred template and falls back to whatever
+    // infobox the page has, which is right for its other callers and wrong
+    // here. Wikidata's "sport: tennis" statement is true of anybody who ever
+    // played the game, so this catalogue contains a pop musician, a king and a
+    // former Czech president. Accepting the fallback parses their musician and
+    // officeholder boxes, finds no result fields, and returns an empty career
+    // that reads as "played tennis, won nothing, still active" rather than
+    // "not a tennis player". Requiring the template by name is what makes a
+    // null here mean something.
+    if (!/\{\{\s*Infobox\s+tennis\s+biography\b/i.test(wikitext)) return null;
+
+    const box = parseInfobox(wikitext, 'tennis biography');
+    if (!box) return null;
+
+    /** The years inside a result field: "W (2004, 2006)" gives [2004, 2006]. */
+    const yearsIn = (value: string): number[] =>
+      [...value.matchAll(/\b(1[89]\d{2}|20\d{2})\b/g)].map((match) => Number(match[1]));
+
+    /**
+     * Whether a result field records a win, and in which years.
+     *
+     * Anchored on the leading token. `W` wins; `F`, `SF`, `QF` and a round
+     * number do not.
+     */
+    const winYears = (value: string | undefined): number[] => {
+      if (!value) return [];
+      if (!/^\s*'*\s*W\b/.test(value)) return [];
+      return yearsIn(value);
+    };
+
+    const titles: TennisTitle[] = [];
+    for (const major of TENNIS_SLAM_FIELDS) {
+      for (const year of winYears(box[major.field.toLowerCase()])) {
+        titles.push({ slug: major.slug, name: major.name, year, discipline: 'singles' });
+      }
+      for (const year of winYears(box[major.doublesField.toLowerCase()])) {
+        titles.push({ slug: major.slug, name: major.name, year, discipline: 'doubles' });
+      }
+    }
+
+    for (const other of TENNIS_OTHER_TITLE_FIELDS) {
+      for (const year of winYears(box[other.field.toLowerCase()])) {
+        titles.push({ slug: other.slug, name: other.name, year, discipline: 'singles' });
+      }
+      if (other.doublesField) {
+        for (const year of winYears(box[other.doublesField.toLowerCase()])) {
+          titles.push({ slug: other.slug, name: other.name, year, discipline: 'doubles' });
+        }
+      }
+    }
+
+    // Deduplicated on (competition, year, discipline). The WTA Finals was held
+    // twice in 1986 and Navratilova won both, so her infobox names the year
+    // twice; the honour table holds one row per competition and year, so the
+    // second is dropped rather than failing the insert.
+    const seen = new Set<string>();
+    const deduped = titles.filter((entry) => {
+      const key = `${entry.slug}:${entry.year}:${entry.discipline}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    const turnedProYears = yearsIn(box.turnedpro ?? '');
+    const retiredYears = yearsIn(box.retired ?? '');
+
+    // The last year named, because a comeback writes a range. A player whose
+    // only retirement year is in the future has announced one rather than
+    // completed it, and is still competing today.
+    const retiredYear = retiredYears.length > 0 ? Math.max(...retiredYears) : null;
+
+    return {
+      turnedPro: turnedProYears.length > 0 ? Math.min(...turnedProYears) : null,
+      retiredYear,
+      // The presence of the field is the signal, not the year: a player with
+      // `retired = 2022` has stopped whatever the date parses to.
+      hasRetiredField: box.retired !== undefined,
+      plays: box.plays ?? null,
+      singlesTitles: this.leadingCount(box.singlestitles),
+      doublesTitles: this.leadingCount(box.doublestitles),
+      highestSinglesRanking: this.rankingNumber(box.highestsinglesranking),
+      highestDoublesRanking: this.rankingNumber(box.highestdoublesranking),
+      titles: deduped,
+    };
+  }
+
+  /**
+   * The count at the front of a titles field.
+   *
+   * `singlestitles` cleans to "167 (Open era record)" or "103 (2nd in the Open
+   * Era)": a count followed by a parenthetical ranking. `parseNumber` requires
+   * the whole string to be a number and correctly rejects both, so the leading
+   * integer is taken here rather than by loosening a helper that a dozen other
+   * callers rely on being strict.
+   */
+  private leadingCount(value: string | undefined): number | null {
+    if (!value) return null;
+    const match = /^\s*(\d{1,4})\b/.exec(value);
+    return match ? Number(match[1]) : null;
+  }
+
+  /**
+   * The number out of a ranking field.
+   *
+   * `highestsinglesranking` cleans to "No. 1 (2 February 2004)", and the wanted
+   * value is the 1 rather than the 2 that starts the date. Anchored on the
+   * "No." prefix for that reason: `parseNumber` on the whole string returns the
+   * day of the month for anybody whose article writes the date first.
+   */
+  private rankingNumber(value: string | undefined): number | null {
+    if (!value) return null;
+    const match = /No\.\s*(\d{1,4})/i.exec(value);
+    return match ? Number(match[1]) : null;
   }
 
   /** Maps a cricket infobox column label onto a discipline key. */

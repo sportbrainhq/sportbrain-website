@@ -15,6 +15,13 @@ import {
   QuickFacts,
   SourceList,
 } from '@/components/sports/overview';
+import {
+  ChampionshipSplit,
+  FlagSystem,
+  RaceFlow,
+  SeasonFlow,
+  WeekendSchedule,
+} from '@/components/sports/formula-one-diagrams';
 import { ApiError, fetchSportOverview } from '@/lib/api';
 import { buildMetadata } from '@/lib/seo';
 
@@ -104,6 +111,38 @@ export default async function SportOverviewPage({
   const culture = section('culture');
 
   /*
+   * Sections carrying a diagram beside their prose.
+   *
+   * Formula 1 authors all five. Every other sport authors none, so each block
+   * below renders only when its prose exists and the diagrams are behind the
+   * same condition: nothing about the football, cricket, basketball or tennis
+   * pages changes because these lines are here.
+   */
+  const qualifying = section('qualifying');
+  const race = section('race');
+  const points = section('points');
+  const titles = section('titles');
+  const flags = section('flags');
+
+  /*
+   * Sections with a slot but no diagram.
+   *
+   * Placed rather than left to the fall-through block at the foot of the page,
+   * because order carries meaning here: the machinery, then what it runs on,
+   * then how it is raced, then where. Left unplaced they rendered after
+   * "beyond the results", which reads as an appendix.
+   */
+  const car = section('car');
+  const tyres = section('tyres');
+  const strategy = section('strategy');
+  const circuits = section('circuits');
+  const rivalries = section('rivalries');
+  const records = section('records');
+
+  /** Whether to draw the Formula 1 flow diagrams alongside the prose. */
+  const showRacingDiagrams = slug === 'formula-1';
+
+  /*
    * Everything else the API returned.
    *
    * Authored sections are keyed by an open-ended string rather than an enum, so
@@ -128,6 +167,17 @@ export default async function SportOverviewPage({
     'stages',
     'eras',
     'culture',
+    'qualifying',
+    'race',
+    'points',
+    'titles',
+    'flags',
+    'car',
+    'tyres',
+    'strategy',
+    'circuits',
+    'rivalries',
+    'records',
   ]);
   const additional = sections.filter((entry) => !placed.has(entry.kind));
 
@@ -314,7 +364,58 @@ export default async function SportOverviewPage({
       )}
 
       {/* 6b. The events that carry more weight than the calendar suggests. */}
-      {stages && <EditorialSection section={stages} />}
+      {stages && (
+        <section>
+          <EditorialSection section={stages} />
+          {showRacingDiagrams && (
+            <div className="mt-6 space-y-8">
+              <WeekendSchedule />
+              <SeasonFlow />
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* 6c. Qualifying, then the race, each with its sequence drawn out. */}
+      {qualifying && <EditorialSection section={qualifying} />}
+
+      {race && (
+        <section>
+          <EditorialSection section={race} />
+          {showRacingDiagrams && (
+            <div className="mt-6">
+              <RaceFlow />
+            </div>
+          )}
+        </section>
+      )}
+
+      {/*
+       * 6d. How results become championships.
+       *
+       * The prose and the diagram make the same point twice on purpose. That
+       * two titles come from one set of results is the fact a newcomer most
+       * often misses, and the arithmetic behind the constructors' title is
+       * easier to see than to read.
+       */}
+      {points && (
+        <section>
+          <EditorialSection section={points} />
+          {showRacingDiagrams && (
+            <div className="mt-6">
+              <ChampionshipSplit sportSlug={slug} />
+            </div>
+          )}
+        </section>
+      )}
+
+      {titles && <EditorialSection section={titles} />}
+
+      {/* 6e. The machinery, what it runs on, and how it is raced. */}
+      {car && <EditorialSection section={car} />}
+      {tyres && <EditorialSection section={tyres} />}
+      {strategy && <EditorialSection section={strategy} />}
+      {circuits && <EditorialSection section={circuits} />}
 
       {/* 7. Evolution */}
       {evolution && <EditorialSection section={evolution} />}
@@ -373,8 +474,24 @@ export default async function SportOverviewPage({
         </section>
       )}
 
+      {/* 8c. Contests and numbers, after the people they belong to. */}
+      {rivalries && <EditorialSection section={rivalries} />}
+      {records && <EditorialSection section={records} />}
+
       {/* 9. Around the world */}
       {global && <EditorialSection section={global} />}
+
+      {/* 9a. Flags, and the two ways a race is neutralised. */}
+      {flags && (
+        <section>
+          <EditorialSection section={flags} />
+          {showRacingDiagrams && (
+            <div className="mt-6">
+              <FlagSystem />
+            </div>
+          )}
+        </section>
+      )}
 
       {/* 9b. The sport beyond its own results. */}
       {culture && <EditorialSection section={culture} />}

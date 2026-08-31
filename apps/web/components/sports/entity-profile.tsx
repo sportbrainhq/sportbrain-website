@@ -50,6 +50,21 @@ export function FactPanel({
     byCategory.set(fact.category, [...(byCategory.get(fact.category) ?? []), fact]);
   }
 
+  // The `career` category is mixed: it holds the current club, but also the
+  // draft, the career start and end, and the person's country. Labelling the
+  // whole block "Current club" was therefore wrong far more often than it was
+  // right. LeBron James's block carried a career start, a draft year and the
+  // team that drafted him in 2003, under a heading claiming to name the club he
+  // plays for now, which is a different team.
+  //
+  // So the heading is chosen from what the block actually contains rather than
+  // fixed: it names the club only when a club fact is present and nothing else
+  // is, and otherwise says "Career", which covers the draft and the dates.
+  const careerFacts = byCategory.get('career') ?? [];
+  // "Current club" is only honest when the block is nothing but the club.
+  const onlyClub =
+    careerFacts.length > 0 && careerFacts.every((fact) => CURRENT_CLUB_KEYS.has(fact.key));
+
   const headings: Record<string, string> = {
     identity: 'Identity',
     people: 'Key people',
@@ -57,11 +72,10 @@ export function FactPanel({
     commercial: 'Club',
     profile: 'Profile',
     // Named explicitly, because the fallback rendered the raw category and a
-    // player's page carried two headings called "Career": this block, which
-    // holds the current club, and the club history below it. Where the club has
-    // been suppressed the block holds the person's country instead, and calling
-    // that "Current club" would be the same wrong label one level up.
-    career: suppressCurrentClub ? 'Affiliation' : 'Current club',
+    // player's page carried two headings called "Career": this block and the
+    // club history below it. "Career details" distinguishes the two while
+    // staying honest about the mixture.
+    career: !suppressCurrentClub && onlyClub ? 'Current club' : 'Career details',
   };
 
   return (

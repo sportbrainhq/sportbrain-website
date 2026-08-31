@@ -24,7 +24,20 @@ export type ExplainerType =
   | 'technology'
   | 'play'
   | 'court_area'
-  | 'officiating';
+  | 'officiating'
+  // Tennis.
+  | 'shot'
+  | 'playing_style'
+  | 'surface'
+  | 'equipment'
+  | 'ranking_concept'
+  // Formula 1.
+  | 'car_component'
+  | 'procedure'
+  | 'strategy_concept'
+  | 'circuit'
+  | 'penalty'
+  | 'flag';
 
 export type ExplainerDifficulty = 'beginner' | 'intermediate' | 'advanced';
 
@@ -83,7 +96,21 @@ export type ExplainerSectionType =
   | 'the_action'
   | 'how_it_is_defended'
   | 'counters'
-  | 'where_it_happens';
+  | 'where_it_happens'
+  // Tennis.
+  | 'the_shot'
+  | 'when_players_use_it'
+  | 'advantages'
+  | 'risks'
+  | 'notable_players'
+  | 'worked_example'
+  | 'how_it_is_played'
+  // Formula 1.
+  | 'the_procedure'
+  | 'on_the_car'
+  | 'strategic_implications'
+  | 'driver_technique'
+  | 'regulation_era';
 
 export type ExplainerRelationType =
   | 'related_to'
@@ -303,5 +330,274 @@ export interface CourtPlayStep {
 export interface CourtPlayShape {
   court: 'half' | 'full';
   steps: CourtPlayStep[];
+  caption?: string;
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Tennis
+ * ────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * A tennis court diagram, stored on a section's structured data.
+ *
+ * Coordinates are percentages of the drawn court, which keeps the real 78-by-36
+ * foot proportion rather than squaring it off: half the court explainers exist
+ * because the court is long and narrow, and a square drawing teaches the
+ * opposite. `x` runs 0 (left doubles sideline) to 100 (right); `y` runs 0 (the
+ * near baseline, the reader's end) to 100 (the far baseline), with the net at
+ * 50. A payload is therefore written the way a rally is described, from the
+ * reader's end forward.
+ *
+ * The landmarks, for writing coordinates by hand: doubles sidelines at x 6 and
+ * 94, singles sidelines at 17 and 83, baselines at y 6 and 94, service lines at
+ * y 26.5 and 73.5, centre service line at x 50.
+ *
+ * `court` is the discriminator against the basketball play, which also carries
+ * `steps`. The renderer picks a diagram by payload shape rather than by sport,
+ * so 'singles' | 'doubles' has to be present and has to differ from
+ * basketball's 'half' | 'full'.
+ */
+export interface TennisCourtPlayer {
+  id: string;
+  /** Drawn in the marker: "S" for server, "R" for returner, "A"/"B" in doubles. */
+  label: string;
+  side: 'near' | 'far';
+  x: number;
+  y: number;
+  hasBall?: boolean;
+  /** Draws this one filled: the player the step is about. */
+  highlight?: boolean;
+}
+
+/** A ball flight, a serve or a player movement. Rendered as an arrow of its kind. */
+export interface TennisCourtArrow {
+  kind: 'ball' | 'move' | 'serve';
+  fromX: number;
+  fromY: number;
+  toX: number;
+  toY: number;
+  label?: string;
+  /** Dashed and faint: the shot that was not played, or the one being contrasted. */
+  ghost?: boolean;
+}
+
+/** A bounce, a landing point or a target. `out` renders as a cross, `in` as a dot. */
+export interface TennisCourtSpot {
+  x: number;
+  y: number;
+  label?: string;
+  kind?: 'in' | 'out' | 'target';
+}
+
+/** A highlighted region: a service box, an alley, an area of the court. */
+export interface TennisCourtZone {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  label?: string;
+}
+
+export interface TennisCourtStep {
+  caption: string;
+  players?: TennisCourtPlayer[];
+  arrows?: TennisCourtArrow[];
+  spots?: TennisCourtSpot[];
+  zones?: TennisCourtZone[];
+}
+
+export interface TennisCourtShape {
+  /** `doubles` draws the alleys as live; `singles` greys them out. */
+  court: 'singles' | 'doubles';
+  steps: TennisCourtStep[];
+  /** Names the baseline, service line and alley on the drawing itself. */
+  showLabels?: boolean;
+  caption?: string;
+}
+
+/**
+ * A knockout draw.
+ *
+ * `entrants` is the first round in draw order, read two at a time, so a payload
+ * cannot express a bracket with an odd player left over in a round. `winners`
+ * is optional: omitting it renders an empty bracket, which is what the seeding
+ * explainers want, since their subject is the shape of the draw rather than
+ * anybody's results.
+ */
+export interface DrawEntrant {
+  name: string;
+  seed?: number;
+  /** How the player entered: "Q", "WC", "LL", "PR", "Alt". */
+  status?: string;
+  highlight?: boolean;
+}
+
+export interface DrawShape {
+  rounds: string[];
+  entrants: DrawEntrant[];
+  /** By round. `winners[0]` is the second round; each entry indexes the previous round. */
+  winners?: number[][];
+  caption?: string;
+}
+
+/**
+ * A worked scoreline.
+ *
+ * Cricket's `ScoreBreakdown` does the same job for a different shape: it labels
+ * the parts of one string like "287/6 (47.2)", where a tennis scoreboard is a
+ * grid, and the grid is exactly what a beginner cannot read. `tiebreak` renders
+ * as the superscript beside the games, which is the notation every scoreboard
+ * uses and nobody explains.
+ */
+export interface TennisScoreboardShape {
+  sets: string[];
+  rows: {
+    name: string;
+    scores: { games: number | string; tiebreak?: number | string }[];
+    serving?: boolean;
+    /** The live point score: "40", "AD", "30". */
+    points?: string;
+    won?: boolean;
+  }[];
+  caption?: string;
+  /** Pointed-at explanations rendered beneath the grid. */
+  notes?: { label: string; explanation: string }[];
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Formula 1
+ * ────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * A track diagram: a circuit outline with cars, zones and markers on it.
+ *
+ * Structured rather than an image for the three reasons every other sport's
+ * diagram is: one payload drives a thumbnail and a full-width figure, it stays
+ * legible in both themes, and it can describe itself to a reader who cannot see
+ * it. The last matters more here than anywhere else in the library, because a
+ * diagram is the only honest way to explain an undercut and a picture of one is
+ * useless to a screen reader.
+ *
+ * `path` is an SVG path string in a 0-100 coordinate box, so a circuit is
+ * written once and reused by every explainer that needs that track. Where the
+ * concept does not depend on a real circuit, `path` is omitted and the renderer
+ * draws its generic oval: an out-lap diagram should not imply the idea only
+ * applies at Silverstone.
+ *
+ * Positions along the lap are given as `lap` percentages rather than x/y pairs,
+ * which is the whole reason this type is worth having. "The DRS detection point
+ * is 300 metres before the corner and the activation zone starts at the exit"
+ * is a statement about distance around a lap, and making an author solve for
+ * coordinates on a bezier would guarantee arithmetic errors in the seed data.
+ */
+export interface TrackCar {
+  id: string;
+  /** Drawn in the marker: "1", "VER", "A", "B". */
+  label: string;
+  /** Percentage of the way around the lap, 0-100. */
+  lap: number;
+  /** Distinguishes the two cars in a battle without naming real drivers. */
+  team?: 'a' | 'b' | 'neutral';
+  /** Draws this one emphasised: the car the step is about. */
+  highlight?: boolean;
+  /** Renders faint: where the car would have been on the other strategy. */
+  ghost?: boolean;
+  /** "in the pit lane", shown off the racing line. */
+  inPits?: boolean;
+}
+
+/** A stretch of lap: a DRS zone, a yellow flag sector, a braking zone. */
+export interface TrackZone {
+  /** Percentages of the lap. `to` may be less than `from` to cross the line. */
+  from: number;
+  to: number;
+  label?: string;
+  kind?: 'drs' | 'caution' | 'braking' | 'sector' | 'neutral';
+}
+
+/** A point on the lap: a detection line, an apex, a pit entry, a marshal post. */
+export interface TrackMarker {
+  lap: number;
+  label: string;
+  kind?: 'detection' | 'apex' | 'pit-entry' | 'pit-exit' | 'start' | 'flag' | 'neutral';
+}
+
+export interface TrackStep {
+  /** "Car B pits at the end of lap 18 and rejoins on fresh softs." */
+  caption: string;
+  cars?: TrackCar[];
+  zones?: TrackZone[];
+  markers?: TrackMarker[];
+  /** Shown beside the diagram: "Lap 18 of 57", "Gap: 2.1s". */
+  note?: string;
+}
+
+export interface TrackShape {
+  /** The discriminator. No other sport's payload carries it. */
+  track: 'circuit';
+  /** SVG path in a 0-100 box. Omitted for a generic illustrative lap. */
+  path?: string;
+  /** Named when `path` is a real circuit, so the caption can say which. */
+  circuitName?: string;
+  steps: TrackStep[];
+  caption?: string;
+}
+
+/**
+ * A labelled car diagram, for the components and aerodynamics categories.
+ *
+ * The brief asks for labelled car diagrams by name. Parts are percentages of a
+ * side or top view rather than pixels, and `view` is stored rather than
+ * inferred because a floor is only visible from below and a halo only from
+ * above, and a reader needs to be told which way they are looking at it.
+ */
+export interface CarPart {
+  /** "Front wing", "Diffuser", "Halo". */
+  name: string;
+  x: number;
+  y: number;
+  /** Draws this one emphasised: the part the explainer is about. */
+  highlight?: boolean;
+  /** One line shown on hover and in the accessible description. */
+  note?: string;
+}
+
+export interface CarDiagramShape {
+  /** The discriminator, alongside `parts`. */
+  car: 'side' | 'top' | 'front';
+  parts: CarPart[];
+  caption?: string;
+}
+
+/**
+ * A strategy comparison: two or more stint plans on a shared lap axis.
+ *
+ * The one visual the strategy category genuinely cannot do without. An undercut,
+ * an overcut, a one-stop against a two-stop and an offset are all the same
+ * claim (these tyres, for these laps, at this pace) and prose describing four
+ * of them side by side is unreadable. Laps are absolute rather than
+ * percentages, because a strategy argument is conducted in laps.
+ */
+export interface StintPlan {
+  /** "One-stop", "Two-stop", "Car A". */
+  label: string;
+  stints: {
+    /** Matches a tyre explainer's subject: soft, medium, hard, inter, wet. */
+    compound: 'soft' | 'medium' | 'hard' | 'intermediate' | 'wet';
+    fromLap: number;
+    toLap: number;
+    /** "Fresh", "Used", "10-lap-old". */
+    note?: string;
+  }[];
+  /** The outcome, shown at the end of the row: "P1, +2.4s". */
+  result?: string;
+  highlight?: boolean;
+}
+
+export interface StrategyChartShape {
+  /** The discriminator. */
+  strategy: 'stints';
+  totalLaps: number;
+  plans: StintPlan[];
   caption?: string;
 }

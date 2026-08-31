@@ -87,7 +87,19 @@ export interface CompetitionRankingSeed {
     | 'most_catches'
     | 'most_wicketkeeper_dismissals'
     | 'award:player-of-the-tournament'
-    | 'award:player-of-the-season';
+    | 'award:player-of-the-season'
+    // Tennis. The two singles events are separate tables rather than one
+    // combined list, so they need distinct values: `kind` is the conflict
+    // target on `entity_ranking`, and sharing one would make the second write
+    // overwrite the first.
+    | 'champions_mens_singles'
+    | 'champions_womens_singles'
+    // Doubles, which tennis reports as three further events rather than one:
+    // men's and women's pairs are separate draws, and mixed doubles pairs one
+    // of each. Five tables per major in total.
+    | 'champions_mens_doubles'
+    | 'champions_womens_doubles'
+    | 'champions_mixed_doubles';
   label: string;
   /** Where the figures came from. Rendered as the table's provenance note. */
   source: string;

@@ -184,6 +184,7 @@ export class WikidataProvider implements SportsDataProvider {
         source.personOccupationQid,
         source.personClubClassQid,
         source.personMinSitelinks,
+        source.excludeOccupationQids,
       ),
     );
 
@@ -210,6 +211,10 @@ export class WikidataProvider implements SportsDataProvider {
 
     const items = identities.map<ProviderPerson>((row) => {
       const detail = details.get(this.qid(row.item)) ?? {};
+      const nickname = WikidataProvider.bestNickname(
+        detail.preferredNicknames,
+        detail.nicknameList,
+      );
 
       // Cross-references are the reason this provider goes first: they let a
       // later commercial feed be matched deterministically rather than by name.
@@ -240,6 +245,7 @@ export class WikidataProvider implements SportsDataProvider {
             ...(detail.position ? { position: detail.position } : {}),
             ...(detail.currentClub ? { currentClub: detail.currentClub } : {}),
             ...(detail.heightCm ? { heightCm: Number(detail.heightCm) } : {}),
+            ...(nickname ? { nickname } : {}),
           },
         },
       };
@@ -615,16 +621,77 @@ export class WikidataProvider implements SportsDataProvider {
     }),
   });
 
+  /**
+   * How many times a transient failure is retried before the page gives up.
+   *
+   * Three attempts, spaced by `RETRY_BASE_DELAY_MS` doubling each time, so a
+   * page survives roughly eleven seconds of the endpoint being unavailable.
+   *
+   * The Query Service is free, shared and periodically returns 502 for a few
+   * seconds at a time under load. Before this existed, `retryable` was computed
+   * and then used only to decide whether to abort the whole run or record the
+   * page as failed: nothing ever retried, so a single momentary 502 ended a
+   * pass. Measured on one afternoon's ingestion of four sports, that cost the
+   * golf, American football and boxing people passes and two honours passes,
+   * each of which then had to be re-run by hand.
+   *
+   * Kept small deliberately. This is somebody else's free service, and a long
+   * retry ladder against an endpoint that is struggling is how a polite client
+   * becomes an impolite one.
+   */
+  private static readonly MAX_ATTEMPTS = 3;
+  private static readonly RETRY_BASE_DELAY_MS = 2_000;
+
+  /**
+   * Runs one query, retrying the failures that are worth retrying.
+   *
+   * `throttle` is called inside the loop rather than around it, so a retry
+   * respects the same one-request-per-second interval as a first attempt.
+   */
   private async runQuery(query: string): Promise<Record<string, string | undefined>[]> {
+    let lastError: unknown;
+
+    for (let attempt = 1; attempt <= WikidataProvider.MAX_ATTEMPTS; attempt += 1) {
+      try {
+        return await this.attemptQuery(query);
+      } catch (error) {
+        // A non-retryable error is a malformed query or an unexpected response
+        // shape. Both fail identically however many times they are sent, and
+        // repeating them spends requests on a free service to no purpose.
+        if (error instanceof ProviderError && !error.retryable) throw error;
+
+        lastError = error;
+        if (attempt === WikidataProvider.MAX_ATTEMPTS) break;
+
+        await new Promise((resolve) =>
+          setTimeout(resolve, WikidataProvider.RETRY_BASE_DELAY_MS * 2 ** (attempt - 1)),
+        );
+      }
+    }
+
+    throw lastError;
+  }
+
+  private async attemptQuery(query: string): Promise<Record<string, string | undefined>[]> {
     await this.throttle();
 
     let response: Response;
     try {
-      response = await fetch(`${WikidataProvider.ENDPOINT}?query=${encodeURIComponent(query)}`, {
+      // POST rather than a query string. The endpoint accepts both, but a GET
+      // carries the query in the URL, and the URL in a request header: a batch
+      // of a hundred QIDs against the person-detail query crosses the server's
+      // header limit and comes back as "HTTP 431 Request Header Fields Too
+      // Large", which happened as soon as that query grew by one OPTIONAL. The
+      // failure is also size-dependent rather than deterministic, so it struck
+      // one batch in twelve and looked transient.
+      response = await fetch(WikidataProvider.ENDPOINT, {
+        method: 'POST',
         headers: {
           Accept: 'application/sparql-results+json',
+          'Content-Type': 'application/sparql-query',
           'User-Agent': WikidataProvider.USER_AGENT,
         },
+        body: query,
         signal: AbortSignal.timeout(70_000),
       });
     } catch (error) {
@@ -719,6 +786,60 @@ export class WikidataProvider implements SportsDataProvider {
   }
 
   /** `http://www.wikidata.org/entity/Q8682` becomes `Q8682`. */
+  /**
+   * Picks the recognised nickname from the pipe-separated list P1449 returns.
+   *
+   * Several players carry more than one: Michael Jordan holds eleven. The rules,
+   * in order, each added against a case that was wrong:
+   *
+   *   1. **Preferred-rank statements win.** Wikidata lets editors mark which
+   *      statement is the real one, and for nicknames they have: two of Jordan's
+   *      eleven are preferred, "Air Jordan" and "MJ". This is a judgement by
+   *      people who know the subject and beats anything inferred from the text.
+   *   2. **A value listing several is split further.** Dirk Nowitzki's is one
+   *      string, "Dirkules / Flying Deutschman / Dunking Deutschman", which
+   *      rendered whole on the page.
+   *   3. **Two to four words, then longest.** Real nicknames are short ("The
+   *      Greek Freak", "The Answer"), and a player with several tends to hold
+   *      both an abbreviation and the recognised form, the latter being longer:
+   *      "Air Jordan" over "MJ". Length alone was not enough on its own, which
+   *      is what rule 1 exists for: it published Magic Johnson as "E.J. the
+   *      Deejay" over "Magic" and Wilt Chamberlain as "The Record Book", both
+   *      real and neither what anyone calls them.
+   *
+   * Ties break on the original order, so the result is stable across ingests.
+   * Rules 2 and 3 remain a heuristic and will be wrong sometimes, for players
+   * whose statements nobody has ranked. It is a display nicety, and the tradeoff
+   * is stated here rather than pretending the property is authoritative.
+   */
+  private static bestNickname(
+    preferred: string | undefined,
+    list: string | undefined,
+  ): string | null {
+    // Wikidata's own preferred-rank statements first. Where editors have marked
+    // one, that is a judgement about which nickname is the real one and beats
+    // anything inferred from the string.
+    const source = preferred?.trim() ? preferred : list;
+    if (!source) return null;
+
+    const candidates = source
+      .split(/[|/]/)
+      .map((value) => value.trim())
+      .filter(Boolean);
+    if (candidates.length === 0) return null;
+
+    const words = (value: string) => value.split(/\s+/).length;
+    // The band a recognised nickname falls in. Checked before length so a long
+    // obscure one cannot beat a short famous one.
+    const wellFormed = candidates.filter(
+      (candidate) => words(candidate) >= 2 && words(candidate) <= 4,
+    );
+
+    const pool = wellFormed.length > 0 ? wellFormed : candidates;
+
+    return pool.reduce((best, candidate) => (candidate.length > best.length ? candidate : best));
+  }
+
   private qid(uri: string | undefined): string {
     return uri?.split('/').pop() ?? '';
   }

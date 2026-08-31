@@ -35,14 +35,19 @@ export function StatisticsPanel({
   const tables = recordTables(populated);
 
   if (summary.length === 0 && populated.length === 0) {
-    // Honest rather than blank. Entity data comes from a free source that holds
-    // no match statistics for every sport, so this state is expected and should
-    // say so rather than implying the page is broken.
-    return (
-      <p className="rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground">
-        No statistics recorded yet.
-      </p>
-    );
+    /*
+     * Nothing at all, rather than a placeholder saying so.
+     *
+     * This previously rendered "No statistics recorded yet." on the reasoning
+     * that absent data should be stated rather than hidden. On a page that is
+     * otherwise full, that reads as a defect: a tennis profile carrying a full
+     * honours board and a slam breakdown ended with an empty dashed box, which
+     * tells the reader nothing they need and implies something failed to load.
+     *
+     * The section heading is rendered by the caller only when this returns
+     * content, so an entity with no statistics simply ends after its honours.
+     */
+    return null;
   }
 
   return (
@@ -72,12 +77,31 @@ export function StatisticsPanel({
               Statistics
             </h2>
           )}
-          <div className="space-y-px">
+          <div className="space-y-6">
             {populated.map((group, index) => (
-              <StatisticGrid
-                key={group.discipline?.key ?? `group-${index}`}
-                statistics={group.statistics}
-              />
+              <div key={group.discipline?.key ?? `group-${index}`}>
+                {/* Named where the group says what it is. Basketball splits a
+                    career into regular season and playoffs, and both blocks
+                    rendered unlabelled: two identical grids of Games Played,
+                    PPG and shooting percentages, one above the other, with
+                    nothing to say which was which. The discipline label is
+                    already on the group and was simply not being drawn.
+
+                    Only shown when there is more than one group. A single
+                    unlabelled block sits under the "Statistics" heading and
+                    needs no second one. */}
+                {populated.length > 1 && group.discipline && (
+                  <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    {group.discipline.label}
+                    {group.appearances !== null && (
+                      <span className="ml-2 font-normal normal-case tracking-normal">
+                        {group.appearances.toLocaleString('en-GB')} games
+                      </span>
+                    )}
+                  </h3>
+                )}
+                <StatisticGrid statistics={group.statistics} />
+              </div>
             ))}
           </div>
         </section>

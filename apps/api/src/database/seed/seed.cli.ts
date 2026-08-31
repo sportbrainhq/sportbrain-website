@@ -72,6 +72,26 @@ import {
   type FeaturedEntitySeed,
 } from './basketball-overview';
 import {
+  TENNIS_CONCEPTS,
+  TENNIS_FACTS,
+  TENNIS_FEATURED,
+  TENNIS_FORMATS,
+  TENNIS_GOVERNANCE,
+  TENNIS_SECTIONS,
+  TENNIS_SOURCES,
+  TENNIS_TIMELINE,
+} from './tennis-overview';
+import {
+  FORMULA_ONE_CONCEPTS,
+  FORMULA_ONE_FACTS,
+  FORMULA_ONE_FEATURED,
+  FORMULA_ONE_FORMATS,
+  FORMULA_ONE_GOVERNANCE,
+  FORMULA_ONE_SECTIONS,
+  FORMULA_ONE_SOURCES,
+  FORMULA_ONE_TIMELINE,
+} from './formula-one-overview';
+import {
   FOOTBALL_EXPLAINER_CATEGORIES,
   FOOTBALL_EXPLAINER_TOPICS,
 } from './football-explainer-taxonomy';
@@ -79,6 +99,13 @@ import { FOOTBALL_EXPLAINERS, FOOTBALL_EXPLAINER_SOURCES } from './football-expl
 import { FOOTBALL_SEEDED_AWARDS } from './football-competition-awards';
 import { WikipediaClient } from '../../integrations/providers/wikipedia/wikipedia.client';
 import { CRICKET_COMPETITION_RANKING_SEEDS } from './cricket-competition-rankings';
+import { TENNIS_COMPETITION_RANKING_SEEDS } from './tennis-competition-rankings';
+import {
+  BASKETBALL_CURATED_COMPETITIONS,
+  BASKETBALL_CURATED_SLUGS,
+} from './basketball-competitions';
+import { TENNIS_CURATED_COMPETITIONS, TENNIS_CURATED_SLUGS } from './tennis-competitions';
+import { BOXING_CURATED_COMPETITIONS, BOXING_CURATED_SLUGS } from './boxing-competitions';
 import { CRICKET_CURATED_COMPETITIONS, CRICKET_CURATED_SLUGS } from './cricket-competitions';
 import {
   FOOTBALL_CURATED_COMPETITIONS,
@@ -97,10 +124,42 @@ import {
 import { BASKETBALL_EXPLAINERS, BASKETBALL_EXPLAINER_SOURCES } from './basketball-explainers';
 import { BASKETBALL_RULES_AND_COURT } from './basketball-rules-and-court';
 import { BASKETBALL_PLAY_AND_STATS } from './basketball-play-and-stats';
+import { TENNIS_EXPLAINER_CATEGORIES, TENNIS_EXPLAINER_TOPICS } from './tennis-explainer-taxonomy';
+import { TENNIS_EXPLAINERS, TENNIS_EXPLAINER_SOURCES } from './tennis-explainers';
+import { TENNIS_SERVING_AND_COURT } from './tennis-serving-and-court';
+import { TENNIS_SHOTS_AND_TACTICS } from './tennis-shots-and-tactics';
+import { TENNIS_COMPETITION } from './tennis-competition';
+import { TENNIS_STATS_AND_ADVANCED } from './tennis-stats-and-advanced';
+import {
+  FORMULA1_EXPLAINER_CATEGORIES,
+  FORMULA1_EXPLAINER_TOPICS,
+} from './formula1-explainer-taxonomy';
+import { FORMULA1_EXPLAINERS, FORMULA1_EXPLAINER_SOURCES } from './formula1-explainers';
+import { FORMULA1_WEEKEND } from './formula1-weekend';
+import { FORMULA1_TYRES } from './formula1-tyres';
+import { FORMULA1_STRATEGY } from './formula1-strategy';
+import { FORMULA1_RACE } from './formula1-race';
+import { FORMULA1_CHAMPIONSHIP } from './formula1-championship';
+import { FORMULA1_CAR } from './formula1-car';
+import { FORMULA1_DRIVING } from './formula1-driving';
+import { FORMULA1_ANALYSIS } from './formula1-analysis';
 import { BASKETBALL_LEAGUES } from './basketball-leagues';
 import { seedExplainerLibrary } from './seed-explainers';
+import {
+  BASKETBALL_FINALS_MVP_SEEDS,
+  BASKETBALL_LEAGUE_MVP_SEEDS,
+  FINALS_MVP_TITLE,
+  FRANCHISE_RENAMES,
+  LEAGUE_MVP_TITLE,
+  PLAYER_RENAMES,
+} from './basketball-awards';
 import { basketballHonourTier } from './basketball-honour-tiers';
+import { BASKETBALL_FORMER_NAMES, BASKETBALL_NICKNAMES } from './basketball-nicknames';
 import { cricketHonourTier } from './cricket-honour-tiers';
+import { tennisHonourTier } from './tennis-honour-tiers';
+import { golfHonourTier } from './golf-honour-tiers';
+import { americanFootballHonourTier } from './american-football-honour-tiers';
+import { combatHonourTier } from './combat-honour-tiers';
 import { honourTier } from './football-honour-tiers';
 import { STATISTIC_REGISTRY } from './statistic-registry';
 import { TEAM_RANKING_SEEDS } from './team-rankings';
@@ -119,6 +178,14 @@ async function main(): Promise<void> {
     for (const [slug, curated, slugs] of [
       ['football', FOOTBALL_CURATED_COMPETITIONS, FOOTBALL_CURATED_SLUGS],
       ['cricket', CRICKET_CURATED_COMPETITIONS, CRICKET_CURATED_SLUGS],
+      ['basketball', BASKETBALL_CURATED_COMPETITIONS, BASKETBALL_CURATED_SLUGS],
+      ['tennis', TENNIS_CURATED_COMPETITIONS, TENNIS_CURATED_SLUGS],
+      // Boxing alone of the four sports added with it, because it is the only
+      // one Wikidata cannot supply competitions for. Golf, American football
+      // and MMA all ingest a real catalogue, and this pass deletes everything
+      // not named in the list it is given, so curating them here would empty
+      // three working tabs to seed one.
+      ['boxing', BOXING_CURATED_COMPETITIONS, BOXING_CURATED_SLUGS],
     ] as const) {
       const competitions = await seedCuratedCompetitions(db, slug, [...curated], slugs);
       process.stdout.write(
@@ -140,6 +207,20 @@ async function main(): Promise<void> {
 
     const spans = await deriveCareerSpans(db);
     process.stdout.write(`Derived:  ${spans} career spans written\n`);
+
+    const nicknames = await seedBasketballNicknames(db);
+    process.stdout.write(
+      `Curated:  ${nicknames.set} nicknames corrected, ${nicknames.cleared} removed\n`,
+    );
+
+    const formerNames = await seedBasketballFormerNames(db);
+    process.stdout.write(`Curated:  ${formerNames} former names added as aliases\n`);
+
+    const seededAwards = await seedBasketballAwards(db);
+    process.stdout.write(
+      `Awards:   ${seededAwards.written} basketball awards seeded, ` +
+        `${seededAwards.skipped} already held\n`,
+    );
 
     // After career spans, which share the same `person_team` dates the award
     // attribution windows on.
@@ -190,7 +271,7 @@ async function main(): Promise<void> {
         `${competitionRankings.skipped} competitions not in the database\n`,
     );
 
-    // Football, then cricket, then basketball. Order is irrelevant to
+    // Football, cricket, basketball, tennis, then Formula 1. Order is irrelevant to
     // correctness: the source prune is scoped by URL and every other prune by
     // sport_id, so no sport's seed can touch another's rows. They are listed
     // rather than looped so that adding a sport stays an explicit decision.
@@ -229,6 +310,52 @@ async function main(): Promise<void> {
           facts: BASKETBALL_FACTS,
           membership: BASKETBALL_MEMBERSHIP,
           featured: BASKETBALL_FEATURED,
+        },
+      ],
+      /*
+       * Tennis, the first individual sport through this function.
+       *
+       * No `membership`: the ITF's membership is quoted inconsistently across
+       * sources and no figure was stable enough to seed. No teams either, here
+       * or in `featured`, because tennis has no clubs and its national-team
+       * competitions are covered as prose and as competition cards instead.
+       */
+      [
+        'tennis',
+        {
+          sources: TENNIS_SOURCES,
+          timeline: TENNIS_TIMELINE,
+          governance: TENNIS_GOVERNANCE,
+          sections: TENNIS_SECTIONS,
+          formats: TENNIS_FORMATS,
+          concepts: TENNIS_CONCEPTS,
+          facts: TENNIS_FACTS,
+          featured: TENNIS_FEATURED,
+        },
+      ],
+      /*
+       * Formula 1, the second individual sport and the first with two
+       * championships decided by one set of results.
+       *
+       * No `membership`: the FIA grades its member clubs, but the figures are
+       * for motoring bodies across every discipline it governs and quoting them
+       * on a Formula 1 page would attach a number to the wrong thing.
+       *
+       * `featured` carries constructors under `teams` rather than clubs, and
+       * every entry is historical. The current grid changes within a season and
+       * is read from the Teams and Players tabs instead.
+       */
+      [
+        'formula-1',
+        {
+          sources: FORMULA_ONE_SOURCES,
+          timeline: FORMULA_ONE_TIMELINE,
+          governance: FORMULA_ONE_GOVERNANCE,
+          sections: FORMULA_ONE_SECTIONS,
+          formats: FORMULA_ONE_FORMATS,
+          concepts: FORMULA_ONE_CONCEPTS,
+          facts: FORMULA_ONE_FACTS,
+          featured: FORMULA_ONE_FEATURED,
         },
       ],
     ] as const) {
@@ -293,6 +420,57 @@ async function main(): Promise<void> {
         `${basketballLibrary.explainers} concepts (${basketballLibrary.published} published), ` +
         `${basketballLibrary.sections} sections, ${basketballLibrary.aliases} aliases, ` +
         `${basketballLibrary.relations} relations\n`,
+    );
+    // Tennis, through the same function once more. Five content files rather
+    // than one because the library covers twenty categories, and a split by
+    // subject means an edit to the serving rules touches one file.
+    const tennisLibrary = await seedExplainerLibrary(
+      db,
+      'tennis',
+      TENNIS_EXPLAINER_CATEGORIES,
+      TENNIS_EXPLAINER_TOPICS,
+      [
+        ...TENNIS_EXPLAINERS,
+        ...TENNIS_SERVING_AND_COURT,
+        ...TENNIS_SHOTS_AND_TACTICS,
+        ...TENNIS_COMPETITION,
+        ...TENNIS_STATS_AND_ADVANCED,
+      ],
+      TENNIS_EXPLAINER_SOURCES,
+    );
+    process.stdout.write(
+      `Explainers: ${tennisLibrary.categories} tennis categories, ` +
+        `${tennisLibrary.explainers} concepts (${tennisLibrary.published} published), ` +
+        `${tennisLibrary.sections} sections, ${tennisLibrary.aliases} aliases, ` +
+        `${tennisLibrary.relations} relations\n`,
+    );
+    // Formula 1, through the same function a fifth time. The library's
+    // divergence problem is across time rather than across competitions, which
+    // is what the `regulation_era` section exists for; the seeding path is
+    // unchanged.
+    const formula1Library = await seedExplainerLibrary(
+      db,
+      'formula-1',
+      FORMULA1_EXPLAINER_CATEGORIES,
+      FORMULA1_EXPLAINER_TOPICS,
+      [
+        ...FORMULA1_EXPLAINERS,
+        ...FORMULA1_WEEKEND,
+        ...FORMULA1_TYRES,
+        ...FORMULA1_STRATEGY,
+        ...FORMULA1_RACE,
+        ...FORMULA1_CHAMPIONSHIP,
+        ...FORMULA1_CAR,
+        ...FORMULA1_DRIVING,
+        ...FORMULA1_ANALYSIS,
+      ],
+      FORMULA1_EXPLAINER_SOURCES,
+    );
+    process.stdout.write(
+      `Explainers: ${formula1Library.categories} Formula 1 categories, ` +
+        `${formula1Library.explainers} concepts (${formula1Library.published} published), ` +
+        `${formula1Library.sections} sections, ${formula1Library.aliases} aliases, ` +
+        `${formula1Library.relations} relations\n`,
     );
     await revalidateCaches();
   } catch (error) {
@@ -579,7 +757,27 @@ async function derivePersonPriority(db: Db): Promise<number> {
               )
             )
         ) AS affiliated,
-        (p.attributes->>'position' IS NOT NULL) AS positioned
+        (p.attributes->>'position' IS NOT NULL) AS positioned,
+        -- Titles in a top-tier competition, which is the evidence a sport
+        -- without clubs has that somebody competed in it seriously.
+        --
+        -- Tennis has no teams at all, so affiliated and ranked above can
+        -- never fire for a tennis player and the 150-sitelink cap never
+        -- applies to one. Every tennis player was therefore capped at 40 and
+        -- scored 800 for it, whether they had 159 sitelinks or 40, and the
+        -- order fell to the honour count. That count was almost entirely
+        -- ESPY and Laureus awards, because no Grand Slam was recorded
+        -- anywhere: the Players tab opened with Serena Williams on 16 awards
+        -- and put Federer 36th, behind the King of Thailand and a former
+        -- Czech president, both of whom played a bit of tennis.
+        --
+        -- Counted from tier-1 competitions rather than from honours generally,
+        -- so it means "won one of this sport's biggest events" rather than
+        -- "has a long awards cabinet". For tennis those are the four majors
+        -- and the Olympic tournament.
+        (SELECT count(*) FROM honour h
+          JOIN competition c ON c.id = h.competition_id
+          WHERE h.person_id = p.id AND h.kind = 'title' AND c.tier = 1) AS major_titles
       FROM person p
       LEFT JOIN sport s ON s.id = p.primary_sport_id
     )
@@ -600,19 +798,63 @@ async function derivePersonPriority(db: Db): Promise<number> {
         -- 40 is set above the most-documented actual sportsperson we hold and
         -- below the incidental-cricketer polymaths, so it costs a genuine star
         -- nothing and removes the distortion.
-        least(evidence.sitelinks, 40) * 20
+        --
+        -- Two caps, chosen by whether the person demonstrably played the sport.
+        --
+        -- One cap for everybody was the flaw. It exists to stop a polymath with
+        -- a huge article count from opening a sport's list, and at 40 it does
+        -- that. But it also flattened every genuine star against each other:
+        -- 132 basketball players clear 40 links, so Kobe Bryant's 114 and
+        -- Michael Jordan's 138 scored exactly what Andrew Bogut's 38 did, and
+        -- the order then fell to the club count, which rewards a journeyman for
+        -- having moved. Basketball's list opened with Pau Gasol, Dikembe Mutombo
+        -- and Bogut while Stephen Curry sat 46th and Kobe 14th.
+        --
+        -- The two concerns are separable. The affiliated and ranked flags are
+        -- already evidence that the person had a real career in this sport
+        -- rather than a stray Wikidata statement, and neither Arthur Conan Doyle
+        -- nor Charles III has either. So a proven player is capped at 150, high
+        -- enough that no real ranking hits it, and everybody else stays at 40.
+        --
+        -- Measured on the live catalogue: cricket's top fifteen becomes
+        -- Tendulkar, Kohli and Dhoni where it was a novelist, a king and a
+        -- playwright, and those three fall to rank ~5,150. Basketball's becomes
+        -- Jordan, LeBron, Kobe with Curry ninth.
+        least(
+          evidence.sitelinks,
+          CASE
+            WHEN evidence.affiliated OR evidence.ranked OR evidence.major_titles > 0 THEN 150
+            ELSE 40
+          END
+        ) * 20
         + least(evidence.honours, 150) * 12
         -- Raised from 250, which was too small to matter once sitelinks reached
         -- three figures. Appearing in a team's records table is the strongest
         -- evidence available that somebody played the sport seriously rather
         -- than incidentally, and it is now weighted to say so.
         + CASE WHEN evidence.ranked THEN 900 ELSE 0 END
-        + least(evidence.clubs, 6) * 25
+        -- Reduced from 25. The club count is weak evidence of standing and was
+        -- strong enough to decide the order once sitelinks were capped: at 25 a
+        -- point, six clubs paid 150, which is more than Kobe Bryant's entire
+        -- honours lead over Bogut. It says a career was long and mobile, which
+        -- is worth something and is not worth more than fame or trophies.
+        + least(evidence.clubs, 6) * 8
         -- Weighted to clear the sitelink cap on its own: 40 links score 800, so
         -- an affiliated player with no other evidence still outranks a polymath
         -- with the maximum. Deliberately not larger, because it must not
         -- reorder genuine players among themselves.
         + CASE WHEN evidence.affiliated THEN 850 ELSE 0 END
+        -- Weighted like the affiliated bonus, and for the same reason: it is
+        -- proof of a real career in the sport, and it must clear the sitelink
+        -- cap on its own so that a champion outranks a polymath with the max.
+        --
+        -- The per-title term is deliberately small beside it. What separates
+        -- Federer from a one-slam winner is mostly fame, which sitelinks
+        -- already measure now that the cap has lifted for both; a large
+        -- per-title weight would instead sort the whole tab by slam count and
+        -- bury a famous former No. 1 who never won a major.
+        + CASE WHEN evidence.major_titles > 0 THEN 850 ELSE 0 END
+        + least(evidence.major_titles, 25) * 30
         + CASE WHEN evidence.positioned THEN 60 ELSE 0 END,
       updated_at = now()
     FROM evidence
@@ -781,7 +1023,16 @@ async function deriveHonourPrestige(db: Db): Promise<number> {
     SELECT h.id, h.title, s.slug AS sport
     FROM honour h
     JOIN sport s ON s.id = h.sport_id
-    WHERE s.slug IN ('football', 'cricket', 'basketball')
+    WHERE s.slug IN (
+      'football',
+      'cricket',
+      'basketball',
+      'tennis',
+      'golf',
+      'american-football',
+      'mma',
+      'boxing'
+    )
   `);
 
   // One curated list per sport, because the competitions have nothing in common.
@@ -798,6 +1049,17 @@ async function deriveHonourPrestige(db: Db): Promise<number> {
     football: honourTier,
     cricket: cricketHonourTier,
     basketball: basketballHonourTier,
+    // Tennis was omitted for the same reason and produced a variant of the
+    // same defect on the profile rather than the Teams tab: all of its honours
+    // were unranked, so once the Grand Slams were ingested Federer's twenty
+    // majors would have sorted level with his one ESPY award.
+    tennis: tennisHonourTier,
+    golf: golfHonourTier,
+    'american-football': americanFootballHonourTier,
+    // One list serves both combat sports: they share the sanctioning-body
+    // structure the tiering depends on, and their vocabularies do not collide.
+    mma: combatHonourTier,
+    boxing: combatHonourTier,
   };
 
   // Grouped by tier so the update is one statement per tier rather than per
@@ -916,6 +1178,204 @@ async function deriveCareerSpans(db: Db): Promise<number> {
 }
 
 /**
+ * Applies the curated nicknames, overriding whatever the ingest chose.
+ *
+ * Runs on every seed rather than once, because a re-ingest overwrites
+ * `attributes.nickname` from Wikidata and would otherwise reinstate the values
+ * this list exists to correct. See `basketball-nicknames.ts` for why the
+ * ingested value cannot be trusted on the best-known players.
+ *
+ * A slug mapped to null has its nickname removed rather than replaced.
+ */
+async function seedBasketballNicknames(db: Db): Promise<{ set: number; cleared: number }> {
+  let set = 0;
+  let cleared = 0;
+
+  for (const [slug, nickname] of Object.entries(BASKETBALL_NICKNAMES)) {
+    const rows =
+      nickname === null
+        ? await db.execute<{ id: string }>(sql`
+            UPDATE person SET attributes = attributes - 'nickname', updated_at = now()
+            WHERE slug = ${slug} AND attributes ? 'nickname'
+            RETURNING id
+          `)
+        : await db.execute<{ id: string }>(sql`
+            UPDATE person
+            SET attributes = attributes || jsonb_build_object('nickname', ${nickname}::text),
+                updated_at = now()
+            WHERE slug = ${slug}
+              AND attributes ->> 'nickname' IS DISTINCT FROM ${nickname}
+            RETURNING id
+          `);
+
+    if (rows.length === 0) continue;
+    if (nickname === null) cleared += 1;
+    else set += 1;
+  }
+
+  return { set, cleared };
+}
+
+/**
+ * Adds former competing names as aliases.
+ *
+ * Runs on every seed rather than once, because a re-ingest rewrites the person
+ * row from Wikidata and would drop them. Merged into whatever aliases the row
+ * already carries rather than replacing them.
+ */
+async function seedBasketballFormerNames(db: Db): Promise<number> {
+  let updated = 0;
+
+  // Franchises, from the same map the award seeding resolves teams through.
+  // Inverted here: that map answers "what is this old name now", and an alias
+  // answers "what else was this team called".
+  const byModern = new Map<string, string[]>();
+  for (const [historical, modern] of Object.entries(FRANCHISE_RENAMES)) {
+    byModern.set(modern, [...(byModern.get(modern) ?? []), historical]);
+  }
+
+  for (const [modern, historical] of byModern) {
+    const rows = await db.execute<{ id: string }>(sql`
+      UPDATE team t
+      SET aliases = (
+            SELECT array_agg(DISTINCT value)
+            FROM unnest(coalesce(t.aliases, '{}'::text[]) || ${sql.raw(pgTextArray(historical))}) AS value
+          ),
+          updated_at = now()
+      FROM sport s
+      WHERE s.id = t.sport_id AND s.slug = 'basketball' AND t.name = ${modern}
+        AND NOT (coalesce(t.aliases, '{}'::text[]) @> ${sql.raw(pgTextArray(historical))})
+      RETURNING t.id
+    `);
+    if (rows.length > 0) updated += 1;
+  }
+
+  for (const [slug, names] of Object.entries(BASKETBALL_FORMER_NAMES)) {
+    const rows = await db.execute<{ id: string }>(sql`
+      UPDATE person
+      SET aliases = (
+            SELECT array_agg(DISTINCT value)
+            FROM unnest(coalesce(aliases, '{}'::text[]) || ${sql.raw(pgTextArray(names))}) AS value
+          ),
+          updated_at = now()
+      WHERE slug = ${slug}
+        AND NOT (coalesce(aliases, '{}'::text[]) @> ${sql.raw(pgTextArray(names))})
+      RETURNING id
+    `);
+    if (rows.length > 0) updated += 1;
+  }
+
+  return updated;
+}
+
+/**
+ * Seeds the NBA award winners Wikidata does not carry.
+ *
+ * Runs before `deriveBasketballTeamTables`, which reads `honour` to build the
+ * per-team MVP tables, so a seeded award appears on the team page in the same
+ * run.
+ *
+ * Resolution is by display name against basketball people we already hold, and
+ * every one of the fourteen rows resolved when the list was compiled. A name
+ * that stops resolving is reported rather than inserted with a null person: an
+ * honour attached to nobody would count towards nothing and show nowhere, which
+ * is a silent failure.
+ */
+async function seedBasketballAwards(db: Db): Promise<{ written: number; skipped: number }> {
+  const [sportRow] = await db.execute<{ id: string }>(
+    sql`SELECT id FROM sport WHERE slug = 'basketball' LIMIT 1`,
+  );
+  if (!sportRow) return { written: 0, skipped: 0 };
+
+  let written = 0;
+  let skipped = 0;
+
+  for (const [title, seeds] of [
+    [FINALS_MVP_TITLE, BASKETBALL_FINALS_MVP_SEEDS],
+    [LEAGUE_MVP_TITLE, BASKETBALL_LEAGUE_MVP_SEEDS],
+  ] as const) {
+    for (const seed of seeds) {
+      // Kareem Abdul-Jabbar won the 1971 awards as Lew Alcindor, which is the
+      // name the article records.
+      const playerName = PLAYER_RENAMES[seed.player] ?? seed.player;
+      const [person] = await db.execute<{ id: string }>(sql`
+        SELECT p.id FROM person p
+        WHERE p.primary_sport_id = ${sportRow.id}
+          AND (p.display_name = ${playerName} OR ${playerName} = ANY(p.aliases))
+        LIMIT 1
+      `);
+
+      if (!person) {
+        process.stdout.write(`  award: no person row for "${playerName}" (${seed.year})\n`);
+        skipped += 1;
+        continue;
+      }
+
+      // The team is resolved and stored on the honour itself.
+      //
+      // `deriveBasketballTeamTables` normally recovers the team by matching the
+      // award year against the player's spell, which needs a dated membership.
+      // Three of these winners have none: Cedric Maxwell, Dennis Johnson and
+      // Bob McAdoo all carry undated NBA memberships, so Maxwell's 1981 Finals
+      // MVP was seeded correctly and still did not reach Boston's page. Since
+      // the curated row already names the team, recording it here removes the
+      // guesswork rather than loosening the date rule for every award.
+      // Historical franchise names are mapped before lookup: the 1975 MVP was
+      // won with the Buffalo Braves, which we hold as the Los Angeles Clippers.
+      const teamName = FRANCHISE_RENAMES[seed.team] ?? seed.team;
+      const [teamRow] = await db.execute<{ id: string }>(sql`
+        SELECT t.id FROM team t
+        WHERE t.sport_id = ${sportRow.id}
+          AND (t.name = ${teamName} OR ${teamName} = ANY(t.aliases))
+        LIMIT 1
+      `);
+
+      if (!teamRow) {
+        // Reported rather than silent. Without a team the award falls back to
+        // date matching, which is the ambiguity this list exists to remove.
+        process.stdout.write(`  award: no team row for "${teamName}" (${seed.year})\n`);
+      }
+
+      // Idempotent on the natural key, so this can run beside a full ingest.
+      // `prestige` is left null deliberately: `deriveHonourPrestige` runs later
+      // in the same seed and tiers every honour from its title, so setting it
+      // here would be overwritten by the same value.
+      const inserted = await db.execute<{ id: string }>(sql`
+        INSERT INTO honour (sport_id, person_id, team_id, kind, title, year, source)
+        SELECT ${sportRow.id}, ${person.id}, ${teamRow?.id ?? null}, 'award',
+               ${title}, ${seed.year}, 'curated'
+        WHERE NOT EXISTS (
+          SELECT 1 FROM honour h
+          WHERE h.person_id = ${person.id} AND h.title = ${title} AND h.year = ${seed.year}
+        )
+        RETURNING id
+      `);
+
+      if (inserted.length > 0) {
+        written += 1;
+        continue;
+      }
+
+      skipped += 1;
+
+      // The award was already ingested from Wikidata, which does not carry the
+      // team. Backfilling it here is what removes the transfer-year ambiguity
+      // for the 111 awards that did arrive: without this, Kawhi Leonard's 2019
+      // Finals MVP still appears on both Toronto and the Clippers.
+      if (teamRow) {
+        await db.execute(sql`
+          UPDATE honour SET team_id = ${teamRow.id}, updated_at = now()
+          WHERE person_id = ${person.id} AND title = ${title} AND year = ${seed.year}
+            AND team_id IS DISTINCT FROM ${teamRow.id}
+        `);
+      }
+    }
+  }
+
+  return { written, skipped };
+}
+
+/**
  * Builds the per-team basketball tables: award rolls and per-game leaders.
  *
  * Five tables per team, all derived rather than hand-entered, because the
@@ -936,36 +1396,28 @@ async function deriveCareerSpans(db: Db): Promise<number> {
  * Honours with no year cannot be placed in a spell and are dropped rather than
  * guessed at, which is why these tables are shorter than the raw honour counts.
  *
- * ## The per-game tables
+ * ## What this no longer does
  *
- * Points, rebounds and assists are **per-game averages, not career totals**,
- * and the labels say so. This is a real limitation of the data rather than a
- * choice: exactly one basketball player in the database has career `points`,
- * `assists` or `rebounds` totals, while 954 have `points_per_game`, because
- * Wikipedia player infoboxes carry averages and the parser reads `ppg`, `rpg`
- * and `apg`. Nothing in any current source attributes a career total to a team.
- *
- * The consequence a reader has to be told about, and the reason the confidence
- * is `indicative` and the note is explicit: a player who spent one season at a
- * club can outrank a fifteen-year franchise scorer, because the average belongs
- * to the whole career rather than to the spell at this team. These are "the
- * best averages among players who played here", which is a genuine and
- * different question from "this club's leading scorers". Ranking by a career
- * average is also why a minimum of 20 games is required: without it a
- * three-game call-up with one hot night tops the table.
+ * It used to also build points, rebounds and assists tables from per-game
+ * averages, because nothing in the data attributed a career total to a team.
+ * That ranked by the wrong thing: the average spanned a player's whole career,
+ * so Isaiah Thomas topped the Lakers' scoring on 17 games there. Those three
+ * tables now come from `wiki basketball-leaders`, which reads real per-team
+ * totals off each franchise's all-time roster article, and this pass builds only
+ * the award rolls.
  */
 async function deriveBasketballTeamTables(db: Db): Promise<number> {
   // Rebuilt from scratch each run rather than upserted. These are derived
   // tables, so a stale row is a wrong row, and the alternative is reconciling
-  // five kinds per team by hand.
+  // two kinds per team by hand.
+  //
+  // Scoped to the two kinds this pass owns: the all-time tables are written by
+  // the "basketball-leaders" wiki pass from a different source, and clearing
+  // them here would delete them on every seed.
   await db.execute(sql`
     DELETE FROM entity_ranking
     WHERE entity_type = 'team'
-      AND kind IN (
-        'basketball_points_per_game', 'basketball_rebounds_per_game',
-        'basketball_assists_per_game', 'basketball_league_mvp',
-        'basketball_finals_mvp'
-      )
+      AND kind IN ('basketball_league_mvp', 'basketball_finals_mvp')
   `);
 
   const awards: [string, string, string][] = [
@@ -979,26 +1431,37 @@ async function deriveBasketballTeamTables(db: Db): Promise<number> {
     const rows = await db.execute<{ count: string }>(sql`
       WITH won AS (
         SELECT
-          pt.team_id,
+          -- The honour's own team wins where it has one. Curated rows record it
+          -- directly, which is the only way three winners reach their team at
+          -- all: Cedric Maxwell, Dennis Johnson and Bob McAdoo carry undated NBA
+          -- memberships, so the date match below cannot place them.
+          coalesce(h.team_id, pt.team_id) AS team_id,
           p.display_name AS name,
           p.slug AS player_slug,
           h.year
         FROM honour h
         JOIN person p ON p.id = h.person_id
         JOIN sport s ON s.id = h.sport_id
-        JOIN person_team pt ON pt.person_id = h.person_id
-        JOIN team t ON t.id = pt.team_id AND t.sport_id = s.id
+        -- LEFT, so an honour that names its own team does not require a
+        -- membership row to survive the join.
+        LEFT JOIN person_team pt
+          ON pt.person_id = h.person_id
+          AND h.team_id IS NULL
+          AND pt.start_date IS NOT NULL
+          AND extract(year from pt.start_date) <= h.year
+          AND (pt.end_date IS NULL OR extract(year from pt.end_date) >= h.year)
+          AND EXISTS (
+            SELECT 1 FROM team t WHERE t.id = pt.team_id AND t.sport_id = s.id
+          )
         WHERE s.slug = 'basketball'
           AND h.title = ${title}
           -- No year means the award cannot be placed in a spell, and placing it
           -- in every spell is what produced the fan-out this guards against.
           AND h.year IS NOT NULL
-          AND pt.start_date IS NOT NULL
-          AND extract(year from pt.start_date) <= h.year
-          AND (pt.end_date IS NULL OR extract(year from pt.end_date) >= h.year)
+          AND coalesce(h.team_id, pt.team_id) IS NOT NULL
         -- One row per player per year per team: a player with two spells at the
         -- same club would otherwise be counted twice for one award.
-        GROUP BY pt.team_id, p.display_name, p.slug, h.year
+        GROUP BY coalesce(h.team_id, pt.team_id), p.display_name, p.slug, h.year
       ),
       ranked AS (
         SELECT
@@ -1018,59 +1481,6 @@ async function deriveBasketballTeamTables(db: Db): Promise<number> {
         'high',
         'Awarded while at this team, matched on the years of the player''s spell.'
       FROM ranked
-      GROUP BY team_id
-      RETURNING 1 AS count
-    `);
-    written += rows.length;
-  }
-
-  const perGame: [string, string, string][] = [
-    ['basketball_points_per_game', 'Top scorers (points per game)', 'points_per_game'],
-    ['basketball_rebounds_per_game', 'Top rebounders (rebounds per game)', 'rebounds_per_game'],
-    ['basketball_assists_per_game', 'Top assists (assists per game)', 'assists_per_game'],
-  ];
-
-  for (const [kind, label, statKey] of perGame) {
-    const rows = await db.execute<{ count: string }>(sql`
-      WITH averages AS (
-        SELECT DISTINCT ON (pt.team_id, p.id)
-          pt.team_id,
-          p.display_name AS name,
-          p.slug AS player_slug,
-          (ps.stats ->> ${statKey})::numeric AS value
-        FROM person_statistic ps
-        JOIN person p ON p.id = ps.person_id
-        JOIN sport s ON s.id = ps.sport_id
-        JOIN person_team pt ON pt.person_id = p.id
-        JOIN team t ON t.id = pt.team_id AND t.sport_id = s.id
-        WHERE s.slug = 'basketball'
-          AND ps.stats ? ${statKey}
-          AND (ps.stats ->> ${statKey}) ~ '^[0-9]+(\\.[0-9]+)?$'
-          -- A career average over a handful of games is noise: without a floor
-          -- a three-game spell with one good night tops the table.
-          AND coalesce((ps.stats ->> 'games_played')::numeric, 0) >= 20
-        ORDER BY pt.team_id, p.id, value DESC
-      ),
-      ranked AS (
-        SELECT
-          team_id, name, player_slug, value,
-          row_number() OVER (PARTITION BY team_id ORDER BY value DESC, name ASC) AS rank
-        FROM averages
-      )
-      INSERT INTO entity_ranking (entity_type, entity_id, kind, label, entries, confidence, note)
-      SELECT
-        'team', team_id, ${kind}, ${label},
-        jsonb_agg(
-          jsonb_build_object(
-            'rank', rank, 'name', name, 'value', value,
-            'detail', NULL, 'playerSlug', player_slug
-          ) ORDER BY rank
-        ),
-        'indicative',
-        'Career average across a player''s whole career, not their spell at this team, so a short stay can rank highly. Players with fewer than 20 recorded games are excluded.'
-      -- Top five only. These are "best averages among players who played here"
-      -- rather than a complete record, so a long tail adds noise, not detail.
-      FROM ranked WHERE rank <= 5
       GROUP BY team_id
       RETURNING 1 AS count
     `);
@@ -1251,6 +1661,7 @@ async function seedCompetitionRankings(db: Db): Promise<{
   const bySport: [string, Record<string, CompetitionRankingSeed[]>][] = [
     ['football', COMPETITION_RANKING_SEEDS],
     ['cricket', CRICKET_COMPETITION_RANKING_SEEDS],
+    ['tennis', TENNIS_COMPETITION_RANKING_SEEDS],
   ];
 
   for (const [sportSlug, seeds] of bySport) {

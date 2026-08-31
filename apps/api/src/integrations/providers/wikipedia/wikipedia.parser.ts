@@ -728,3 +728,803 @@ export function parseNumber(value: string): number | null {
   const parsed = Number(cleaned);
   return Number.isFinite(parsed) ? parsed : null;
 }
+
+/** One player's career totals for a single team. */
+export interface RosterTotals {
+  name: string;
+  /** Canonical Wikipedia title, for resolving the row to a player we hold. */
+  link: string | null;
+  games: number | null;
+  rebounds: number | null;
+  assists: number | null;
+  points: number | null;
+}
+
+/**
+ * Strips the noise Wikipedia's renderer leaves in a header cell.
+ *
+ * `cleanHtml` is not enough on its own here. Two franchises defeat it in
+ * different ways, and both were silently producing no tables:
+ *
+ *   - **Portland** styles its header through a template that leaks raw CSS and
+ *     escaped markup into the cell, so "Statistics" arrives as
+ *     `background-color: #E03A3E !important; … }'>Statistics`.
+ *   - **Miami, Dallas and Charlotte** carry a citation stylesheet inside the
+ *     `No.` header, so it arrives as `No.mw-parser-output .citation{…}`.
+ *
+ * The last `}'>` wins because the real label always follows the injected style,
+ * and anything from `mw-parser-output` onwards is stylesheet rather than text.
+ */
+function cleanHeader(value: string): string {
+  return cleanHtml(value)
+    .replace(/&lt;[\s\S]*?&gt;/g, '')
+    .replace(/^[\s\S]*\}'>/, '')
+    .replace(/mw-parser-output[\s\S]*$/, '')
+    .replace(/\[[^\]]*\]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** The metric a leaderboard column or heading refers to, if any. */
+function metricFor(label: string): 'points' | 'rebounds' | 'assists' | 'games' | null {
+  const text = label.toLowerCase().replace(/[^a-z]/g, '');
+  if (/^(points|pts)$/.test(text)) return 'points';
+  if (/^(rebounds|reb|totalrebounds)$/.test(text)) return 'rebounds';
+  if (/^(assists|ast)$/.test(text)) return 'assists';
+  if (/^(games|gp|gamesplayed)$/.test(text)) return 'games';
+  return null;
+}
+
+/**
+ * Career totals per player from an "{Team} all-time roster" article.
+ *
+ * Its own parser rather than a `parseTables` caller, because these pages defeat
+ * that function: the roster template renders a **two-row header** whose first
+ * row carries a `Statistics` cell spanning nine columns, and `parseTables`
+ * counts columns from the first row alone and slices every data row to seven,
+ * dropping REB, AST and PTS — exactly the figures wanted here.
+ *
+ * The numbers are why these pages are worth parsing at all: they are career
+ * totals **for this team**, which no other source we hold provides. Wikidata has
+ * no equivalent, and player infoboxes carry per-game averages over a whole
+ * career, which is why an earlier version of the team tables could only rank by
+ * average and flattered anyone who arrived late in a good career.
+ *
+ * ## Three layouts, because Wikipedia has three
+ *
+ * Measured across the NBA before this was widened, and there is no single shape
+ * that serves them all:
+ *
+ *   1. **Wide roster.** Most franchises. One row per player with the totals
+ *      inline under a spanning `Statistics` header. The Lakers and Spurs.
+ *   2. **Statistics-leaders sections.** Miami and Dallas. The roster table
+ *      carries no totals at all; instead an h2 "Statistics leaders" holds an h3
+ *      per metric ("Points", "Rebounds", "Assists"), each with **two** tables,
+ *      regular season then playoffs. Only the first is read, so the figures stay
+ *      regular-season and comparable with layout 1.
+ *   3. **Narrow roster.** Charlotte. One table with `Pts`, `Reb` and `Ast`
+ *      columns named directly, no spanning header.
+ *
+ * All three are read. A franchise in none of them yields an empty array and
+ * renders no tables rather than wrong ones.
+ */
+export function parseAllTimeRoster(html: string): RosterTotals[] {
+  const results: RosterTotals[] = [];
+
+  // Headings are tracked alongside tables because layout 2 identifies a
+  // leaderboard only by the heading above it: its columns are the uninformative
+  // "Rank | Player | Points".
+  const parts = [
+    ...html.matchAll(
+      /<h([2-4])[^>]*>([\s\S]*?)<\/h[2-4]>|<table[^>]*class="[^"]*wikitable[^"]*"[^>]*>([\s\S]*?)<\/table>/g,
+    ),
+  ];
+
+  /** Metrics already taken, so the playoff table under a heading is skipped. */
+  const claimed = new Set<string>();
+  let heading = '';
+
+  const readRows = (chunk: string) =>
+    [...chunk.matchAll(/<t[hd][^>]*>([\s\S]*?)<\/t[hd]>/g)].map((cell) => cell[1] ?? '');
+
+  const linkIn = (cell: string) => {
+    const match = /href="\.\/([^"#]+)"/.exec(cell);
+    return match ? decodeURIComponent(match[1] ?? '').replace(/_/g, ' ') : null;
+  };
+
+  // Trailing markers on a name, all of them legend symbols rather than part of
+  // it: `^` for a Hall of Famer or current player, `(#33)` for a retired
+  // number, `†` and `*` for whatever the article's own key defines.
+  const cleanName = (cell: string) =>
+    cleanHtml(cell)
+      .replace(/\s*\(#[^)]*\)/g, '')
+      .replace(/[\^*†‡~]+/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  for (const part of parts) {
+    if (part[2] !== undefined) {
+      heading = cleanHeader(part[2]);
+      continue;
+    }
+
+    const body = part[3] ?? '';
+    const chunks = body
+      .split(/<tr[^>]*>/)
+      .slice(1)
+      .filter((chunk) => /<t[hd][^>]*>/.test(chunk));
+    if (chunks.length < 2) continue;
+
+    const firstRow = [...(chunks[0] ?? '').matchAll(/<th[^>]*>([\s\S]*?)<\/th>/g)].map((cell) =>
+      cleanHeader(cell[1] ?? ''),
+    );
+
+    // ── Layout 2: a leaderboard keyed by its heading ────────────────────────
+    const rankIndex = firstRow.findIndex((label) => /^rank$/i.test(label));
+    const playerIndex = firstRow.findIndex((label) => /^player$/i.test(label));
+    if (rankIndex >= 0 && playerIndex >= 0) {
+      // The value column is named on the table where possible, and falls back to
+      // the heading, which is what actually distinguishes Miami's tables.
+      const valueIndex = firstRow.findIndex((label) => metricFor(label) !== null);
+      const metric = metricFor(firstRow[valueIndex] ?? '') ?? metricFor(heading);
+      if (!metric || metric === 'games') continue;
+      // Regular season is published first and playoffs second under the same
+      // heading, so the second table is skipped rather than overwriting it.
+      if (claimed.has(metric)) continue;
+      claimed.add(metric);
+
+      for (const chunk of chunks.slice(1)) {
+        const cells = readRows(chunk);
+        if (cells.length <= Math.max(playerIndex, valueIndex)) continue;
+        const name = cleanName(cells[playerIndex] ?? '');
+        const value = parseNumber(cleanHtml(cells[valueIndex] ?? ''));
+        if (!name || value === null) continue;
+
+        results.push({
+          name,
+          link: linkIn(cells[playerIndex] ?? ''),
+          games: null,
+          rebounds: metric === 'rebounds' ? value : null,
+          assists: metric === 'assists' ? value : null,
+          points: metric === 'points' ? value : null,
+        });
+      }
+      continue;
+    }
+
+    // ── Layout 3: totals named directly on a single header row ──────────────
+    const direct = new Map<string, number>();
+    firstRow.forEach((label, index) => {
+      const metric = metricFor(label);
+      if (metric && !direct.has(metric)) direct.set(metric, index);
+    });
+
+    if (direct.has('points') || direct.has('rebounds') || direct.has('assists')) {
+      for (const chunk of chunks.slice(1)) {
+        const cells = readRows(chunk);
+        if (cells.length < firstRow.length) continue;
+        const name = cleanName(cells[0] ?? '');
+        if (!name) continue;
+
+        const value = (metric: string) => {
+          const index = direct.get(metric);
+          return index === undefined ? null : parseNumber(cleanHtml(cells[index] ?? ''));
+        };
+
+        results.push({
+          name,
+          link: linkIn(cells[0] ?? ''),
+          games: value('games'),
+          rebounds: value('rebounds'),
+          assists: value('assists'),
+          points: value('points'),
+        });
+      }
+      continue;
+    }
+
+    // ── Layout 1: the wide roster, totals behind a spanning header ──────────
+    const leading = firstRow.findIndex((label) => /^statistics$/i.test(label));
+    if (leading < 1) continue;
+
+    const subHeaders = [...(chunks[1] ?? '').matchAll(/<th[^>]*>([\s\S]*?)<\/th>/g)].map((cell) =>
+      cleanHeader(cell[1] ?? '').toUpperCase(),
+    );
+    const offsets = new Map<string, number>();
+    subHeaders.forEach((label, index) => {
+      const metric = metricFor(label);
+      if (metric && !offsets.has(metric)) offsets.set(metric, index);
+    });
+    if (offsets.size === 0) continue;
+
+    for (const chunk of chunks.slice(2)) {
+      const cells = readRows(chunk);
+      if (cells.length <= leading) continue;
+      const name = cleanName(cells[0] ?? '');
+      if (!name) continue;
+
+      const value = (metric: string) => {
+        const index = offsets.get(metric);
+        return index === undefined ? null : parseNumber(cleanHtml(cells[leading + index] ?? ''));
+      };
+
+      results.push({
+        name,
+        link: linkIn(cells[0] ?? ''),
+        games: value('games'),
+        rebounds: value('rebounds'),
+        assists: value('assists'),
+        points: value('points'),
+      });
+    }
+  }
+
+  return results;
+}
+
+/** One line of a player's infobox career highlights. */
+export interface CareerHighlight {
+  /** "22× NBA All-Star" reduces to this, with `times` carrying the 22. */
+  label: string;
+  /** How many times, where the line states it. Null for a one-off. */
+  times: number | null;
+}
+
+/**
+ * A player's career highlights, from the `highlights` infobox field.
+ *
+ * The field is how basketball itself summarises a career, and it is the shape a
+ * reader expects: "4× NBA champion", "22× NBA All-Star", "4× NBA Most Valuable
+ * Player". Our own honours list could not produce that. It is built from
+ * Wikidata's `P166`, which holds no All-Star selections at all, records each
+ * award as a separate dated row rather than a count, and mixes in whatever else
+ * a person has won: LeBron James's page listed nineteen ESPY and BET awards on
+ * separate lines, and a Golden Raspberry for Worst Actor, while never once
+ * mentioning that he is a 22-time All-Star.
+ *
+ * Parsed rather than ingested as prose because the counts are the point. Each
+ * line is a wiki list item of the rough form
+ *
+ *     * 13× [[All-NBA First Team]] ({{nbay|2005|end}}, ...)
+ *
+ * so the multiplier is read off the front, the wiki links are reduced to their
+ * display text, and the trailing year list is dropped: it is what made the
+ * honours section sprawl, and the count already carries the information.
+ *
+ * Ordering is preserved exactly as the article states it, which is not
+ * alphabetical and not chronological but roughly by prestige, championships
+ * first. That ordering is editorial work by people who know the sport, and it
+ * is better than anything we would derive from a title string.
+ *
+ * Returns an empty array when the field is absent or holds no list items, so a
+ * player without one keeps the honours list we already show.
+ */
+export function parseCareerHighlights(wikitext: string): CareerHighlight[] {
+  const field = /\|\s*highlights\s*=/i.exec(wikitext);
+  if (!field) return [];
+
+  // The field ends at the next infobox parameter, which is the only reliable
+  // terminator: the value itself spans many lines and contains pipes inside
+  // templates and links.
+  const rest = wikitext.slice(field.index + field[0].length);
+  const next = /\n\s*\|\s*[a-z_0-9]+\s*=/.exec(rest);
+  const body = next ? rest.slice(0, next.index) : rest.slice(0, 4000);
+
+  const highlights: CareerHighlight[] = [];
+
+  for (const raw of body.split('\n')) {
+    const line = raw.trim();
+    // Only top-level list items. A nested "**" line qualifies the one above it
+    // rather than naming an honour of its own.
+    if (!line.startsWith('*') || line.startsWith('**')) continue;
+
+    let text = line.replace(/^\*+\s*/, '');
+
+    // Templates first: `{{nbay|2008|end}}` is a season, and leaving them in
+    // means the year list survives the parenthesis strip below.
+    text = text.replace(/\{\{[^{}]*\}\}/g, '');
+    // Links reduce to their display text: `[[NBA champion|champion]]` to
+    // "champion", `[[NBA All-Star]]` to "NBA All-Star".
+    text = text.replace(/\[\[(?:[^\]|]*\|)?([^\]]*)\]\]/g, '$1');
+    // External links go entirely, label and all. They are inline citations
+    // rather than part of the honour: Manu Ginóbili's retired-number line
+    // carried a Spanish news URL, its headline and its byline into the label.
+    text = text.replace(/\[https?:\/\/\S*[^\]]*\]/g, '');
+    text = text.replace(/'''?/g, '');
+    text = text.replace(/<[^>]*>/g, '');
+    // The trailing year list, which is what made this sprawl on the page.
+    text = text.replace(/\([^()]*\)/g, '');
+    text = text.replace(/\s+/g, ' ').trim();
+
+    if (!text) continue;
+
+    // A heading rather than an honour: Michael Jordan's field opens with
+    // "'''Basketball player:'''" before the list proper. Tested before the
+    // trailing punctuation is stripped, or the colon that identifies it is
+    // already gone and the heading parses as an award.
+    if (/:$/.test(text)) continue;
+
+    text = text.replace(/[,;]+$/, '').trim();
+
+    const multiplier = /^(\d+)\s*[×x]\s*/i.exec(text);
+    const label = multiplier ? text.slice(multiplier[0].length).trim() : text;
+    if (!label) continue;
+
+    // A line longer than this is prose rather than an honour, and the field is
+    // freeform enough that one occasionally is. Dropped rather than truncated:
+    // half a sentence reads worse than an omission.
+    if (label.length > 80) continue;
+
+    highlights.push({
+      label,
+      times: multiplier ? Number(multiplier[1]) : null,
+    });
+  }
+
+  return highlights;
+}
+
+/** One row of an NBA list article: a name, a value, and the link behind it. */
+export interface NbaListRow {
+  name: string;
+  link: string | null;
+  value: string;
+  detail: string | null;
+}
+
+/**
+ * Strips the annotation Wikipedia hangs off a name in these list articles.
+ *
+ * A trailing `*` marks a Hall of Famer, `†` an active player and `‡` whatever
+ * the article's own key defines. A parenthesised run is a count or a span of
+ * years. None of it is part of the name, and left in it reaches the page: the
+ * career leaders table published "John Stockton*" and the champions table
+ * "Baltimore Bullets† (2) (1, 1–0)".
+ *
+ * Reference markers are handled too. The renderer leaves the raw citation
+ * template in the cell for a minority of rows, which is how a scoring-title
+ * entry arrived as "Max Zaslofsky<ref>{{cite web |url=...}}</ref>[e]".
+ */
+function cleanListName(value: string): string {
+  return (
+    cleanHtml(value)
+      // Both spellings, and in this order. `cleanHtml` decodes the entities, so a
+      // pattern matching only `&lt;ref` runs too late to see it and left
+      // "Max Zaslofsky<ref>" on the page once the template strip below had taken
+      // everything after the braces.
+      .replace(/(?:&lt;|<)ref[\s\S]*$/i, '')
+      .replace(/\{\{[\s\S]*$/, '')
+      .replace(/\[[a-z0-9]{1,3}\]/gi, '')
+      .replace(/\([^()]*\)/g, '')
+      // `^` marks an active player on some of these lists and survives as a
+      // trailing caret otherwise, so the scoring leaders published
+      // "LeBron James ^".
+      .replace(/[*†‡§^~]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+  );
+}
+
+/** Folds a name for loose comparison: accents, case and punctuation removed. */
+function foldName(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+/**
+ * Rows from a Wikipedia list article laid out as rank, name and a total.
+ *
+ * Serves the NBA's career leader lists, which all share one shape: a `Rank`
+ * column, a `Player` column carrying the link, and a named total ("Total
+ * steals", "Total points"). The value column is located by a caption fragment
+ * rather than by position, because the columns after it differ between lists
+ * and a fixed offset read games played on one and points per game on another.
+ *
+ * `limit` caps the rows taken. The source lists run to fifty and the page wants
+ * ten, and truncating here rather than at the caller keeps the rank numbers
+ * contiguous.
+ *
+ * Returns an empty array when no table matches, so a caller gets no table
+ * rather than a wrong one.
+ */
+export function parseNbaLeaderList(html: string, valueHeader: string, limit: number): NbaListRow[] {
+  for (const table of html.matchAll(
+    /<table[^>]*class="[^"]*wikitable[^"]*"[^>]*>([\s\S]*?)<\/table>/g,
+  )) {
+    const chunks = (table[1] ?? '')
+      .split(/<tr[^>]*>/)
+      .slice(1)
+      .filter((chunk) => /<t[hd][^>]*>/.test(chunk));
+    if (chunks.length < 2) continue;
+
+    const headers = [...(chunks[0] ?? '').matchAll(/<th[^>]*>([\s\S]*?)<\/th>/g)].map((cell) =>
+      cleanHtml(cell[1] ?? '').toLowerCase(),
+    );
+
+    const nameIndex = headers.findIndex((header) => header.startsWith('player'));
+    const valueIndex = headers.findIndex((header) => header.includes(valueHeader.toLowerCase()));
+    if (nameIndex < 0 || valueIndex < 0) continue;
+
+    const rows: NbaListRow[] = [];
+
+    for (const chunk of chunks.slice(1)) {
+      const cells = [...chunk.matchAll(/<t[hd][^>]*>([\s\S]*?)<\/t[hd]>/g)].map(
+        (cell) => cell[1] ?? '',
+      );
+      if (cells.length <= Math.max(nameIndex, valueIndex)) continue;
+
+      const name = cleanListName(cells[nameIndex] ?? '');
+      const value = cleanHtml(cells[valueIndex] ?? '')
+        .replace(/\[[a-z0-9]{1,3}\]/gi, '')
+        .trim();
+      if (!name || !value) continue;
+
+      // The first link in the name cell is the player. Category links are
+      // excluded: the renderer appends "Category:Articles with hCards" to a row
+      // carrying a person's microformat, and it sorts before nothing useful.
+      const link = [...(cells[nameIndex] ?? '').matchAll(/href="\.\/([^"#]+)"/g)]
+        .map((match) => decodeURIComponent(match[1] ?? '').replace(/_/g, ' '))
+        .find((title) => !title.startsWith('Category:'));
+
+      rows.push({ name, link: link ?? null, value, detail: null });
+      if (rows.length >= limit) break;
+    }
+
+    if (rows.length > 0) return rows;
+  }
+
+  return [];
+}
+
+/**
+ * Winners from a season-by-season list article.
+ *
+ * The NBA's award and scoring-title lists share a shape the leader lists do
+ * not: one row per season, with the season in the first column and the winner
+ * beside it. Read separately because the useful value here is the year rather
+ * than a total, and because the rows want reversing: the articles run oldest
+ * first and a roll of honour reads newest first.
+ *
+ * The season is normalised to its **end** year, matching how the rest of the
+ * catalogue dates NBA awards: "1946–47" becomes 1947. Getting that wrong is
+ * what once published Kobe Bryant as the 2006 MVP when he won the 2008 one.
+ */
+export function parseNbaSeasonList(
+  html: string,
+  limit: number,
+  /**
+   * Header of the column naming the winner.
+   *
+   * "Player" on the NBA's and WNBA's award lists, and named explicitly where an
+   * article titles the column after the award instead: the EuroLeague's Final
+   * Four MVP list heads it "Final Four MVP", which matched nothing and left the
+   * competition with no such table.
+   */
+  winnerHeader = 'player',
+): NbaListRow[] {
+  for (const table of html.matchAll(
+    /<table[^>]*class="[^"]*wikitable[^"]*"[^>]*>([\s\S]*?)<\/table>/g,
+  )) {
+    const chunks = (table[1] ?? '')
+      .split(/<tr[^>]*>/)
+      .slice(1)
+      .filter((chunk) => /<t[hd][^>]*>/.test(chunk));
+    // A header row and at least one data row. The column names below are what
+    // actually identifies the right table, so a row count is redundant as a
+    // filter and wrong as one: it silently rejected short tables.
+    if (chunks.length < 2) continue;
+
+    const headers = [...(chunks[0] ?? '').matchAll(/<th[^>]*>([\s\S]*?)<\/th>/g)].map((cell) =>
+      cleanHtml(cell[1] ?? '').toLowerCase(),
+    );
+
+    const seasonIndex = headers.findIndex((header) => /^(season|year)/.test(header));
+    const nameIndex = headers.findIndex((header) => header.startsWith(winnerHeader.toLowerCase()));
+    if (seasonIndex < 0 || nameIndex < 0) continue;
+
+    const rows: NbaListRow[] = [];
+
+    for (const chunk of chunks.slice(1)) {
+      const cells = [...chunk.matchAll(/<t[hd][^>]*>([\s\S]*?)<\/t[hd]>/g)].map(
+        (cell) => cell[1] ?? '',
+      );
+      if (cells.length <= Math.max(seasonIndex, nameIndex)) continue;
+
+      const name = cleanListName(cells[nameIndex] ?? '');
+      const season = cleanHtml(cells[seasonIndex] ?? '');
+      if (!name) continue;
+
+      // "1946–47" and "1946-47" both yield 1947; a bare "2024" yields itself.
+      const span = /(\d{4})\s*[–-]\s*(\d{2,4})/.exec(season);
+      const year = span
+        ? span[2]!.length === 2
+          ? Number(span[1]!.slice(0, 2) + span[2]) + (span[2] === '00' ? 100 : 0)
+          : Number(span[2])
+        : Number(/(\d{4})/.exec(season)?.[1] ?? NaN);
+      if (!Number.isFinite(year)) continue;
+
+      // The person, not a flag beside them. The EuroLeague's MVP rows open with
+      // a nationality icon whose link is the country, so taking the first link
+      // published Evan Fournier's award as pointing at France. Preferring a
+      // link whose title resembles the printed name separates the two; where
+      // none does, the first non-category link stands, which covers the case of
+      // an article titled differently from the name in the table.
+      const candidates = [...(cells[nameIndex] ?? '').matchAll(/href="\.\/([^"#]+)"/g)]
+        .map((match) => decodeURIComponent(match[1] ?? '').replace(/_/g, ' '))
+        .filter((title) => !title.startsWith('Category:') && !title.startsWith('File:'));
+
+      const foldedName = foldName(name);
+      const link =
+        candidates.find((title) => {
+          const foldedTitle = foldName(title);
+          return foldedTitle.includes(foldedName) || foldedName.includes(foldedTitle);
+        }) ?? candidates[0];
+
+      rows.push({ name, link: link ?? null, value: String(year), detail: null });
+    }
+
+    if (rows.length > 0) return rows.reverse().slice(0, limit);
+  }
+
+  return [];
+}
+
+/**
+ * Champions from a finals-by-year list article.
+ *
+ * "List of NBA champions" tabulates each final rather than each winner: one row
+ * per year with the two conference champions either side of a `Result` column
+ * holding the series score. The winner is whichever side took more games, which
+ * is why this cannot reuse `parseNbaSeasonList`: neither team column is the
+ * champion on its own, and taking the first would publish the losing finalist
+ * for roughly half of NBA history.
+ *
+ * The team link is preferred over the name, since the name cell carries the
+ * appearance and win-loss counts the article appends in brackets.
+ */
+export function parseNbaChampions(html: string, limit: number): NbaListRow[] {
+  for (const table of html.matchAll(
+    /<table[^>]*class="[^"]*wikitable[^"]*"[^>]*>([\s\S]*?)<\/table>/g,
+  )) {
+    const chunks = (table[1] ?? '')
+      .split(/<tr[^>]*>/)
+      .slice(1)
+      .filter((chunk) => /<t[hd][^>]*>/.test(chunk));
+    // A header row and at least one data row. The column names below are what
+    // actually identifies the right table, so a row count is redundant as a
+    // filter and wrong as one: it silently rejected short tables.
+    if (chunks.length < 2) continue;
+
+    const headers = [...(chunks[0] ?? '').matchAll(/<th[^>]*>([\s\S]*?)<\/th>/g)].map((cell) =>
+      cleanHtml(cell[1] ?? '').toLowerCase(),
+    );
+
+    const yearIndex = headers.findIndex((header) => /^year/.test(header));
+    const westIndex = headers.findIndex((header) => header.includes('western champion'));
+    const eastIndex = headers.findIndex((header) => header.includes('eastern champion'));
+    const resultIndex = headers.findIndex((header) => header.startsWith('result'));
+    if (yearIndex < 0 || westIndex < 0 || eastIndex < 0 || resultIndex < 0) continue;
+
+    const rows: NbaListRow[] = [];
+
+    for (const chunk of chunks.slice(1)) {
+      const cells = [...chunk.matchAll(/<t[hd][^>]*>([\s\S]*?)<\/t[hd]>/g)].map(
+        (cell) => cell[1] ?? '',
+      );
+      if (cells.length <= Math.max(eastIndex, resultIndex)) continue;
+
+      const year = Number(/(\d{4})/.exec(cleanHtml(cells[yearIndex] ?? ''))?.[1] ?? NaN);
+      if (!Number.isFinite(year)) continue;
+
+      // "4–2" means the side on the left won; "1–4" the side on the right.
+      const score = /(\d+)\s*[–-]\s*(\d+)/.exec(cleanHtml(cells[resultIndex] ?? ''));
+      if (!score) continue;
+
+      const winnerCell = Number(score[1]) > Number(score[2]) ? cells[westIndex] : cells[eastIndex];
+      const name = cleanListName(winnerCell ?? '');
+      if (!name) continue;
+
+      // The name cell links to the *season* article rather than the club:
+      // "2020–21 Milwaukee Bucks season". The club is recoverable from it, and
+      // is what resolves against the team catalogue, so the season prefix and
+      // the "season" suffix are stripped rather than the link discarded.
+      const link = [...(winnerCell ?? '').matchAll(/href="\.\/([^"#]+)"/g)]
+        .map((match) => decodeURIComponent(match[1] ?? '').replace(/_/g, ' '))
+        .filter((title) => !title.startsWith('Category:'))
+        .map((title) =>
+          title
+            .replace(/^\d{4}(?:[–-]\d{2,4})?\s+/, '')
+            .replace(/\s+season$/i, '')
+            .trim(),
+        )
+        .find((title) => title.length > 0);
+
+      rows.push({ name, link: link ?? null, value: String(year), detail: null });
+    }
+
+    if (rows.length > 0) return rows.reverse().slice(0, limit);
+  }
+
+  return [];
+}
+
+/**
+ * Winners from a list whose champion sits in its own column.
+ *
+ * The third champions shape, after the NBA's two-sided finals table and the
+ * medal-game form below. The NCAA, the WNBA and the EuroLeague all tabulate one
+ * row per season with a column simply naming the winner, so no result needs
+ * reading: the column is the answer.
+ *
+ * `winnerHeader` names that column because the three disagree on it: "Champion"
+ * for the NCAA and the EuroLeague, "Champions" for the WNBA.
+ */
+export function parseChampionColumn(
+  html: string,
+  winnerHeader: string,
+  limit: number,
+): NbaListRow[] {
+  for (const table of html.matchAll(
+    /<table[^>]*class="[^"]*wikitable[^"]*"[^>]*>([\s\S]*?)<\/table>/g,
+  )) {
+    const chunks = (table[1] ?? '')
+      .split(/<tr[^>]*>/)
+      .slice(1)
+      .filter((chunk) => /<t[hd][^>]*>/.test(chunk));
+    if (chunks.length < 2) continue;
+
+    const headers = [...(chunks[0] ?? '').matchAll(/<th[^>]*>([\s\S]*?)<\/th>/g)].map((cell) =>
+      cleanHtml(cell[1] ?? '').toLowerCase(),
+    );
+
+    const yearIndex = headers.findIndex((header) => /^(year|season)/.test(header));
+    const winnerIndex = headers.findIndex((header) =>
+      header.startsWith(winnerHeader.toLowerCase()),
+    );
+    if (yearIndex < 0 || winnerIndex < 0) continue;
+
+    const rows: NbaListRow[] = [];
+
+    for (const chunk of chunks.slice(1)) {
+      const cells = [...chunk.matchAll(/<t[hd][^>]*>([\s\S]*?)<\/t[hd]>/g)].map(
+        (cell) => cell[1] ?? '',
+      );
+      if (cells.length <= Math.max(yearIndex, winnerIndex)) continue;
+
+      const season = cleanHtml(cells[yearIndex] ?? '');
+      // A season may be written as a span, and is dated by its end year to match
+      // the rest of the catalogue.
+      const span = /(\d{4})\s*[–-]\s*(\d{2,4})/.exec(season);
+      const year = span
+        ? span[2]!.length === 2
+          ? Number(span[1]!.slice(0, 2) + span[2])
+          : Number(span[2])
+        : Number(/(\d{4})/.exec(season)?.[1] ?? NaN);
+      if (!Number.isFinite(year)) continue;
+
+      // The flag beside the winner carries a country name of its own, which on
+      // the EuroLeague's rows is a separate link and renders as an image. Where
+      // the text survives, it prefixes the club: "Greece Olympiacos". Dropping
+      // any leading link that is not the last one in the cell leaves the club.
+      const winnerCellRaw = cells[winnerIndex] ?? '';
+      const winnerLinks = [...winnerCellRaw.matchAll(/<a\b[^>]*>([\s\S]*?)<\/a>/g)];
+      const name =
+        winnerLinks.length > 1
+          ? cleanListName(winnerLinks[winnerLinks.length - 1]![1] ?? '')
+          : cleanListName(winnerCellRaw);
+      if (!name) continue;
+
+      // A season with no champion. Both the NCAA and the EuroLeague fill the
+      // winner column with prose when a tournament did not happen, so 2020
+      // published "Tournament not held due to the COVID-19 pandemic" and
+      // "Cancelled due to COVID-19 pandemic" as though they were teams. A
+      // champion's name is short and never a sentence.
+      if (/\b(cancel|not held|abandon|no (?:tournament|competition)|suspend)/i.test(name)) {
+        continue;
+      }
+
+      // The club, not the flag beside it. EuroLeague rows open with a country
+      // icon whose link is the nation, so taking the first link published
+      // Olympiacos as Greece and Fenerbahçe as Turkey. Matching the visible
+      // name is what separates the two: the flag's title never does.
+      const winnerCell = cells[winnerIndex] ?? '';
+      const foldedName = foldName(name);
+      const link = [...winnerCell.matchAll(/href="\.\/([^"#]+)"/g)]
+        .map((match) => decodeURIComponent(match[1] ?? '').replace(/_/g, ' '))
+        .filter((title) => !title.startsWith('Category:') && !title.startsWith('File:'))
+        .filter((title) => {
+          const foldedTitle = foldName(title);
+          return foldedTitle.includes(foldedName) || foldedName.includes(foldedTitle);
+        })
+        .map((title) =>
+          title
+            .replace(/^\d{4}(?:[–-]\d{2,4})?\s+/, '')
+            .replace(/\s+season$/i, '')
+            .trim(),
+        )
+        .find((title) => title.length > 0);
+
+      rows.push({ name, link: link ?? null, value: String(year), detail: null });
+    }
+
+    if (rows.length > 0) return rows.reverse().slice(0, limit);
+  }
+
+  return [];
+}
+
+/**
+ * Winners from a tournament list whose final is one cell.
+ *
+ * FIBA and the Olympics tabulate an edition per row with a `Final` column
+ * holding the whole result: the champion, the score and the venue run together
+ * as text, so nothing can be read positionally. The champion is the **first
+ * national-team link** in that cell, which is reliable because the runner-up
+ * appears after the score and the venue links are places rather than teams.
+ *
+ * Future editions are skipped. Both articles list scheduled tournaments with
+ * "Future event" in place of a result, and a row with no winner is not a row.
+ */
+export function parseTournamentFinal(html: string, limit: number): NbaListRow[] {
+  for (const table of html.matchAll(
+    /<table[^>]*class="[^"]*wikitable[^"]*"[^>]*>([\s\S]*?)<\/table>/g,
+  )) {
+    const chunks = (table[1] ?? '')
+      .split(/<tr[^>]*>/)
+      .slice(1)
+      .filter((chunk) => /<t[hd][^>]*>/.test(chunk));
+    // A header row and at least one data row. The column names below identify
+    // the right table, so a row count is redundant as a filter.
+    if (chunks.length < 2) continue;
+
+    const headers = [...(chunks[0] ?? '').matchAll(/<th[^>]*>([\s\S]*?)<\/th>/g)].map((cell) =>
+      cleanHtml(cell[1] ?? '').toLowerCase(),
+    );
+
+    const yearIndex = headers.findIndex((header) => /^year/.test(header));
+    // "Final" on FIBA, "Gold medal game" at the Olympics.
+    const finalIndex = headers.findIndex(
+      (header) => header.startsWith('final') || header.includes('gold medal'),
+    );
+    if (yearIndex < 0 || finalIndex < 0) continue;
+
+    const rows: NbaListRow[] = [];
+
+    for (const chunk of chunks.slice(1)) {
+      const cells = [...chunk.matchAll(/<t[hd][^>]*>([\s\S]*?)<\/t[hd]>/g)].map(
+        (cell) => cell[1] ?? '',
+      );
+      if (cells.length <= Math.max(yearIndex, finalIndex)) continue;
+
+      const year = Number(/(\d{4})/.exec(cleanHtml(cells[yearIndex] ?? ''))?.[1] ?? NaN);
+      if (!Number.isFinite(year)) continue;
+
+      const finalCell = cells[finalIndex] ?? '';
+      if (/future event/i.test(cleanHtml(finalCell))) continue;
+
+      // A national side's article, which is what names the champion. Venue and
+      // city links are excluded by requiring the team suffix.
+      const teamLink = [...finalCell.matchAll(/href="\.\/([^"#]+)"/g)]
+        .map((match) => decodeURIComponent(match[1] ?? '').replace(/_/g, ' '))
+        .find((title) => /national basketball team/i.test(title));
+      if (!teamLink) continue;
+
+      // "Germany men's national basketball team" reads as "Germany" in a roll
+      // of honour: the qualifier is the same on every row and carries nothing.
+      const name = teamLink
+        .replace(/\s+(?:men's|women's)?\s*national basketball team$/i, '')
+        .trim();
+      if (!name) continue;
+
+      rows.push({ name, link: teamLink, value: String(year), detail: null });
+    }
+
+    if (rows.length > 0) return rows.reverse().slice(0, limit);
+  }
+
+  return [];
+}

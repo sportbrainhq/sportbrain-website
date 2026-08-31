@@ -488,10 +488,23 @@ export class IngestionService {
                   title: award.title,
                   year: award.year,
                 })
-                // Targets the partial unique index, so a re-run updates
-                // nothing rather than inserting a second copy.
+                // `honour_person_unique_idx` is a *partial* index, carrying
+                // `WHERE person_id IS NOT NULL`. Postgres will only use a
+                // partial index for ON CONFLICT if the statement repeats its
+                // predicate, so without `targetWhere` this raised "there is no
+                // unique or exclusion constraint matching the ON CONFLICT
+                // specification" on every single row. The comment here used to
+                // claim it targeted that index while doing no such thing, and
+                // the effect was total: a full honours run for basketball read
+                // 1,331 awards, wrote 0 and failed 677, which is why only 122 of
+                // 405 basketball people had any honours at all and Kawhi
+                // Leonard's and Tony Parker's Finals MVPs were missing from
+                // their teams' pages.
                 .onConflictDoNothing({
                   target: [honour.personId, honour.title, honour.year],
+                  // `where` is this Drizzle version's spelling for the index
+                  // predicate on a DO NOTHING conflict target.
+                  where: sql`${honour.personId} IS NOT NULL`,
                 });
               summary.written += 1;
             } catch (error) {

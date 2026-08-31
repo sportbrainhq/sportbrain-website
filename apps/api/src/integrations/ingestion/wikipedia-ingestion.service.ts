@@ -607,6 +607,149 @@ export class WikipediaIngestionService {
   }
 
   /**
+   * Ingests tennis players' careers: their titles, their span and their status.
+   *
+   * Tennis arrives with almost nothing that the rest of the pipeline provides
+   * for other sports, and every gap has the same cause: **tennis has no clubs**.
+   * The catalogue holds zero tennis teams, and the pipeline reasons about
+   * careers through club spells. So:
+   *
+   *   - `derivePersonStatus` finds no spells and leaves 366 of 394 tennis
+   *     players with a null `career_status`, which renders no badge at all.
+   *   - `derivePersonPriority` awards its two large bonuses for team evidence,
+   *     so no tennis player can earn either, and the 150-sitelink cap that
+   *     applies to a proven player never applies to any of them. Federer's 159
+   *     sitelinks scored exactly what a journeyman's 40 did, and he ranked 36th
+   *     on a list headed by a pop musician and the King of Thailand.
+   *   - The honour table held 175 tennis rows, of which 174 were awards and one
+   *     was a title. Not a single Grand Slam was recorded: Federer's twenty
+   *     majors were represented by one ESPY.
+   *
+   * This method is the tennis equivalent of the club spell. A Grand Slam title
+   * is the evidence tennis has that somebody had a real career in it, and the
+   * infobox states every one.
+   *
+   * ## What it writes
+   *
+   *   - **Honour rows** for every major, Olympic, Tour Finals and national-team
+   *     title, resolved to the curated competition so the profile can group
+   *     them. Titles are `kind = 'title'`, which is what separates them from
+   *     the awards already present.
+   *   - **`career_status`**, from whether the infobox carries a `retired`
+   *     field. This is the one signal tennis does have, and it is explicit
+   *     rather than inferred.
+   *   - **Attributes**: the career span, the playing hand, the tour title
+   *     counts and the peak ranking, which give the profile something to show
+   *     for a sport with no runs, goals or points.
+   *
+   * Curated rows are left alone, as everywhere else.
+   */
+  async ingestTennisCareers(
+    limit: number,
+    /** One player, for correcting a single page without a full crawl. */
+    slug?: string,
+  ): Promise<{ players: number; titles: number; retired: number; active: number }> {
+    const targets = await this.targets('person', 'tennis', limit, slug);
+
+    const [sportRow] = await this.database.db.execute<{ id: string }>(
+      sql`SELECT id FROM sport WHERE slug = 'tennis' LIMIT 1`,
+    );
+    if (!sportRow) return { players: 0, titles: 0, retired: 0, active: 0 };
+
+    // The curated competitions, resolved once. A title whose competition is
+    // missing is still written, with a null competition_id: the honour is a
+    // fact about the player and should not be lost because the competition
+    // seed has not run.
+    const competitions = new Map<string, string>();
+    const rows = await this.database.db.execute<{ id: string; slug: string }>(
+      sql`SELECT id, slug FROM competition WHERE sport_id = ${sportRow.id}`,
+    );
+    for (const row of rows) competitions.set(row.slug, row.id);
+
+    let players = 0;
+    let titles = 0;
+    let retired = 0;
+    let active = 0;
+
+    for (const [index, target] of targets.entries()) {
+      try {
+        const career = await this.provider.fetchTennisCareer(target.title);
+        // No tennis infobox means the person is not a tennis player in any
+        // sense this pipeline can act on. That is the common case for the
+        // politicians, monarchs and musicians Wikidata's "sport: tennis"
+        // statement drags into the catalogue, and skipping them is deliberate:
+        // they keep their null status and score no title evidence.
+        if (!career) continue;
+
+        for (const title of career.titles) {
+          // The discipline is part of the title text because the honour table
+          // is unique on (person, title, year), and Serena Williams won the
+          // singles and the doubles at the same Wimbledon more than once.
+          // Without it the second insert silently does nothing and her 14
+          // doubles majors disappear.
+          const label = title.discipline === 'doubles' ? `${title.name} (doubles)` : title.name;
+
+          const inserted = await this.database.db.execute<{ id: string }>(sql`
+            INSERT INTO honour (
+              sport_id, person_id, competition_id, kind, title, year, source
+            )
+            SELECT ${sportRow.id}, ${target.id},
+                   ${competitions.get(title.slug) ?? null}, 'title',
+                   ${label}, ${title.year}, 'wikipedia'
+            WHERE NOT EXISTS (
+              SELECT 1 FROM honour h
+              WHERE h.person_id = ${target.id}
+                AND h.title = ${label}
+                AND h.year = ${title.year}
+            )
+            RETURNING id
+          `);
+          if (inserted.length > 0) titles += 1;
+        }
+
+        // The `retired` field is the signal, not the year it parses to. A
+        // player whose article carries one has stopped; one with no such field
+        // is still competing. Serena Williams' reads "2022-2026", which is a
+        // retirement followed by a scheduled return, and the field's presence
+        // is the right reading of it either way.
+        const status = career.hasRetiredField ? 'retired' : 'active';
+        if (status === 'retired') retired += 1;
+        else active += 1;
+
+        await this.database.db.execute(sql`
+          UPDATE person SET
+            attributes = attributes || ${JSON.stringify({
+              ...(career.turnedPro !== null ? { careerStart: career.turnedPro } : {}),
+              ...(career.retiredYear !== null ? { careerEnd: career.retiredYear } : {}),
+              ...(career.plays !== null ? { plays: career.plays } : {}),
+              ...(career.singlesTitles !== null ? { singlesTitles: career.singlesTitles } : {}),
+              ...(career.doublesTitles !== null ? { doublesTitles: career.doublesTitles } : {}),
+              ...(career.highestSinglesRanking !== null
+                ? { highestSinglesRanking: career.highestSinglesRanking }
+                : {}),
+              ...(career.highestDoublesRanking !== null
+                ? { highestDoublesRanking: career.highestDoublesRanking }
+                : {}),
+            })}::jsonb,
+            career_status = ${status},
+            updated_at = now()
+          WHERE id = ${target.id} AND confidence <> 'curated'
+        `);
+
+        players += 1;
+      } catch (error) {
+        this.logger.warn(`Tennis career failed for ${target.title}: ${this.message(error)}`);
+      }
+
+      if ((index + 1) % 25 === 0) {
+        this.logger.log(`  ${index + 1}/${targets.length} players, ${titles} titles written`);
+      }
+    }
+
+    return { players, titles, retired, active };
+  }
+
+  /**
    * Ingests basketball players' career averages, per competition phase.
    *
    * Wikipedia rather than the NBA's own statistics service, and the reason is
@@ -1169,6 +1312,214 @@ export class WikipediaIngestionService {
     }
 
     return written;
+  }
+
+  /**
+   * Basketball teams' all-time points, rebounds and assists leaders.
+   *
+   * Its own pass rather than part of `ingestTeamRankings`, because the source is
+   * a different article in a different shape: "{Team} all-time roster" carries
+   * per-team career totals, which is the one thing no other source we hold does.
+   *
+   * Ordered by notability so a limited run covers the teams a reader is most
+   * likely to open. Teams whose article does not exist or does not parse are
+   * counted as skipped and keep whatever they had, rather than having their
+   * tables cleared.
+   */
+  async ingestBasketballTeamLeaders(
+    limit: number,
+  ): Promise<{ examined: number; written: number; skipped: number }> {
+    const teams = await this.database.db.execute<{ id: string; name: string }>(sql`
+      SELECT t.id, t.name
+      FROM team t
+      JOIN sport s ON s.id = t.sport_id
+      WHERE s.slug = 'basketball'
+      ORDER BY t.notability DESC
+      LIMIT ${limit}
+    `);
+
+    let written = 0;
+    let skipped = 0;
+
+    for (const [index, team] of teams.entries()) {
+      try {
+        const rankings = await this.provider.fetchBasketballTeamLeaders(team.name);
+        if (rankings.length === 0) {
+          skipped += 1;
+          continue;
+        }
+
+        for (const ranking of rankings) {
+          await this.writeRanking('team', team.id, ranking, ranking.sourceTitle ?? null);
+          written += 1;
+        }
+      } catch (error) {
+        // One unparseable article must not end the run: these are read best
+        // effort across hundreds of teams.
+        skipped += 1;
+        this.logger.warn(`Leaders failed for ${team.name}: ${this.message(error)}`);
+      }
+
+      if ((index + 1) % 25 === 0) {
+        this.logger.log(`  ${index + 1}/${teams.length} teams scanned`);
+      }
+    }
+
+    return { examined: teams.length, written, skipped };
+  }
+
+  /**
+   * Basketball players' career highlights, as the sport summarises them.
+   *
+   * Stored on `person.attributes.careerHighlights`, an open JSONB bag the player
+   * page already reads, so this needs no schema change. Kept as an ordered list
+   * of `{ label, times }` rather than rendered prose, so the page can present
+   * "22×" as a count rather than parsing a string back apart.
+   *
+   * Ordered by notability, so a limited run covers the players a reader is most
+   * likely to open. A player whose article has no `highlights` field keeps
+   * whatever they had rather than having it cleared.
+   */
+  async ingestBasketballHighlights(
+    limit: number,
+  ): Promise<{ examined: number; written: number; skipped: number }> {
+    const targets = await this.targets('person', 'basketball', limit);
+
+    let written = 0;
+    let skipped = 0;
+
+    for (const [index, target] of targets.entries()) {
+      try {
+        const highlights = await this.provider.fetchCareerHighlights(target.title);
+        if (highlights.length === 0) {
+          skipped += 1;
+          continue;
+        }
+
+        await this.database.db.execute(sql`
+          UPDATE person
+          SET attributes = attributes || jsonb_build_object(
+                'careerHighlights', ${JSON.stringify(highlights)}::jsonb
+              ),
+              updated_at = now()
+          WHERE id = ${target.id}
+        `);
+        written += 1;
+      } catch (error) {
+        skipped += 1;
+        this.logger.warn(`Highlights failed for ${target.title}: ${this.message(error)}`);
+      }
+
+      if ((index + 1) % 50 === 0) {
+        this.logger.log(`  ${index + 1}/${targets.length} players scanned`);
+      }
+    }
+
+    return { examined: targets.length, written, skipped };
+  }
+
+  /**
+   * Lead prose for competitions, into `about`.
+   *
+   * No competition in any sport had this: the tab rendered a logo, a fact grid
+   * and nothing that said what the thing is. The REST summary endpoint returns
+   * the article's lead already stripped of templates and references, which is
+   * exactly the paragraph wanted.
+   */
+  async ingestCompetitionAbout(
+    sportSlug: string | null,
+    limit: number,
+  ): Promise<{ examined: number; written: number; skipped: number }> {
+    const targets = await this.targets('competition', sportSlug, limit);
+
+    let written = 0;
+    let skipped = 0;
+
+    for (const target of targets) {
+      try {
+        const summary = await this.provider.fetchSummary(target.title);
+        if (!summary) {
+          skipped += 1;
+          continue;
+        }
+
+        await this.database.db.execute(sql`
+          UPDATE competition SET about = ${summary}, updated_at = now()
+          WHERE id = ${target.id}
+        `);
+        written += 1;
+      } catch (error) {
+        skipped += 1;
+        this.logger.warn(`About failed for ${target.title}: ${this.message(error)}`);
+      }
+    }
+
+    return { examined: targets.length, written, skipped };
+  }
+
+  /**
+   * The NBA's roll of honour, award rolls and career leader boards.
+   *
+   * Its own pass rather than part of `ingestCompetitionRankings`, because the
+   * source is ten separate list articles specific to this league rather than
+   * one competition page. See `fetchNbaCompetitionTables` for why these are read
+   * rather than derived from the honours we already hold.
+   */
+  /**
+   * The same tables for basketball's other competitions.
+   *
+   * Separate from the NBA pass because the sources are per-competition rather
+   * than shared, and because coverage is uneven: see
+   * `fetchBasketballCompetitionTables` for what each one publishes and why. A
+   * competition whose articles support nothing is reported rather than left
+   * looking as though it failed.
+   */
+  async ingestBasketballCompetitionTables(): Promise<{ slug: string; written: number }[]> {
+    const rows = await this.database.db.execute<{ id: string; slug: string }>(sql`
+      SELECT c.id, c.slug FROM competition c
+      JOIN sport s ON s.id = c.sport_id
+      WHERE s.slug = 'basketball' AND c.slug <> 'nba'
+      ORDER BY c.notability DESC
+    `);
+
+    const results: { slug: string; written: number }[] = [];
+
+    for (const row of rows) {
+      try {
+        const tables = await this.provider.fetchBasketballCompetitionTables(row.slug);
+        for (const table of tables) {
+          await this.writeRanking('competition', row.id, table, table.sourceTitle ?? null);
+        }
+        results.push({ slug: row.slug, written: tables.length });
+      } catch (error) {
+        this.logger.warn(`Tables failed for ${row.slug}: ${this.message(error)}`);
+        results.push({ slug: row.slug, written: 0 });
+      }
+    }
+
+    return results;
+  }
+
+  async ingestNbaCompetitionTables(): Promise<{ written: number; skipped: number }> {
+    const [row] = await this.database.db.execute<{ id: string }>(sql`
+      SELECT c.id FROM competition c
+      JOIN sport s ON s.id = c.sport_id
+      WHERE s.slug = 'basketball' AND c.slug = 'nba'
+      LIMIT 1
+    `);
+    if (!row) return { written: 0, skipped: 0 };
+
+    const tables = await this.provider.fetchNbaCompetitionTables();
+
+    let written = 0;
+    for (const table of tables) {
+      await this.writeRanking('competition', row.id, table, table.sourceTitle ?? null);
+      written += 1;
+    }
+
+    // Ten are expected. Fewer means an article moved or changed shape, which is
+    // worth saying rather than leaving the page quietly short of a table.
+    return { written, skipped: 10 - written };
   }
 
   private async writeRanking(

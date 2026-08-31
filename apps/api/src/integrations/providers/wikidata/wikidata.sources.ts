@@ -141,6 +141,63 @@ export interface WikidataSportSource {
    * price worth paying.
    */
   readonly venueSkipSportFilter?: boolean;
+
+  /**
+   * Occupations that disqualify a person, whatever else they carry.
+   *
+   * The counterpart to `personClubClassQid` for sports that have no club to
+   * belong to. Occupation scoping reaches players a league filter misses, and
+   * on its own it lets in anyone who ever held the occupation: `P106` records
+   * what somebody has been, and the sitelink ordering then promotes whoever is
+   * most famous rather than whoever is the better player. Golf opened with Ivan
+   * Lendl and an actor; American football opened with Gerald Ford and John
+   * Wayne, with Tom Brady ninth.
+   *
+   * See the long note in `peopleQuery` for why this excludes rather than
+   * requires, and `OTHER_SPORT_OCCUPATIONS` for the shared list.
+   */
+  readonly excludeOccupationQids?: readonly string[];
+}
+
+/**
+ * Occupations that mean "known for something other than this sport".
+ *
+ * Shared by the sports that scope people by occupation alone, because the list
+ * is the same one every time: the other sports in the catalogue, plus the
+ * performing careers that a college athlete most often goes on to. Each sport
+ * filters out its own entry when it uses the list, since excluding golfers from
+ * golf would empty it.
+ *
+ * Every QID verified against the live API rather than recalled, on the same
+ * reasoning as the rest of this file: a wrong QID here silently excludes people
+ * who belong, which is harder to notice than a wrong one that includes people
+ * who do not.
+ */
+export const OTHER_SPORT_OCCUPATIONS = {
+  // ── The other sports in the catalogue ──────────────────────────────────────
+  footballer: 'Q937857',
+  basketballPlayer: 'Q3665646',
+  cricketer: 'Q12299841',
+  tennisPlayer: 'Q10833314',
+  americanFootballPlayer: 'Q19204627',
+  golfer: 'Q11303721',
+  mmaFighter: 'Q11607585',
+  boxer: 'Q11338576',
+  formulaOneDriver: 'Q10841764',
+
+  // ── The careers a famous ex-athlete most often has instead ─────────────────
+  //
+  // These are what put John Wayne, Dwayne Johnson and Kathryn Newton at the top
+  // of a sporting roster. Each of them really did play, and none is why anyone
+  // knows the name.
+  actor: 'Q33999',
+  professionalWrestler: 'Q13474373',
+  politician: 'Q82955',
+} as const;
+
+/** The list above, for a sport to filter its own occupation out of. */
+function otherOccupationsThan(...keep: readonly string[]): readonly string[] {
+  return Object.values(OTHER_SPORT_OCCUPATIONS).filter((qid) => !keep.includes(qid));
 }
 
 export const SPORT_SOURCES: Record<string, WikidataSportSource> = {
@@ -267,10 +324,24 @@ export const SPORT_SOURCES: Record<string, WikidataSportSource> = {
     // franchise and mixing them serves neither. Removing it leaves the
     // professional leagues plus the national sides.
     //
-    // It was already excluded from `personCompetitionQids` below for a separate
+    // It was already excluded from the person scoping below for a separate
     // reason (its team count timed out the person query), so no player coverage
     // is lost by dropping it here.
-    personCompetitionQids: ['Q155223', 'Q2593221', 'Q185982'],
+    //
+    // `personCompetitionQids` is deliberately gone, replaced by the occupation
+    // and club scoping below. Scoping people by league membership missed
+    // players outright rather than merely ordering them late: it requires
+    // `P118` on the club, and three of the last five Rookies of the Year carry
+    // no such statement, so Stephon Castle, Scottie Barnes and Evan Mobley were
+    // unreachable at any page limit. Football hit the same wall and solved it
+    // the same way; the note on `personClubClassQid` records that the league
+    // property is "close to useless" there too.
+    // basketball player
+    personOccupationQid: 'Q3665646',
+    // Any club at all, which is what turns the league filter off. The class
+    // itself is not checked: a basketball club carries several and requiring
+    // one would reintroduce the gap this removes.
+    personClubClassQid: 'Q13393265',
     defaultTeamKind: 'club',
     competitionClassQid: 'Q623109',
     venueClassQid: 'Q483110',
@@ -278,16 +349,18 @@ export const SPORT_SOURCES: Record<string, WikidataSportSource> = {
     /**
      * Notability floor for basketball people.
      *
-     * Kept at five language editions, matching cricket rather than football's
-     * twelve. Basketball is documented in fewer languages than football, so the
-     * higher floor would cut into players a reader would search for.
+     * Raised from five with the move to occupation scoping, which widens the
+     * candidate set considerably: 13,813 people clear five links, against the
+     * 4,351 the league-scoped query produced. Eight is measured rather than
+     * guessed, admitting 7,280, which keeps the catalogue about the size it was
+     * while covering the players the old scoping missed. Stephon Castle is the
+     * least documented of those at 19 links, so the floor costs nothing there.
      *
      * The prose here previously described cricket's 41,160 `P641` people and
      * named Allan Border and Javed Miandad, having been copied from the cricket
-     * block. The number was never re-measured for basketball; the value is
-     * retained as a considered default rather than a verified one.
+     * block.
      */
-    personMinSitelinks: 5,
+    personMinSitelinks: 8,
   },
 
   tennis: {
@@ -320,6 +393,161 @@ export const SPORT_SOURCES: Record<string, WikidataSportSource> = {
     // Formula One driver. P641 is not maintained on drivers; occupation is.
     personOccupationQid: 'Q10841764',
     venueSkipSportFilter: true,
+  },
+
+  golf: {
+    // golf
+    sportQid: 'Q5377',
+    // No team classes. Golf is played by individuals, so the Teams tab does not
+    // render, exactly as for tennis.
+    competitionQids: [],
+    defaultTeamKind: 'international',
+    // Golfer, NOT Q490253 ("professional golfer"). The professional-status item
+    // is barely used as an occupation: 320 people carry it against 5,995 for
+    // this one, and the missing 5,675 include most of the sport.
+    personOccupationQid: 'Q11303721',
+    /**
+     * Notability floor for golfers.
+     *
+     * Five rather than the eight basketball uses, because golf's corpus is an
+     * order of magnitude smaller: eight admits 401 people, which is a thinner
+     * roster than any launched sport has. Five admits 852 and keeps the tour
+     * winners a reader would search for.
+     */
+    personMinSitelinks: 5,
+    // Without this the roster opened with Ivan Lendl, a Serbian goalkeeper and
+    // the actor Kathryn Newton, all of whom carry `golfer` as a second
+    // occupation and all of whom outrank Rory McIlroy on sitelinks.
+    excludeOccupationQids: otherOccupationsThan(OTHER_SPORT_OCCUPATIONS.golfer),
+    // `requireParticipation` is deliberately absent despite golf having no team
+    // scoping, which is the situation it exists for. Measured P1344 coverage is
+    // 444 of 5,995 golfers, so requiring it would discard seven eighths of the
+    // sport. The sitelink floor does the same job here without the false
+    // negatives. Tennis is the opposite case: 2,999 of its people carry P1344.
+    competitionClassQid: 'Q623109',
+    // golf course
+    venueClassQid: 'Q1048525',
+  },
+
+  'american-football': {
+    // American football
+    sportQid: 'Q41323',
+    // American football team.
+    teamClassQid: 'Q17156793',
+    /**
+     * Scoped to the NFL, because the class alone is unusable.
+     *
+     * Class scoping was tried first and produced exactly the defect the
+     * basketball block above records: 1,748 teams, of which 46 had ten or more
+     * sitelinks and 80 had none at all. The rest is college football and the
+     * semi-professional game, so the Teams tab filled up with the Arlington
+     * Impact, the Capital City Savages and several hundred university
+     * programmes, none of which is comparable to an NFL franchise.
+     *
+     * The NFL's `P118` coverage is good, which is not true of every sport: it
+     * returns 53 sides, the 32 current franchises plus the historical ones,
+     * ordered Patriots, Chiefs, Giants, Packers, Bears. The Super Bowl carries
+     * `P118` too and is excluded by the season and event filters already in
+     * `teamsByCompetitionQuery`, not by `teamClassQid`: that query takes the
+     * class as `_classQid` and deliberately ignores it.
+     *
+     * College football is a real subject and is deliberately not here, on the
+     * same reasoning that removed NCAA Division I from basketball: a college
+     * programme and a professional franchise are not comparable, and mixing
+     * them serves neither.
+     */
+    competitionQids: ['Q1215884'],
+    /**
+     * Empty, so the NFL scoping above applies to teams only.
+     *
+     * `competitionQids` is shared by both queries unless this overrides it, and
+     * scoping people by it cut the roster to 14: the person query reads league
+     * membership as `P118` on the player, which is the property the basketball
+     * block above calls close to useless for people and which football
+     * abandoned for the same reason. Occupation plus the exclusion list below
+     * reaches 1,172 candidates against the same notability floor.
+     */
+    personCompetitionQids: [],
+    defaultTeamKind: 'franchise',
+    // American football player, NOT Q14128148 ("gridiron football player"),
+    // which spans Canadian football and the other variants.
+    personOccupationQid: 'Q19204627',
+    /**
+     * Notability floor for American football players.
+     *
+     * The largest corpus of the four sports added here: 48,848 people carry the
+     * occupation, and taking them whole would repeat the mistake NCAA Division I
+     * made in basketball, where 408 college programmes buried the franchises.
+     * Eight admits 1,465, comparable to what the other launched sports carry.
+     */
+    personMinSitelinks: 8,
+    // The worst case measured of the four sports added here. College football
+    // is played by a very large number of people who become famous for
+    // something else, so the unfiltered roster ran Gerald Ford, John Wayne,
+    // Dwayne Johnson, George Marshall, Burt Reynolds, Terry Crews, Ed O'Neill
+    // and Roman Reigns before it reached Tom Brady in ninth.
+    excludeOccupationQids: otherOccupationsThan(OTHER_SPORT_OCCUPATIONS.americanFootballPlayer),
+    competitionClassQid: 'Q623109',
+    // stadium
+    venueClassQid: 'Q483110',
+  },
+
+  mma: {
+    // mixed martial arts
+    sportQid: 'Q114466',
+    // No team classes, deliberately.
+    //
+    // UFC, Bellator, ONE and the PFL are promotions: organisations that stage
+    // bouts and sanction them, not sides that compete. `team` in this schema
+    // means an organisation that competes, which is why an F1 constructor
+    // qualifies and a promotion does not. They are ingested as competitions
+    // below, where they belong.
+    competitionQids: [],
+    defaultTeamKind: 'international',
+    // mixed martial arts fighter
+    personOccupationQid: 'Q11607585',
+    // Five, matching golf and for the same reason: the corpus is 4,602 people,
+    // and eight would cut it to 793.
+    personMinSitelinks: 5,
+    // Boxing is kept in the exclusion list rather than paired with MMA, even
+    // though the crossover is real and a fighter who has done both belongs in
+    // either roster. `P106` does not distinguish someone who fought one
+    // professional boxing match from someone whose career was boxing, and the
+    // second is far more common among the names sitelinks promote.
+    excludeOccupationQids: otherOccupationsThan(OTHER_SPORT_OCCUPATIONS.mmaFighter),
+    // See the golf note. MMA's P1344 coverage is worse still, 218 of 4,602.
+    competitionClassQid: 'Q623109',
+    venueClassQid: 'Q483110',
+  },
+
+  boxing: {
+    // boxing
+    sportQid: 'Q32112',
+    // No team classes. Boxers compete as individuals.
+    competitionQids: [],
+    defaultTeamKind: 'international',
+    // boxer
+    personOccupationQid: 'Q11338576',
+    // Eight, not five. Boxing's 19,591 people are the second-largest corpus
+    // here and the tail is deep in amateur records; eight admits 2,700.
+    personMinSitelinks: 8,
+    // The professional-wrestling entry earns its place here more than anywhere
+    // else: the two draw on each other constantly, and a wrestler with one
+    // recorded exhibition bout should not outrank a world champion.
+    excludeOccupationQids: otherOccupationsThan(OTHER_SPORT_OCCUPATIONS.boxer),
+    /**
+     * Competitions are seeded rather than ingested.
+     *
+     * Boxing is the one sport of the four with no usable competition class on
+     * Wikidata: the generic sports-competition class filtered to boxing returns
+     * a single obscure row. The sport's real structure is four sanctioning
+     * bodies (WBC, WBA, IBF, WBO) awarding titles per weight class, and those
+     * are classed as sports organisations, not competitions. Seeding them is
+     * honest; pointing this at a class that does not describe the sport would
+     * produce a Competitions tab that is wrong rather than empty.
+     */
+    competitionClassQid: undefined,
+    venueClassQid: 'Q483110',
   },
 };
 

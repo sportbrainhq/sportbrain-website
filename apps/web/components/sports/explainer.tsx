@@ -1,11 +1,27 @@
 import Link from 'next/link';
 import { BasketballPlayDiagram, toCourtPlay } from './basketball-diagrams';
 import {
+  CarDiagram,
+  StrategyChart,
+  TrackDiagram,
+  toCarDiagram,
+  toStrategyChart,
+  toTrackShape,
+} from './formula1-diagrams';
+import {
   CricketFieldDiagram,
   ScorecardBreakdown,
   toFieldSetting,
   toScoreBreakdown,
 } from './cricket-diagrams';
+import {
+  TennisCourtDiagram,
+  TennisDrawDiagram,
+  TennisScoreboard,
+  toDrawShape,
+  toTennisCourt,
+  toTennisScoreboard,
+} from './tennis-diagrams';
 import type {
   ExplainerCategory,
   ExplainerRelated,
@@ -283,6 +299,21 @@ const SECTION_HEADINGS: Record<string, string> = {
   how_it_is_defended: 'How it is defended',
   counters: 'Counters',
   where_it_happens: 'Where it happens',
+  the_shot: 'The shot',
+  when_players_use_it: 'When players use it',
+  advantages: 'Advantages',
+  risks: 'Risks',
+  notable_players: 'Players known for it',
+  worked_example: 'Worked example',
+  how_it_is_played: 'How it is played',
+  // Formula 1. `regulation_era` is the one that carries weight: F1's rules are
+  // rewritten every few years, so an explainer that does not date itself is
+  // wrong about every other era without saying so.
+  the_procedure: 'The procedure',
+  on_the_car: 'Where it is on the car',
+  strategic_implications: 'What it means for strategy',
+  driver_technique: 'The technique',
+  regulation_era: 'Which era this describes',
 };
 
 /**
@@ -297,10 +328,29 @@ export function ArticleSection({ section, title }: { section: ExplainerSection; 
   // by the sport. A formation, a fielding setting and a worked scoreline are
   // distinguishable from their shape, so adding a sport's diagram does not add
   // a branch on sport anywhere.
+  // Tennis is tried before the basketball play because both payloads carry
+  // `steps`; `toTennisCourt` discriminates on `court: 'singles' | 'doubles'`
+  // and `toCourtPlay` on `'half' | 'full'`, so neither claims the other's data.
   const formation = toFormationShape(section.structuredData);
   const field = formation ? null : toFieldSetting(section.structuredData);
-  const play = formation || field ? null : toCourtPlay(section.structuredData);
-  const score = formation || field || play ? null : toScoreBreakdown(section.structuredData);
+  const tennisCourt = formation || field ? null : toTennisCourt(section.structuredData);
+  const play = formation || field || tennisCourt ? null : toCourtPlay(section.structuredData);
+  const draw =
+    formation || field || tennisCourt || play ? null : toDrawShape(section.structuredData);
+  const tennisScore =
+    formation || field || tennisCourt || play || draw
+      ? null
+      : toTennisScoreboard(section.structuredData);
+  const score =
+    formation || field || tennisCourt || play || draw || tennisScore
+      ? null
+      : toScoreBreakdown(section.structuredData);
+  // Formula 1. Each discriminates on its own key (`track`, `car`, `strategy`),
+  // so none can claim another sport's payload and the order here is arbitrary.
+  const anyPrior = formation || field || tennisCourt || play || draw || tennisScore || score;
+  const track = anyPrior ? null : toTrackShape(section.structuredData);
+  const car = anyPrior || track ? null : toCarDiagram(section.structuredData);
+  const stints = anyPrior || track || car ? null : toStrategyChart(section.structuredData);
 
   if (section.type === 'one_sentence') {
     return (
@@ -328,14 +378,44 @@ export function ArticleSection({ section, title }: { section: ExplainerSection; 
           <CricketFieldDiagram shape={field} title={title} />
         </div>
       )}
+      {tennisCourt && (
+        <div className="mt-4">
+          <TennisCourtDiagram shape={tennisCourt} title={title} />
+        </div>
+      )}
       {play && (
         <div className="mt-4">
           <BasketballPlayDiagram shape={play} title={title} />
         </div>
       )}
+      {draw && (
+        <div className="mt-4">
+          <TennisDrawDiagram shape={draw} title={title} />
+        </div>
+      )}
+      {tennisScore && (
+        <div className="mt-4">
+          <TennisScoreboard shape={tennisScore} />
+        </div>
+      )}
       {score && (
         <div className="mt-4">
           <ScorecardBreakdown breakdown={score} />
+        </div>
+      )}
+      {track && (
+        <div className="mt-4">
+          <TrackDiagram shape={track} title={title} />
+        </div>
+      )}
+      {car && (
+        <div className="mt-4">
+          <CarDiagram shape={car} title={title} />
+        </div>
+      )}
+      {stints && (
+        <div className="mt-4">
+          <StrategyChart shape={stints} title={title} />
         </div>
       )}
       {section.body && (
