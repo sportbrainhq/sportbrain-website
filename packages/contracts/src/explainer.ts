@@ -29,6 +29,27 @@ export const explainerTypeSchema = z.enum([
   'play',
   'court_area',
   'officiating',
+  // Tennis. A `shot` is a stroke rather than a designed sequence, a
+  // `playing_style` is how a player uses those strokes (tennis has no
+  // positions), a `surface` is the axis the sport's results are split along,
+  // and a `ranking_concept` is one of the points mechanisms rather than a rule
+  // of play.
+  'shot',
+  'playing_style',
+  'surface',
+  'equipment',
+  'ranking_concept',
+  // Formula 1. A `car_component` is designed by a team rather than chosen by a
+  // competitor, which is what separates it from `equipment`; a `procedure` is
+  // conducted rather than played; a `strategy_concept` is pit-wall arithmetic
+  // rather than a pattern of play; a `circuit` is the axis performance is split
+  // along; and `penalty` and `flag` answer a mid-race lookup on their own.
+  'car_component',
+  'procedure',
+  'strategy_concept',
+  'circuit',
+  'penalty',
+  'flag',
 ]);
 export type ExplainerType = z.infer<typeof explainerTypeSchema>;
 

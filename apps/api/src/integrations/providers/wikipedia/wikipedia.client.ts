@@ -81,6 +81,33 @@ export class WikipediaClient {
     return body.parse?.wikitext ?? null;
   }
 
+  /**
+   * The lead paragraphs of an article, as plain prose.
+   *
+   * The REST summary endpoint rather than the wikitext, because the lead is
+   * exactly what it returns and extracting the same text from the source means
+   * unwinding templates, infoboxes, references and italics by hand. What comes
+   * back is already clean.
+   *
+   * Null for a missing page, which is a normal outcome when walking a
+   * catalogue rather than a failure.
+   */
+  async fetchSummary(title: string): Promise<string | null> {
+    const url = `${WikipediaClient.REST}/page/summary/${encodeURIComponent(title)}`;
+
+    const response = await this.send(url, 'application/json');
+
+    if (response.status === 404) return null;
+    if (!response.ok) {
+      const retryable = response.status === 429 || response.status >= 500;
+      throw new ProviderError('wikipedia', `HTTP ${response.status}`, retryable);
+    }
+
+    const body = (await response.json()) as { extract?: string };
+    const extract = body.extract?.trim();
+    return extract && extract.length > 0 ? extract : null;
+  }
+
   /** Rendered HTML. The route to tables, where templates are already expanded. */
   async fetchHtml(title: string): Promise<string | null> {
     const url = `${WikipediaClient.REST}/page/html/${encodeURIComponent(title)}`;

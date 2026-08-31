@@ -98,6 +98,98 @@ function canonicalTitle(title: string): string {
 }
 
 /**
+ * The four majors, in calendar order, with the titles the profile has.
+ *
+ * Tennis is the one sport here with no counting statistic. A footballer has
+ * goals, a cricketer runs, a basketball player points; a tennis player has
+ * none of those, and the thing their career is actually measured in is Grand
+ * Slam titles. So this panel is tennis's headline statistic block, built from
+ * the honours rather than from a statistics table, because the majors are
+ * honours and duplicating them into a stat row would put the same fact in two
+ * places that could then disagree.
+ *
+ * Calendar order rather than most-won-first, deliberately, and it is the one
+ * place in this file that does not sort by count. The four majors are a fixed
+ * set played in a fixed order, and a reader scanning for "how did they do at
+ * Wimbledon" wants Wimbledon in the same position on every player's page. A
+ * count-ordered list moves it, and the zero is as informative as the number:
+ * Sampras never won the French, and a panel that omitted it would hide the
+ * single most-discussed gap in his career.
+ */
+const SLAM_ORDER = ['Australian Open', 'French Open', 'Wimbledon', 'US Open'] as const;
+
+export function GrandSlamPanel({ honours }: { honours: Honour[] }) {
+  // Singles only. The doubles titles are real and are counted separately by
+  // the sport itself: nobody's "23 majors" includes their doubles, and adding
+  // the two together would state something tennis does not recognise. The
+  // ingester writes doubles as "Wimbledon (doubles)", so the bracket is what
+  // separates them.
+  const singles = honours.filter(
+    (honour) => honour.kind === 'title' && !honour.title.includes('(doubles)'),
+  );
+
+  const years = new Map<string, number[]>();
+  for (const honour of singles) {
+    if (!SLAM_ORDER.includes(honour.title as (typeof SLAM_ORDER)[number])) continue;
+    const list = years.get(honour.title) ?? [];
+    if (honour.year) list.push(honour.year);
+    years.set(honour.title, list);
+  }
+
+  const total = SLAM_ORDER.reduce((sum, slam) => sum + (years.get(slam)?.length ?? 0), 0);
+  // A player with no majors gets no panel. Most of the catalogue has none, and
+  // four zeroes says less than nothing: it implies we checked and they lost.
+  if (total === 0) return null;
+
+  const doubles = honours.filter(
+    (honour) => honour.kind === 'title' && honour.title.includes('(doubles)'),
+  ).length;
+
+  return (
+    <section>
+      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+        Grand Slam titles
+      </h2>
+
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-5">
+        {SLAM_ORDER.map((slam) => {
+          const won = years.get(slam) ?? [];
+          return (
+            <div key={slam} className="bg-card p-3">
+              <p className="text-xs text-muted-foreground">{slam}</p>
+              <p
+                className={`mt-0.5 font-mono text-2xl font-bold tabular-nums ${
+                  won.length === 0 ? 'text-muted-foreground/40' : ''
+                }`}
+              >
+                {won.length}
+              </p>
+              {won.length > 0 && (
+                <p className="mt-1 text-2xs leading-relaxed tabular-nums text-muted-foreground">
+                  {[...won].sort((a, b) => a - b).join(', ')}
+                </p>
+              )}
+            </div>
+          );
+        })}
+
+        {/* The total last rather than first: the four are what a reader scans,
+            and the sum is the number they quote afterwards. */}
+        <div className="bg-card p-3">
+          <p className="text-xs font-medium">Total</p>
+          <p className="mt-0.5 font-mono text-2xl font-bold tabular-nums">{total}</p>
+          {doubles > 0 && (
+            <p className="mt-1 text-2xs leading-relaxed text-muted-foreground">
+              +{doubles} doubles
+            </p>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/**
  * The honours that define a career, grouped by title.
  *
  * Given real weight rather than a pill, because these are the reason a reader
@@ -138,6 +230,51 @@ function MajorHonours({ honours }: { honours: Honour[] }) {
               ×{years.length}
             </span>
           )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** One line of a player's career highlights, as stored by the ingest. */
+export interface CareerHighlight {
+  label: string;
+  times: number | null;
+}
+
+/**
+ * A basketball career as the sport itself summarises it.
+ *
+ * Replaces the honours list for players who have this, because the list could
+ * not answer the question a basketball reader asks. It is built from Wikidata's
+ * `P166`, which holds no All-Star selections at all and records every award as a
+ * separate dated row, so LeBron James's page ran to nineteen ESPY and BET lines
+ * plus a Golden Raspberry for Worst Actor, and never once said he is a 22-time
+ * All-Star.
+ *
+ * These come from the Wikipedia infobox's own `highlights` field, which states
+ * counts: "22× NBA All-Star", "4× NBA champion", "4× NBA Most Valuable Player".
+ * The order is the article's, which is roughly by prestige with championships
+ * first, and is editorial work by people who know the sport.
+ *
+ * The count leads each row because it is the number a reader is scanning for.
+ */
+export function CareerHighlights({ highlights }: { highlights: CareerHighlight[] }) {
+  if (highlights.length === 0) return null;
+
+  return (
+    <ul className="grid gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-2">
+      {highlights.map((highlight) => (
+        <li
+          key={`${highlight.times ?? 1}-${highlight.label}`}
+          className="flex items-baseline gap-2.5 bg-card px-3 py-2.5 text-sm"
+        >
+          {/* Fixed-width and tabular, so the counts line up down the column and
+              a one-off sits flush with a 22×. */}
+          <span className="w-9 shrink-0 text-right font-mono text-xs font-bold tabular-nums text-muted-foreground">
+            {highlight.times === null ? '—' : `${highlight.times}×`}
+          </span>
+          <span className="font-medium leading-snug">{highlight.label}</span>
         </li>
       ))}
     </ul>

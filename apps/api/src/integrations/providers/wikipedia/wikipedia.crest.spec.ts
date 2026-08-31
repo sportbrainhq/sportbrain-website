@@ -82,6 +82,43 @@ describe('WikipediaProvider.crestFileFrom', () => {
     ).toBeNull();
   });
 
+  it('accepts a JPG in a field named for the badge', () => {
+    // National basketball federations outside the major leagues routinely upload
+    // their badge as a JPG, and rejecting the extension in these fields left 43
+    // of basketball's 82 logo-less teams with the only image they have discarded.
+    // A field named `logo` is taken at its word: whoever filled it in was naming
+    // the badge, not adding a squad photo.
+    expect(provider.crestFileFrom(box('| logo = Kenya Basketball Federation.jpg'))).toBe(
+      'File:Kenya Basketball Federation.jpg',
+    );
+    expect(provider.crestFileFrom(box('| crest = Cyprus bball.jpg'))).toBe('File:Cyprus bball.jpg');
+    // Saudi Arabia's is a .jpeg, so both spellings have to be accepted.
+    expect(provider.crestFileFrom(box('| badge = Saudi Basketball Federation NEW.jpeg'))).toBe(
+      'File:Saudi Basketball Federation NEW.jpeg',
+    );
+  });
+
+  it('still rejects a JPG in the bare image field', () => {
+    // The distinction that keeps the Barcelona case working: `image` may hold a
+    // photograph, so it stays restricted to vector and PNG even now that the
+    // badge-named fields accept a raster.
+    expect(provider.crestFileFrom(box('| image = Some Team squad photo 2024.jpg'))).toBeNull();
+  });
+
+  it('prefers a vector in image over a JPG in logo', () => {
+    // Field order decides, and `image` is checked first. A club with both should
+    // yield the SVG rather than the raster.
+    expect(
+      provider.crestFileFrom(box('| image = Real Madrid CF.svg\n| logo = Some photo.jpg')),
+    ).toBe('File:Real Madrid CF.svg');
+  });
+
+  it('accepts a JPG embedded as a full image link in a badge field', () => {
+    expect(
+      provider.crestFileFrom(box('| logo = [[File:Libyan Basketball Federation.jpg|frameless]]')),
+    ).toBe('File:Libyan Basketball Federation.jpg');
+  });
+
   it('returns null when the infobox has no image field at all', () => {
     expect(provider.crestFileFrom(box('| fullname = Some Football Club'))).toBeNull();
   });

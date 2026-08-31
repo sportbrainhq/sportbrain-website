@@ -2,7 +2,13 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { FactPanel, RankingPanel, SectionPanel } from '@/components/sports/entity-profile';
-import { CareerStatusBadge, HonoursPanel } from '@/components/sports/player-profile';
+import {
+  CareerHighlights,
+  CareerStatusBadge,
+  GrandSlamPanel,
+  HonoursPanel,
+  type CareerHighlight,
+} from '@/components/sports/player-profile';
 import { Avatar } from '@/components/sports/avatar';
 import { StatisticsPanel } from '@/components/sports/statistics-panel';
 import { ApiError, fetchPlayer } from '@/lib/api';
@@ -59,14 +65,59 @@ export default async function PlayerPage({
   const showsCurrentClub =
     player.sport.traits.playersHaveCurrentClub !== false && player.careerStatus !== 'retired';
 
+  // Pulled out of the generic grid: it is a list of objects, and that grid
+  // prints only strings and numbers, so it would render as "[object Object]".
+  const highlights = Array.isArray(player.attributes.careerHighlights)
+    ? (player.attributes.careerHighlights as CareerHighlight[]).filter(
+        (entry): entry is CareerHighlight =>
+          typeof entry?.label === 'string' &&
+          (entry.times === null || typeof entry.times === 'number'),
+      )
+    : [];
+
+  // Attributes whose fact the panels below already show, so the same value does
+  // not appear twice on one page. The fact is the better of the two: it comes
+  // from the Wikipedia infobox and is fuller, where the attribute comes from
+  // Wikidata and is terser. LeBron carried "Career start 2003" in this grid and
+  // again under the facts, and his position twice over as "point forward" here
+  // against "Small forward / power forward" there, which read as a
+  // contradiction rather than as two sources agreeing.
+  const factKeys = new Set(player.profile.facts.map((fact) => fact.key));
+  const supersededByFact: Record<string, string> = {
+    position: 'position',
+    heightCm: 'height',
+    careerEnd: 'career_end',
+    currentClub: 'current_club',
+  };
+
+  // Basketball dates a career by the draft, not by a first appearance, so the
+  // draft year is the figure the sport quotes and a career start beside it is
+  // noise: LeBron James's profile carried the same 2003 twice. The ingest no
+  // longer stores a career-start fact, and this drops the Wikidata attribute
+  // that would otherwise take its place in the grid.
+  //
+  // Suppressed by sport rather than by the presence of a draft-year fact. Only
+  // 386 basketball people have that fact ingested while 2,915 carry the
+  // attribute, so keying off the fact left the great majority still showing it,
+  // Michael Jordan among them, whose 1981 is his college start rather than his
+  // 1984 NBA draft.
   const hidden = new Set<string>([
+    ...(sportSlug === 'basketball' ? ['careerStart'] : []),
     ...(player.careerStatus === 'active' ? ['careerEnd'] : []),
     ...(showsCurrentClub ? [] : ['currentClub']),
+    ...Object.entries(supersededByFact)
+      .filter(([, factKey]) => factKeys.has(factKey))
+      .map(([attribute]) => attribute),
+    'careerHighlights',
   ]);
 
+  // Nickname first, because it identifies the person rather than describing
+  // them: a reader scanning this block wants "King James" before a height in
+  // centimetres. Everything else keeps the order the attributes arrived in.
   const facts = Object.entries(player.attributes)
     .filter(([key]) => !hidden.has(key))
     .filter(([, value]) => typeof value === 'string' || typeof value === 'number')
+    .sort(([a], [b]) => Number(b === 'nickname') - Number(a === 'nickname'))
     .slice(0, 6);
 
   return (
@@ -126,12 +177,30 @@ export default async function PlayerPage({
         </section>
       )}
 
-      {player.honours.length > 0 && (
+      {/* Tennis's headline block, and the nearest thing the sport has to the
+          goals or points other sports lead with. Rendered above the honours
+          list rather than inside it because it answers the first question a
+          reader has about a tennis player, and the list below then carries the
+          same titles in date order alongside everything else. */}
+      <GrandSlamPanel honours={player.honours} />
+
+      {(highlights.length > 0 || player.honours.length > 0) && (
         <section>
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
             Honours
           </h2>
-          <HonoursPanel honours={player.honours} />
+          {/* The sport's own summary wins where we have it. It states counts
+              ("22× NBA All-Star") and is ordered by prestige, which the honours
+              list cannot do: that list comes from Wikidata's award property,
+              which holds no All-Star selections and gives every award its own
+              dated row, so it sprawled over thirty lines and buried what the
+              career is actually remembered for. The full list is still the
+              fallback for players and sports without a highlights field. */}
+          {highlights.length > 0 ? (
+            <CareerHighlights highlights={highlights} />
+          ) : (
+            <HonoursPanel honours={player.honours} />
+          )}
         </section>
       )}
 

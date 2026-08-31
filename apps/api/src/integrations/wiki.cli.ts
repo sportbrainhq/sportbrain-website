@@ -42,7 +42,7 @@ async function main(): Promise<void> {
 
   if (!command) {
     process.stderr.write(
-      'Usage: wiki <map|facts|crests|logos|rankings|cricket-team-rankings|cricket-stats|cricket-careers|basketball-stats|careers|career-totals|scan-totals|titles|all> [entityType] [sport] [limit]\n',
+      'Usage: wiki <map|facts|crests|logos|rankings|cricket-team-rankings|cricket-stats|cricket-careers|tennis-careers|basketball-stats|basketball-leaders|basketball-highlights|competition-about|nba-tables|basketball-competition-tables|careers|career-totals|scan-totals|titles|all> [entityType] [sport] [limit]\n',
     );
     process.exitCode = 1;
     return;
@@ -127,6 +127,60 @@ async function main(): Promise<void> {
         break;
       }
 
+      /**
+       * Basketball teams' all-time points, rebounds and assists leaders.
+       *
+       * Reads "{Team} all-time roster", the only source that attributes career
+       * totals to a team rather than to a whole career.
+       */
+      /** Basketball players' career highlights, as the sport summarises them. */
+      /** Lead prose into `about`, for competitions that have none. */
+      case 'competition-about': {
+        const [sport, limit] = args;
+        const result = await ingestion.ingestCompetitionAbout(
+          sport === 'all' ? null : (sport ?? 'basketball'),
+          Number(limit ?? 50),
+        );
+        process.stdout.write(
+          `${result.examined} examined, ${result.written} written, ${result.skipped} skipped\n`,
+        );
+        break;
+      }
+
+      /** The NBA's roll of honour, award rolls and career leader boards. */
+      /** The same tables for basketball's other competitions. */
+      case 'basketball-competition-tables': {
+        const results = await ingestion.ingestBasketballCompetitionTables();
+        for (const entry of results) {
+          process.stdout.write(`  ${entry.slug.padEnd(28)} ${entry.written} tables\n`);
+        }
+        break;
+      }
+
+      case 'nba-tables': {
+        const result = await ingestion.ingestNbaCompetitionTables();
+        process.stdout.write(`${result.written} tables written, ${result.skipped} missing\n`);
+        break;
+      }
+
+      case 'basketball-highlights': {
+        const result = await ingestion.ingestBasketballHighlights(Number(args[0] ?? 200));
+        process.stdout.write(
+          `${result.examined} players examined, ${result.written} with highlights, ` +
+            `${result.skipped} without\n`,
+        );
+        break;
+      }
+
+      case 'basketball-leaders': {
+        const result = await ingestion.ingestBasketballTeamLeaders(Number(args[0] ?? 60));
+        process.stdout.write(
+          `${result.examined} teams examined, ${result.written} tables written, ` +
+            `${result.skipped} without a readable roster article\n`,
+        );
+        break;
+      }
+
       case 'basketball-stats': {
         const result = await ingestion.ingestBasketballStats(Number(args[0] ?? 200));
         process.stdout.write(`${result.players} players, ${result.blocks} stat blocks\n`);
@@ -162,6 +216,24 @@ async function main(): Promise<void> {
         const result = await ingestion.ingestCricketCareerSpans(Number(args[0] ?? 200), args[1]);
         process.stdout.write(
           `${result.players} players, ${result.active} active, ${result.retired} retired\n`,
+        );
+        break;
+      }
+
+      /**
+       * A tennis player's titles, career span, status and playing attributes.
+       *
+       * The single command tennis needs, because one infobox carries all of it
+       * and fetching the page four times to read four fields would be four
+       * times the requests for no gain. See `ingestTennisCareers` for why
+       * tennis needs a command of its own at all: it has no clubs, so none of
+       * the pipeline's club-based derivations produce anything for it.
+       */
+      case 'tennis-careers': {
+        const result = await ingestion.ingestTennisCareers(Number(args[0] ?? 200), args[1]);
+        process.stdout.write(
+          `${result.players} players, ${result.titles} titles, ` +
+            `${result.active} active, ${result.retired} retired\n`,
         );
         break;
       }

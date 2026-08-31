@@ -28,6 +28,16 @@ const LANDING_COPY: Record<string, { standfirst: string; placeholder: string }> 
       'Rules, the court, positions, offence, defence, statistics and league concepts, explained clearly.',
     placeholder: 'Search pick and roll, traveling, TS%, shot clock...',
   },
+  tennis: {
+    standfirst:
+      'Scoring, serving, the court, shots, tactics, surfaces, rankings and statistics, explained clearly.',
+    placeholder: 'Search deuce, tiebreak, kick serve, ranking points...',
+  },
+  'formula-1': {
+    standfirst:
+      'Race weekends, qualifying, strategy, tyres, aerodynamics, the power unit and the rules, explained clearly.',
+    placeholder: 'Search undercut, DRS, degradation, parc fermé...',
+  },
 };
 
 const FALLBACK_COPY = {

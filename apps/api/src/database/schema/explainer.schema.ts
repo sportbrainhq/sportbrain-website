@@ -77,6 +77,40 @@ export const explainerTypeEnum = pgEnum('explainer_type', [
   'play',
   'court_area',
   'officiating',
+  /**
+   * The tennis templates.
+   *
+   * `shot` is a stroke: what it is, when it is used, what it wins and what it
+   * costs. It is not a `play`, because nobody diagrams a forehand as a designed
+   * sequence with actors. `playing_style` is how a player combines strokes, and
+   * is not a `position_role`, because tennis has no positions to hold.
+   * `surface` is its own type because the surface is the axis the sport's
+   * records and rankings are split along, and `ranking_concept` covers the
+   * points machinery, which is neither a rule of play nor a statistic.
+   */
+  'shot',
+  'playing_style',
+  'surface',
+  'equipment',
+  'ranking_concept',
+  /**
+   * The Formula 1 templates.
+   *
+   * `car_component` is the one motorsport cannot borrow: a front wing is not a
+   * region of a playing area and not `equipment` in the tennis sense, where a
+   * racket is chosen by a player and a diffuser is designed by a team.
+   * `procedure` covers the sequences the sport conducts rather than plays (the
+   * start, a pit stop, a restart), `strategy_concept` separates pit-wall
+   * arithmetic from a pattern of play, `circuit` is the axis performance is
+   * split along the way a tennis surface is, and `penalty` and `flag` answer
+   * the mid-race lookup a reader actually arrives with.
+   */
+  'car_component',
+  'procedure',
+  'strategy_concept',
+  'circuit',
+  'penalty',
+  'flag',
 ]);
 
 /** Reader level. Data rather than a UI constant, so it can be filtered on. */
@@ -188,6 +222,57 @@ export const explainerSectionTypeEnum = pgEnum('explainer_section_type', [
   'counters',
   /** Which part of the floor a concept belongs to. */
   'where_it_happens',
+  // ── Tennis ───────────────────────────────────────────────────────────────
+  /** The stroke itself: grip, swing path, contact, what the ball then does. */
+  'the_shot',
+  /** The situations a stroke or a style is chosen in. */
+  'when_players_use_it',
+  /**
+   * What it wins, and what it costs.
+   *
+   * Two types rather than one `strengths` section, because a drop shot's upside
+   * and its downside are the two halves a reader weighs against each other, and
+   * a single heading turns a decision into a paragraph.
+   */
+  'advantages',
+  'risks',
+  /** Who is associated with the shot, the style or the surface. */
+  'notable_players',
+  /** Arithmetic rather than illustration: ranking points, a percentage, a sum. */
+  'worked_example',
+  /** How a format, a draw or a doubles rotation is actually conducted. */
+  'how_it_is_played',
+  // ── Formula 1 ────────────────────────────────────────────────────────────
+  /**
+   * A sequence that is conducted rather than played.
+   *
+   * The starting procedure, a pit stop, a safety car restart, scrutineering.
+   * The F1 analogue of basketball's `the_action`: the steps come before the
+   * justification, because a reader asking what happens at lights out is not
+   * yet asking why it happens that way.
+   */
+  'the_procedure',
+  /** Which part of the car this is, and what it attaches to. */
+  'on_the_car',
+  /**
+   * What it means for the pit wall.
+   *
+   * Kept apart from `why_it_matters` deliberately. A safety car matters to a
+   * spectator because the field closes up and to a strategist because the cost
+   * of a pit stop halves, and one paragraph trying to be both serves neither.
+   */
+  'strategic_implications',
+  /** What the driver is physically doing: braking, steering, throttle. */
+  'driver_technique',
+  /**
+   * Which season or regulation era the content describes.
+   *
+   * A section rather than only `source_revision` on the row, because this one
+   * has to be visible. F1's points system, power unit and aerodynamic rules
+   * have each been rewritten repeatedly, and an explainer that does not say
+   * which era it means is wrong for every other era without admitting it.
+   */
+  'regulation_era',
 ]);
 
 /**

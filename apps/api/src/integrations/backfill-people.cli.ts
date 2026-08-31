@@ -262,6 +262,19 @@ GROUP BY ?item ?itemLabel ?sitelinks`.trim();
             -- by more than one query in a run, and a query that happened to
             -- return no sitelink count should not zero a good value.
             sitelinks = greatest(person.sitelinks, EXCLUDED.sitelinks),
+            -- Filled on conflict as well as on insert, and only when there is
+            -- a value to write.
+            --
+            -- Previously insert-only, which meant a person whose row was
+            -- created before their Wikidata item gained a P18 image kept a null
+            -- image no matter how often the backfill ran. Novak Djokovic was
+            -- the visible case: two P18 images upstream, a correct Q5812
+            -- mapping, and no picture on his profile or in the records panel,
+            -- while Nadal and Federer beside him had one.
+            --
+            -- COALESCE rather than a plain assignment, so a query that returns
+            -- no image cannot erase a picture an earlier pass established.
+            image_url = COALESCE(EXCLUDED.image_url, person.image_url),
             updated_at = now()
           RETURNING id
         `);

@@ -159,6 +159,17 @@ SELECT ?item ?itemLabel ?inception ?countryLabel ?shortName ?logo ?sitelinks WHE
   VALUES ?league { ${values} }
   ?item wdt:P118 ?league .
   FILTER NOT EXISTS { ?item wdt:P31 wd:${WD.HUMAN} }
+  # Fictional portrayals of players, which Wikidata tags with the league the
+  # real player played in. Space Jam's Michael Jordan (Q108883102), the Teen
+  # Titans LeBron James (Q108870659) and a Danganronpa Charles Barkley
+  # (Q126326832) each carry P118 = NBA, and all three were ingested as
+  # basketball clubs. Empty shells in themselves, but their names collide with
+  # the real players in the entity resolver, and a name claimed by both a person
+  # and a team is treated as ambiguous, so every Michael Jordan row in the
+  # Bulls' MVP tables lost its link to his player page.
+  # Q95074 is fictional character; Q15632617 is fictional human.
+  FILTER NOT EXISTS { ?item wdt:P31/wdt:P279* wd:Q95074 }
+  FILTER NOT EXISTS { ?item wdt:P31/wdt:P279* wd:Q15632617 }
   # Sports seasons, competition editions and single matches.
   FILTER NOT EXISTS { ?item wdt:P31/wdt:P279* wd:Q27020041 }
   FILTER NOT EXISTS { ?item wdt:P31/wdt:P279* wd:Q1656682 }
@@ -257,6 +268,7 @@ export function peopleQuery(
   occupationQid?: string,
   clubClassQid?: string,
   minSitelinks?: number,
+  excludeOccupationQids?: readonly string[],
 ): string {
   // Identity only: who they are and how notable. Every optional detail moves to
   // `peopleDetailQuery`, which is bounded by a VALUES list of the people this
@@ -279,6 +291,40 @@ export function peopleQuery(
       : '';
 
   const participationClause = requireParticipation ? '?item wdt:P1344 ?participatedIn .' : '';
+
+  /**
+   * People whose occupation says they belong to a different sport, or to no
+   * sport at all.
+   *
+   * Occupation scoping is what football and basketball use to reach the players
+   * a league filter misses, and on its own it has a failure mode the two of them
+   * are shielded from by `personClubClassQid`: `P106` records what somebody has
+   * been, not what they are known for, and sitelink ordering then promotes
+   * whoever is most famous rather than whoever is the better player.
+   *
+   * Both sports added without a club filter showed it plainly. Golf's roster
+   * opened with Ivan Lendl, Kathryn Newton and a Serbian goalkeeper, and
+   * American football's with Gerald Ford, John Wayne and Dwayne Johnson, all of
+   * whom really did play at college and none of whom anybody opens this site to
+   * read about. Tom Brady was ninth, behind four actors and a wrestler.
+   *
+   * Excluding by occupation rather than requiring a second predicate is the
+   * conservative direction. Requiring one drops people who qualify: golf has no
+   * club to belong to, and the obvious strict form, "no occupation other than
+   * golfer", removes Nicklaus for designing courses and Palmer for flying
+   * aeroplanes. Naming the occupations that mean "known for something else"
+   * keeps everyone whose second occupation is compatible with the first.
+   *
+   * The residue is people whose other career is not on the list, such as the
+   * mountaineer Heinrich Harrer, which is the right way round: a stray name is
+   * a smaller fault than a missing champion.
+   */
+  const excludeOccupationClause =
+    excludeOccupationQids && excludeOccupationQids.length > 0
+      ? `FILTER NOT EXISTS { ?item wdt:P106 ?excludedOccupation . VALUES ?excludedOccupation { ${excludeOccupationQids
+          .map((qid) => `wd:${qid}`)
+          .join(' ')} } }`
+      : '';
   const sitelinkClause = minSitelinks ? `FILTER(?sitelinks >= ${minSitelinks})` : '';
 
   // The name, taken from the English label where one exists and from the
@@ -304,6 +350,7 @@ WHERE {
   ?item wikibase:sitelinks ?sitelinks .
   ${sitelinkClause}
   ${clubClause}
+  ${excludeOccupationClause}
   OPTIONAL { ?item rdfs:label ?label . FILTER(LANG(?label) = "en") }
   OPTIONAL {
     ?sitelink schema:about ?item ; schema:isPartOf <https://en.wikipedia.org/> ;
@@ -342,6 +389,8 @@ SELECT ?item
        (SAMPLE(?espncricinfo) AS ?espncricinfoId)
        (SAMPLE(?nba) AS ?nbaId)
        (SAMPLE(?atp) AS ?atpId)
+       (GROUP_CONCAT(DISTINCT ?preferredNick; SEPARATOR="|") AS ?preferredNicknames)
+       (GROUP_CONCAT(DISTINCT ?nick; SEPARATOR="|") AS ?nicknameList)
 WHERE {
   VALUES ?item { ${values} }
   OPTIONAL { ?item wdt:P569 ?birth }
@@ -377,6 +426,29 @@ WHERE {
   OPTIONAL { ?item wdt:P2697 ?espncricinfo }
   OPTIONAL { ?item wdt:P3647 ?nba }
   OPTIONAL { ?item wdt:P536 ?atp }
+  # P1449 (nickname). All of them, concatenated, rather than one.
+  #
+  # Several players carry more than one: Kobe Bryant has four and Michael Jordan
+  # two. SAMPLE would return a different one on each ingest, silently changing a
+  # published profile, and MIN is deterministic but sorts alphabetically, which
+  # picked "Mr. 81" for Bryant over "The Black Mamba". The caller chooses from
+  # the full list instead, preferring the longest, which is a decent proxy for
+  # the recognised form over an abbreviation.
+  #
+  # Language-filtered to English or no language: the property carries
+  # transliterations in many scripts, and an unfiltered read returned Arabic and
+  # Cyrillic forms for players whose English nickname is well known.
+  OPTIONAL { ?item wdt:P1449 ?nick . FILTER(LANG(?nick) = "en" || LANG(?nick) = "") }
+  # Statements editors have marked preferred, which is Wikidata's own answer to
+  # "which of these is the real one". Michael Jordan holds eleven nicknames and
+  # exactly two are preferred: "Air Jordan" and "MJ". Without this the caller was
+  # guessing from string length, which published Magic Johnson as "E.J. the
+  # Deejay" over "Magic" and Wilt Chamberlain as "The Record Book".
+  OPTIONAL {
+    ?item p:P1449 ?nickStatement .
+    ?nickStatement ps:P1449 ?preferredNick ; wikibase:rank wikibase:PreferredRank .
+    FILTER(LANG(?preferredNick) = "en" || LANG(?preferredNick) = "")
+  }
 }
 GROUP BY ?item`.trim();
 }
@@ -396,17 +468,37 @@ GROUP BY ?item`.trim();
  * awards correctly, mixed in with state decorations such as the Order of Prince
  * Henry. The caller filters those out; this query stays honest about what
  * Wikidata holds.
+ *
+ * ## One statement, one honour
+ *
+ * Grouped by `?statement`, which matters more than it looks. A Wikidata award
+ * statement may carry several `P585` (point in time) qualifiers, and the plain
+ * `OPTIONAL` form multiplied one statement into one row per date, each of which
+ * the caller then stored as a separate award.
+ *
+ * Kobe Bryant is the case that exposed it. He has a *single* NBA MVP statement
+ * carrying three dates (2006, 2008, 2009), so the catalogue recorded three MVPs
+ * where he won one, in 2008, and a team page listed him as the Lakers' MVP in
+ * three separate years. The give-away was that 2006 and 2009 then had two
+ * recorded winners each, which an award with one winner a year cannot.
+ *
+ * `MIN(?time)` picks the earliest date on the statement. That is a guess about
+ * which date is meant and it is wrong for Kobe, whose award was 2008, so the
+ * genuinely wrong years are corrected by migration where the truth is known.
+ * What this grouping guarantees is the invariant that matters: one statement
+ * produces one honour, so a messy qualifier set can no longer inflate a count.
  */
 export function honoursQuery(personQids: readonly string[]): string {
   const values = personQids.map((qid) => `wd:${qid}`).join(' ');
   return `
-SELECT ?item ?awardLabel ?when WHERE {
+SELECT ?item ?awardLabel (MIN(?time) AS ?when) WHERE {
   VALUES ?item { ${values} }
   ?item p:P166 ?statement .
   ?statement ps:P166 ?award .
-  OPTIONAL { ?statement pq:P585 ?when }
+  OPTIONAL { ?statement pq:P585 ?time }
   ?award rdfs:label ?awardLabel . FILTER(LANG(?awardLabel) = "en")
 }
+GROUP BY ?item ?statement ?awardLabel
 ORDER BY ?item ?when`.trim();
 }
 

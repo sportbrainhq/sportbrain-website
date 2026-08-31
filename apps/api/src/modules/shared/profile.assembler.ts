@@ -78,6 +78,27 @@ const RANKING_ORDER = [
   // international cricket, and sharing a kind would invite summing the two.
   'club_most_runs',
   'club_most_wickets',
+  // Basketball team tables. The two award rolls lead, because who won the MVP
+  // here is the question a reader opens a franchise page with, and the per-game
+  // leaders follow in the order the sport quotes them: points, rebounds,
+  // assists.
+  'basketball_league_mvp',
+  'basketball_finals_mvp',
+  'basketball_all_time_points',
+  'basketball_all_time_rebounds',
+  'basketball_all_time_assists',
+  // A basketball league's own page: who won it, then the individual awards in
+  // the order the sport ranks them, then the career boards. `roll_of_honour` is
+  // declared at the top of this list and covers the champions table.
+  'award:most-valuable-player',
+  'award:finals-most-valuable-player',
+  'award:scoring-champion',
+  'award:defensive-player-of-the-year',
+  'award:rookie-of-the-year',
+  'all_time_points',
+  'all_time_rebounds',
+  'all_time_assists',
+  'all_time_steals',
 ];
 
 const rankingOrder = sql`array_position(
@@ -159,8 +180,9 @@ export class ProfileAssembler {
     // so a club with two tables of fifteen players costs one lookup instead of
     // thirty.
     const allEntries = rankings.flatMap((ranking) => (ranking.entries ?? []) as RawEntry[]);
-    const [playerSlugs, playersByName, teamsByName] = await Promise.all([
+    const [playerSlugs, teamSlugs, playersByName, teamsByName] = await Promise.all([
       this.resolvePlayers(allEntries.map((entry) => entry.link ?? '')),
+      this.resolveTeams(allEntries.map((entry) => entry.link ?? '')),
       // The curated competition tables carry no source link, so the name is the
       // only handle on the entity. Ambiguous names resolve to nothing.
       this.resolveByName(
@@ -193,12 +215,19 @@ export class ProfileAssembler {
           const namedPlayer = playersByName.get(key) ?? null;
           const namedTeam = teamsByName.get(key) ?? null;
 
-          // A mapped link is authoritative and wins outright. Failing that, a
-          // name is only followed when it points at one kind of entity: a row
-          // reading "Brazil" that matches both a nation and a person stays
-          // plain text rather than sending a reader to the wrong page.
-          const playerSlug = mapped ?? (namedTeam ? null : namedPlayer);
-          const teamSlug = mapped || namedPlayer ? null : namedTeam;
+          // A slug stored on the row is the most authoritative of the three:
+          // whoever wrote it resolved the entity rather than guessing from a
+          // name. Then a mapped Wikipedia link. Only then a name, and a name is
+          // followed only when it points at one kind of entity: a row reading
+          // "Brazil" that matches both a nation and a person stays plain text
+          // rather than sending a reader to the wrong page.
+          const stored = entry.playerSlug ?? null;
+          const mappedTeam = entry.link ? (teamSlugs.get(entry.link) ?? null) : null;
+
+          const playerSlug = stored ?? mapped ?? (namedTeam ? null : namedPlayer);
+          // A team link resolved through the mapping outranks a name match, and
+          // is only consulted once the row has failed to resolve to a person.
+          const teamSlug = stored || mapped || namedPlayer ? null : (mappedTeam ?? namedTeam);
 
           return {
             rank: entry.rank,
@@ -239,6 +268,55 @@ export class ProfileAssembler {
       );
 
     return new Map(rows.map((row) => [row.title, row.slug]));
+  }
+
+  /**
+   * Maps Wikipedia article titles onto the slugs of teams we hold.
+   *
+   * The team counterpart of `resolvePlayers`, and needed for the same reason:
+   * a roll of honour prints a name the entity is not stored under. FIBA's
+   * champions read "Germany" where the team is "Germany men's national
+   * basketball team", and the NCAA's read "Michigan" for "Michigan Wolverines
+   * men's basketball", so matching on the printed name found nothing and every
+   * row on four competition pages rendered as plain text.
+   *
+   * A trailing "team" is tolerated on the way in. The champions articles link to
+   * "... men's basketball team" while the catalogue stores the title without it,
+   * which is a difference in the source rather than in the entity.
+   */
+  private async resolveTeams(titles: string[]): Promise<Map<string, string>> {
+    const wanted = [...new Set(titles.filter(Boolean))];
+    if (wanted.length === 0) return new Map();
+
+    // Both spellings are asked for, so either mapping resolves.
+    const variants = [
+      ...new Set(
+        wanted.flatMap((title) =>
+          title.endsWith(' team') ? [title, title.slice(0, -' team'.length)] : [title],
+        ),
+      ),
+    ];
+
+    const rows = await this.database.db
+      .select({ title: externalMapping.externalId, slug: team.slug })
+      .from(externalMapping)
+      .innerJoin(team, eq(team.id, externalMapping.entityId))
+      .where(
+        and(
+          eq(externalMapping.provider, 'wikipedia'),
+          eq(externalMapping.entityType, 'team'),
+          inArray(externalMapping.externalId, variants),
+        ),
+      );
+
+    const bySlug = new Map<string, string>();
+    for (const row of rows) {
+      bySlug.set(row.title, row.slug);
+      // Indexed under the spelling the caller asked for as well.
+      bySlug.set(`${row.title} team`, row.slug);
+    }
+
+    return bySlug;
   }
 
   /**
@@ -331,4 +409,15 @@ interface RawEntry {
   value: number | string | null;
   detail: string | null;
   link?: string | null;
+  /**
+   * A slug resolved when the row was written, rather than from its name.
+   *
+   * Derived tables know exactly which person a row is about, because they are
+   * built from a join on `person.id`. Re-deriving that from the name here can
+   * only lose information, and did: three fictional characters ingested as
+   * basketball teams made "Michael Jordan" and "Charles Barkley" ambiguous
+   * between a person and a team, and the guard below then blanked the link on
+   * every one of their MVP rows.
+   */
+  playerSlug?: string | null;
 }
