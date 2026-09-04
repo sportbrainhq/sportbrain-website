@@ -121,9 +121,16 @@ export class NewsRepository {
       );
     }
     if (query.topic) {
-      // Topics live in rawMetadata.topics (a jsonb array) until classification
-      // gets its own column in a later phase; see news.schema.ts processing
-      // pipeline notes. `?` tests jsonb array/object key containment.
+      // Topics live in rawMetadata.topics (a jsonb string array), written by
+      // ClassificationService (see modules/news/classification). This is the
+      // deliberate final storage choice, not a placeholder: the topic
+      // taxonomy is a small fixed enum (packages/contracts/src/news.ts),
+      // multiple topics per article is required, and news_article_entities
+      // is specifically for sport/competition/team/player/country links, not
+      // topics — a dedicated join table for a handful of enum values would
+      // be overengineering relative to a jsonb array on the row that already
+      // holds every other classification result. `?` tests jsonb
+      // array/object key containment.
       predicates.push(sql`${newsArticles.rawMetadata} -> 'topics' ? ${query.topic}`);
     }
 

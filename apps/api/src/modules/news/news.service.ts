@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import type {
   CursorPaginated,
   NewsArticleDetail,
@@ -6,7 +7,7 @@ import type {
   NewsListQuery,
 } from '@sportbrain/contracts';
 import { AppException } from '../../common';
-import type { TypedConfigService } from '../../config';
+import type { AppConfig } from '../../config/configuration';
 import { CacheService } from '../../infrastructure/cache/cache.service';
 import { NewsRepository } from './news.repository';
 
@@ -17,7 +18,7 @@ export class NewsService {
   constructor(
     private readonly repository: NewsRepository,
     private readonly cache: CacheService,
-    private readonly config: TypedConfigService,
+    private readonly config: ConfigService<AppConfig, true>,
   ) {}
 
   async list(query: NewsListQuery): Promise<CursorPaginated<NewsArticleSummary>> {

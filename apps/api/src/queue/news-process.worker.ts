@@ -1,6 +1,7 @@
 import { Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Worker, type Job } from 'bullmq';
-import type { TypedConfigService } from '../config';
+import type { AppConfig } from '../config/configuration';
 import { NewsProcessorService } from '../modules/news/news-processor.service';
 import { NEWS_PROCESS_QUEUE, type ProcessJobData } from './queue.types';
 import { QueueService } from './queue.service';
@@ -20,7 +21,7 @@ export class NewsProcessWorker implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly queueService: QueueService,
     private readonly processor: NewsProcessorService,
-    private readonly config: TypedConfigService,
+    private readonly config: ConfigService<AppConfig, true>,
   ) {}
 
   onModuleInit(): void {

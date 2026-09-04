@@ -6,6 +6,7 @@
  * pnpm --filter @sportbrain/api news fetch-due
  * pnpm --filter @sportbrain/api news reprocess-fetch <fetchId>
  * pnpm --filter @sportbrain/api news reprocess-article <articleId>
+ * pnpm --filter @sportbrain/api news reclassify-all
  * ```
  *
  * This CLI runs the same `NewsFetcherService`/`NewsProcessorService` logic
@@ -24,6 +25,13 @@ import { loadConfiguration } from '../config/configuration';
 import type { TypedConfigService } from '../config';
 import type { DatabaseService } from '../database/database.service';
 import * as schema from '../database/schema';
+import { ClassificationRepository } from '../modules/news/classification/classification.repository';
+import { ClassificationService } from '../modules/news/classification/classification.service';
+import { EntityClassificationRepository } from '../modules/news/classification/entity-classification.repository';
+import { EntityClassifier } from '../modules/news/classification/entity-classifier';
+import { NoopLlmClassificationFallback } from '../modules/news/classification/llm-classification-fallback';
+import { SportClassifier } from '../modules/news/classification/sport-classifier';
+import { TopicClassifier } from '../modules/news/classification/topic-classifier';
 import { NewsFetcherService } from '../modules/news/news-fetcher.service';
 import { NewsProcessorService } from '../modules/news/news-processor.service';
 import { NewsWorkerRepository } from '../modules/news/news-worker.repository';
@@ -37,7 +45,7 @@ async function main(): Promise<void> {
 
   if (!command) {
     process.stderr.write(
-      'Usage: news <fetch-source|fetch-due|reprocess-fetch|reprocess-article> [arg]\n',
+      'Usage: news <fetch-source|fetch-due|reprocess-fetch|reprocess-article|reclassify-all> [arg]\n',
     );
     process.exitCode = 1;
     return;
@@ -57,7 +65,18 @@ async function main(): Promise<void> {
   } as unknown as TypedConfigService;
 
   const fetcher = new NewsFetcherService(repository, typedConfig);
-  const processor = new NewsProcessorService(repository);
+
+  const classificationRepository = new ClassificationRepository(database);
+  const entityClassificationRepository = new EntityClassificationRepository(database);
+  const classificationService = new ClassificationService(
+    classificationRepository,
+    new SportClassifier(),
+    new EntityClassifier(entityClassificationRepository),
+    new TopicClassifier(),
+    new NoopLlmClassificationFallback(),
+    typedConfig,
+  );
+  const processor = new NewsProcessorService(repository, classificationService);
 
   const startedAt = Date.now();
 
@@ -105,18 +124,39 @@ async function main(): Promise<void> {
       }
 
       case 'reprocess-article': {
-        // Stub for Phase 2: classification/dedupe-fingerprint/clustering are
-        // Phase 4/5 work (see task scope). An article, once ingested, has
-        // nothing yet to "reprocess" beyond what `reprocess-fetch` already
-        // does at insert time. This command exists as a documented
-        // placeholder so the CLI's shape does not need to change again when
-        // that pipeline is built.
+        // Real implementation of the Phase 2 stub: reclassifies one article
+        // by id, regardless of its current processingStatus. Useful after a
+        // sport-keyword-rules or entity-alias change to re-run a single
+        // article without touching everything stuck at 'ingested'.
         const [articleId] = args;
         if (!articleId) throw new Error('Usage: news reprocess-article <articleId>');
+
+        const outcome = await classificationService.classifyArticle(articleId);
         process.stdout.write(
-          `reprocess-article is a no-op in Phase 2 (article ${articleId}): ` +
-            `classification/clustering do not exist yet.\n`,
+          `article ${articleId}: ${outcome.status} sport=${outcome.sportSlug ?? 'null'} ` +
+            `topics=[${outcome.topics.join(', ')}] entities=${outcome.entityMatchCount} ` +
+            `confidence=${outcome.overallConfidence.toFixed(2)} (${outcome.reason})\n`,
         );
+        break;
+      }
+
+      case 'reclassify-all': {
+        // Batch-reclassifies every article stuck at processingStatus =
+        // 'ingested', capped by NEWS_CLASSIFICATION_BATCH_LIMIT so a manual
+        // run can never be unbounded.
+        const outcomes = await classificationService.classifyAllIngested();
+        const classified = outcomes.filter((o) => o.status === 'classified').length;
+        const needsReview = outcomes.length - classified;
+
+        process.stdout.write(
+          `${outcomes.length} article(s) processed: ${classified} classified, ${needsReview} left for manual review\n`,
+        );
+        for (const outcome of outcomes) {
+          process.stdout.write(
+            `  ${outcome.articleId}: ${outcome.status} sport=${outcome.sportSlug ?? 'null'} ` +
+              `topics=[${outcome.topics.join(', ')}] confidence=${outcome.overallConfidence.toFixed(2)}\n`,
+          );
+        }
         break;
       }
 

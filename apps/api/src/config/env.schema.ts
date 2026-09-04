@@ -74,6 +74,15 @@ export const envSchema = z
     // see `queue/queue.module.ts` for the no-Redis fallback.
     NEWS_QUEUE_FETCH_CONCURRENCY: z.coerce.number().int().positive().default(5),
     NEWS_QUEUE_PROCESS_CONCURRENCY: z.coerce.number().int().positive().default(3),
+
+    // News Engine classification (Phase 3). Overall confidence below this
+    // threshold routes an article to the LLM fallback extension point
+    // instead of being marked `classified`; see
+    // `modules/news/classification/classification.service.ts`.
+    NEWS_CLASSIFICATION_CONFIDENCE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.6),
+    // Batch size cap for the CLI's "reclassify all ingested" command, so a
+    // manual run is never unbounded.
+    NEWS_CLASSIFICATION_BATCH_LIMIT: z.coerce.number().int().positive().default(100),
   })
   .superRefine((config, ctx) => {
     if (config.NODE_ENV !== 'production') return;

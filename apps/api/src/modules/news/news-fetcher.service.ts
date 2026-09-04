@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import type { TypedConfigService } from '../../config';
+import { ConfigService } from '@nestjs/config';
+import type { AppConfig } from '../../config/configuration';
 import { fetchRssFeed } from './lib/rss-fetcher';
 import { NewsWorkerRepository, type DueSource } from './news-worker.repository';
 
@@ -24,7 +25,7 @@ export class NewsFetcherService {
 
   constructor(
     private readonly repository: NewsWorkerRepository,
-    private readonly config: TypedConfigService,
+    private readonly config: ConfigService<AppConfig, true>,
   ) {}
 
   async fetchSource(source: DueSource): Promise<FetchSourceResult> {

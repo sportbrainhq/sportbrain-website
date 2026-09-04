@@ -1,4 +1,11 @@
 import { Global, Module } from '@nestjs/common';
+import { ClassificationRepository } from '../modules/news/classification/classification.repository';
+import { ClassificationService } from '../modules/news/classification/classification.service';
+import { EntityClassificationRepository } from '../modules/news/classification/entity-classification.repository';
+import { EntityClassifier } from '../modules/news/classification/entity-classifier';
+import { NoopLlmClassificationFallback } from '../modules/news/classification/llm-classification-fallback';
+import { SportClassifier } from '../modules/news/classification/sport-classifier';
+import { TopicClassifier } from '../modules/news/classification/topic-classifier';
 import { NewsFetcherService } from '../modules/news/news-fetcher.service';
 import { NewsProcessorService } from '../modules/news/news-processor.service';
 import { NewsWorkerRepository } from '../modules/news/news-worker.repository';
@@ -31,9 +38,22 @@ import { QueueService } from './queue.service';
     NewsWorkerRepository,
     NewsFetcherService,
     NewsProcessorService,
+    ClassificationService,
+    ClassificationRepository,
+    EntityClassificationRepository,
+    EntityClassifier,
+    SportClassifier,
+    TopicClassifier,
+    NoopLlmClassificationFallback,
     NewsFetchWorker,
     NewsProcessWorker,
   ],
-  exports: [QueueService, NewsWorkerRepository, NewsFetcherService, NewsProcessorService],
+  exports: [
+    QueueService,
+    NewsWorkerRepository,
+    NewsFetcherService,
+    NewsProcessorService,
+    ClassificationService,
+  ],
 })
 export class QueueModule {}

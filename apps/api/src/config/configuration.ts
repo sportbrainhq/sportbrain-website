@@ -61,6 +61,10 @@ export interface AppConfig {
       fetchConcurrency: number;
       processConcurrency: number;
     };
+    classification: {
+      confidenceThreshold: number;
+      batchLimit: number;
+    };
   };
 }
 
@@ -136,6 +140,10 @@ export function loadConfiguration(): AppConfig {
       queue: {
         fetchConcurrency: env.NEWS_QUEUE_FETCH_CONCURRENCY,
         processConcurrency: env.NEWS_QUEUE_PROCESS_CONCURRENCY,
+      },
+      classification: {
+        confidenceThreshold: env.NEWS_CLASSIFICATION_CONFIDENCE_THRESHOLD,
+        batchLimit: env.NEWS_CLASSIFICATION_BATCH_LIMIT,
       },
     },
   };
