@@ -30,8 +30,7 @@ import {
   ScoringLadder,
   TournamentFlow,
 } from '@/components/sports/golf-overview-diagrams';
-import { NewsList } from '@/components/news/news-list';
-import { ApiError, fetchNews, fetchSportOverview } from '@/lib/api';
+import { ApiError, fetchSportOverview } from '@/lib/api';
 import { buildMetadata } from '@/lib/seo';
 
 export async function generateMetadata({
@@ -82,13 +81,6 @@ export default async function SportOverviewPage({
     if (error instanceof ApiError && error.status === 404) notFound();
     throw error;
   }
-
-  // News is supplementary to the overview, not its subject, so a failed fetch
-  // degrades to an empty list rather than failing the whole page.
-  const news = await fetchNews({ sport: slug, limit: 6 }).then(
-    (result) => result.data,
-    () => [],
-  );
 
   const {
     sport,
@@ -277,13 +269,6 @@ export default async function SportOverviewPage({
           <QuickFacts facts={quickFacts} categories={splitFacts ? ['identity'] : undefined} />
         </div>
       </header>
-
-      {/* 1b. Latest news for this sport, ahead of the encyclopedia content. */}
-      <NewsList
-        heading={`Latest ${sport.name} News`}
-        articles={news}
-        emptyMessage={`No ${sport.name.toLowerCase()} news yet, check back soon.`}
-      />
 
       {/* 10. Milestones, condensed for readers who will not read the timeline */}
       {history.length > 0 && (

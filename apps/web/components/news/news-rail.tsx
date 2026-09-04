@@ -33,7 +33,7 @@ export function NewsRail({
           {emptyMessage}
         </p>
       ) : (
-        <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
+        <ul className="max-h-[70vh] divide-y divide-border overflow-y-auto rounded-lg border border-border bg-card">
           {articles.map((article, index) => (
             <li key={article.id}>
               <a

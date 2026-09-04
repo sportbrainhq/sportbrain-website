@@ -3,8 +3,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { FactPanel, RankingPanel, SectionPanel } from '@/components/sports/entity-profile';
 import { HonoursList } from '@/components/sports/entity-card';
-import { NewsList } from '@/components/news/news-list';
-import { ApiError, fetchNews, fetchTeam } from '@/lib/api';
+import { ApiError, fetchTeam } from '@/lib/api';
 import { Avatar } from '@/components/sports/avatar';
 import { buildMetadata } from '@/lib/seo';
 
@@ -40,13 +39,6 @@ export default async function TeamPage({
     if (error instanceof ApiError && error.status === 404) notFound();
     throw error;
   }
-
-  // News is supplementary to the team's record, not its subject, so a failed
-  // fetch degrades to an empty list rather than failing the whole page.
-  const news = await fetchNews({ team: slug, limit: 6 }).then(
-    (result) => result.data,
-    () => [],
-  );
 
   return (
     <article className="space-y-8">
@@ -96,12 +88,6 @@ export default async function TeamPage({
       )}
 
       <RankingPanel rankings={team.profile.rankings} sportSlug={sportSlug} />
-
-      <NewsList
-        heading={`Latest ${team.name} News`}
-        articles={news}
-        emptyMessage={`No news yet for ${team.name}, check back soon.`}
-      />
     </article>
   );
 }

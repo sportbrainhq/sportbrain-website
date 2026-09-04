@@ -3,8 +3,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { FactPanel, RankingPanel, SectionPanel } from '@/components/sports/entity-profile';
 import { Avatar } from '@/components/sports/avatar';
-import { NewsList } from '@/components/news/news-list';
-import { ApiError, fetchCompetition, fetchNews } from '@/lib/api';
+import { ApiError, fetchCompetition } from '@/lib/api';
 import { buildMetadata } from '@/lib/seo';
 
 export async function generateMetadata({
@@ -39,13 +38,6 @@ export default async function CompetitionPage({
     if (error instanceof ApiError && error.status === 404) notFound();
     throw error;
   }
-
-  // News is supplementary to the competition's record, not its subject, so a
-  // failed fetch degrades to an empty list rather than failing the whole page.
-  const news = await fetchNews({ competition: slug, limit: 6 }).then(
-    (result) => result.data,
-    () => [],
-  );
 
   // `continental` is accurate in the schema and means nothing to a reader: the
   // Champions League is a club competition played across Europe, not a
@@ -196,12 +188,6 @@ export default async function CompetitionPage({
           </ul>
         </section>
       )}
-
-      <NewsList
-        heading={`Latest ${competition.name} News`}
-        articles={news}
-        emptyMessage={`No news yet for ${competition.name}, check back soon.`}
-      />
     </article>
   );
 }

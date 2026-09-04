@@ -2,7 +2,6 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 import { unstable_noStore as noStore } from 'next/cache';
 import { Container } from '@/components/layout/container';
-import { NewsList } from '@/components/news/news-list';
 import { NewsRail } from '@/components/news/news-rail';
 import { fetchNews, fetchSports } from '@/lib/api';
 import { SITE_NAME, SITE_TAGLINE, buildMetadata } from '@/lib/seo';
@@ -31,12 +30,7 @@ export default async function HomePage() {
         noStore();
         return [];
       }),
-    // Fetched once at 12 and shared: the rail shows the first 8 (its usual
-    // size), and the fuller card-grid section below shows all 12. The two
-    // sections necessarily overlap on those first 8 (both are "latest news"
-    // ordered the same way), but the grid also surfaces 4 articles the rail
-    // never shows, so it isn't a pure re-display of the same set.
-    fetchNews({ limit: 12 })
+    fetchNews({ limit: 8 })
       .then((result) => result.data)
       .catch(() => []),
   ]);
@@ -84,11 +78,7 @@ export default async function HomePage() {
           )}
         </div>
 
-        <NewsRail articles={news.slice(0, 8)} />
-      </div>
-
-      <div className="mt-16">
-        <NewsList heading="Latest Sports News" articles={news} />
+        <NewsRail articles={news} />
       </div>
     </Container>
   );
