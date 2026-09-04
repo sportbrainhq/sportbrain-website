@@ -75,8 +75,12 @@ interface BoxerSeed {
   nationality: string;
   dateOfBirth: string;
   heightCm?: number;
+  reachCm?: number;
   stance?: 'Orthodox' | 'Southpaw';
+  nickname?: string;
   weightDivision: string;
+  /** Wikimedia Commons Special:FilePath URL, matching the convention every other person row in this catalogue already uses. Verified to resolve (HTTP 200) before adding, same as the rest of the dossier. */
+  imageUrl?: string;
   notability: number;
   boxingRecord: {
     wins: number;
@@ -95,6 +99,12 @@ const BOXERS: BoxerSeed[] = [
     fullName: 'Mike Tyson',
     nationality: 'United States',
     dateOfBirth: '1966-06-30',
+    heightCm: 178,
+    reachCm: 180,
+    stance: 'Orthodox',
+    nickname: 'Iron Mike',
+    imageUrl:
+      'http://commons.wikimedia.org/wiki/Special:FilePath/Mike%20Tyson%20Photo%20Op%20GalaxyCon%20Austin%202023.jpg',
     weightDivision: 'Heavyweight',
     // 872 matches Ali exactly: youngest heavyweight champion in history and a
     // fixture of boxing's most famous era, on the same footing as Ali by any
@@ -119,6 +129,12 @@ const BOXERS: BoxerSeed[] = [
     fullName: 'Floyd Mayweather Jr.',
     nationality: 'United States',
     dateOfBirth: '1977-02-24',
+    heightCm: 173,
+    reachCm: 183,
+    stance: 'Orthodox',
+    nickname: 'Money',
+    imageUrl:
+      'http://commons.wikimedia.org/wiki/Special:FilePath/Floyd%20Mayweather%20Jr%202011.jpg',
     weightDivision: 'Light middleweight',
     // Just above Ali: undefeated across 50 fights and a five-division
     // champion, the two facts his career is most widely known for.
@@ -142,7 +158,11 @@ const BOXERS: BoxerSeed[] = [
     nationality: 'Philippines',
     dateOfBirth: '1978-12-17',
     heightCm: 165,
+    reachCm: 170,
     stance: 'Southpaw',
+    nickname: 'PacMan',
+    imageUrl:
+      'http://commons.wikimedia.org/wiki/Special:FilePath/Former%20senator%20Manny%20Pacquiao%20speaks%20in%20event%20%2810-01-2025%29%20%28cropped%29.jpg',
     weightDivision: 'Light middleweight',
     // Just above Mayweather: the only eight-division world champion in
     // boxing history, a record neither Ali, Tyson nor Mayweather holds.
@@ -250,18 +270,21 @@ export async function cleanUpBoxingPersons(db: Db): Promise<{
       boxingRecord: boxer.boxingRecord,
     };
     if (boxer.heightCm) attributes.heightCm = boxer.heightCm;
+    if (boxer.reachCm) attributes.reachCm = boxer.reachCm;
     if (boxer.stance) attributes.stance = boxer.stance;
+    if (boxer.nickname) attributes.nickname = boxer.nickname;
 
     const [inserted] = await db.execute<{ id: string }>(sql`
       INSERT INTO person (
         primary_sport_id, slug, full_name, display_name, nationality, date_of_birth,
-        attributes, sitelinks, notability, confidence, career_status
+        image_url, attributes, sitelinks, notability, confidence, career_status
       ) VALUES (
         ${sportRow.id}, ${boxer.slug}, ${boxer.fullName}, ${boxer.fullName}, ${boxer.nationality},
-        ${boxer.dateOfBirth}, ${JSON.stringify(attributes)}::jsonb, 0, ${boxer.notability},
-        'curated', 'retired'
+        ${boxer.dateOfBirth}, ${boxer.imageUrl ?? null}, ${JSON.stringify(attributes)}::jsonb, 0,
+        ${boxer.notability}, 'curated', 'retired'
       )
       ON CONFLICT (primary_sport_id, slug) DO UPDATE SET
+        image_url = EXCLUDED.image_url,
         attributes = EXCLUDED.attributes,
         notability = EXCLUDED.notability,
         confidence = EXCLUDED.confidence,
@@ -290,6 +313,42 @@ export async function cleanUpBoxingPersons(db: Db): Promise<{
     }
   }
 
+  // ── 4. Enrich already-present legends with a verified record ────────────
+  //
+  // These four were already in the catalogue before this seed existed, but
+  // carried no `boxingRecord` - only whatever generic height/nickname
+  // Wikidata happened to supply. Figures are Wikipedia-sourced (see
+  // `boxing-research.md`), matched by `full_name` scoped to `primary_sport_id
+  // = boxing`: George Foreman in particular also exists as an unrelated
+  // American-football person row with the same name, so an unscoped match
+  // would silently corrupt the wrong row.
+  for (const legend of LEGEND_RECORDS) {
+    const attributes: Record<string, unknown> = {
+      weightDivision: legend.weightDivision,
+      boxingRecord: legend.boxingRecord,
+    };
+    if (legend.reachCm) attributes.reachCm = legend.reachCm;
+    if (legend.stance) attributes.stance = legend.stance;
+
+    await db.execute(sql`
+      UPDATE person
+      SET attributes = attributes || ${JSON.stringify(attributes)}::jsonb
+      WHERE primary_sport_id = ${sportRow.id} AND full_name = ${legend.fullName}
+    `);
+  }
+
+  // ── 5. Strip a leaked non-boxing attribute ───────────────────────────────
+  //
+  // Sonny Bill Williams' primary sport is boxing in this catalogue (he had a
+  // genuine, if short, professional record), but his `attributes` carried
+  // `position`/`currentClub` from a rugby-league ingestion pass, which
+  // rendered as his boxing-list subtitle and read as corrupted data.
+  await db.execute(sql`
+    UPDATE person
+    SET attributes = attributes - 'position' - 'currentClub'
+    WHERE primary_sport_id = ${sportRow.id} AND full_name = 'Sonny Bill Williams'
+  `);
+
   return {
     misclassifiedDeleted: misclassified.length,
     fillerDeleted,
@@ -297,6 +356,47 @@ export async function cleanUpBoxingPersons(db: Db): Promise<{
     titlesWritten,
   };
 }
+
+/**
+ * Boxing records for legends already present in the catalogue before this
+ * seed file existed. All figures fetched from Wikipedia infoboxes directly
+ * (see `boxing-research.md`), not estimated.
+ */
+const LEGEND_RECORDS: {
+  fullName: string;
+  weightDivision: string;
+  reachCm?: number;
+  stance?: 'Orthodox' | 'Southpaw';
+  boxingRecord: { wins: number; losses: number; draws: number; koWins: number };
+}[] = [
+  {
+    fullName: 'Muhammad Ali',
+    weightDivision: 'Heavyweight',
+    reachCm: 198,
+    stance: 'Orthodox',
+    boxingRecord: { wins: 56, losses: 5, draws: 0, koWins: 37 },
+  },
+  {
+    fullName: 'George Foreman',
+    weightDivision: 'Heavyweight',
+    reachCm: 199,
+    stance: 'Orthodox',
+    boxingRecord: { wins: 76, losses: 5, draws: 0, koWins: 68 },
+  },
+  {
+    fullName: 'Tyson Fury',
+    weightDivision: 'Heavyweight',
+    reachCm: 216,
+    stance: 'Orthodox',
+    boxingRecord: { wins: 36, losses: 2, draws: 1, koWins: 25 },
+  },
+  {
+    fullName: 'Oleksandr Usyk',
+    weightDivision: 'Heavyweight',
+    reachCm: 198,
+    boxingRecord: { wins: 25, losses: 0, draws: 0, koWins: 16 },
+  },
+];
 
 /** Renders a JS string array as a Postgres `text[]` literal for `= ANY(...)`. */
 function pgTextArray(values: string[]): string {
