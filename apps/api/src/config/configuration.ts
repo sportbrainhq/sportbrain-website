@@ -41,6 +41,23 @@ export interface AppConfig {
   jobs: {
     enabled: boolean;
   };
+
+  redis: {
+    /** Undefined when unconfigured, which is the signal CacheModule uses to fall back to the in-memory cache. */
+    url: string | undefined;
+  };
+
+  news: {
+    rss: {
+      timeoutMs: number;
+      maxResponseBytes: number;
+      retryCount: number;
+    };
+    clusterSimilarityThreshold: number;
+    cacheTtlSeconds: number;
+    autoDisableFailureThreshold: number;
+    defaultFetchIntervalSeconds: number;
+  };
 }
 
 /**
@@ -96,6 +113,22 @@ export function loadConfiguration(): AppConfig {
 
     jobs: {
       enabled: env.JOBS_ENABLED,
+    },
+
+    redis: {
+      url: env.REDIS_URL,
+    },
+
+    news: {
+      rss: {
+        timeoutMs: env.NEWS_RSS_TIMEOUT_MS,
+        maxResponseBytes: env.NEWS_RSS_MAX_RESPONSE_BYTES,
+        retryCount: env.NEWS_RSS_RETRY_COUNT,
+      },
+      clusterSimilarityThreshold: env.NEWS_CLUSTER_SIMILARITY_THRESHOLD,
+      cacheTtlSeconds: env.NEWS_CACHE_TTL_SECONDS,
+      autoDisableFailureThreshold: env.NEWS_AUTO_DISABLE_FAILURE_THRESHOLD,
+      defaultFetchIntervalSeconds: env.NEWS_DEFAULT_FETCH_INTERVAL_SECONDS,
     },
   };
 }

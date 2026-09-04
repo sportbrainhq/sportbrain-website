@@ -46,6 +46,29 @@ export const envSchema = z
     // Master switch for scheduled jobs. Off by default because running the
     // same cron on every replica is the standard way to double-process work.
     JOBS_ENABLED: booleanFromString.default(false),
+
+    // Shared cache backend. Optional: leaving it unset keeps the API on the
+    // in-memory cache, which is the correct choice until a second replica or
+    // a restart-durability requirement makes that a real limitation. See
+    // `infrastructure/cache/cache.module.ts` for the fallback.
+    REDIS_URL: z.string().url().optional(),
+
+    // News Engine (RSS ingestion). Phase 1 only defines these; nothing reads
+    // NEWS_* yet beyond the public read API's cache TTL, since the fetcher
+    // that will use the rest is a later phase.
+    NEWS_RSS_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
+    NEWS_RSS_MAX_RESPONSE_BYTES: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(5 * 1024 * 1024),
+    NEWS_RSS_RETRY_COUNT: z.coerce.number().int().nonnegative().default(2),
+    NEWS_CLUSTER_SIMILARITY_THRESHOLD: z.coerce.number().min(0).max(1).default(0.82),
+    NEWS_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(120),
+    // Consecutive failed fetches before a source is auto-flipped to
+    // `healthStatus: 'disabled'`. See `news_sources` in the schema.
+    NEWS_AUTO_DISABLE_FAILURE_THRESHOLD: z.coerce.number().int().positive().default(10),
+    NEWS_DEFAULT_FETCH_INTERVAL_SECONDS: z.coerce.number().int().positive().default(900),
   })
   .superRefine((config, ctx) => {
     if (config.NODE_ENV !== 'production') return;
