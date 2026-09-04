@@ -65,6 +65,24 @@ export interface AppConfig {
       confidenceThreshold: number;
       batchLimit: number;
     };
+    clustering: {
+      headlineWeight: number;
+      entityWeight: number;
+      timeWeight: number;
+      /** Reuses the existing `NEWS_CLUSTER_SIMILARITY_THRESHOLD` env var (see `clusterSimilarityThreshold` above) rather than duplicating it under a new name. */
+      similarityThreshold: number;
+      timeWindowHours: number;
+      candidateLimit: number;
+    };
+    ranking: {
+      sourceAuthorityWeight: number;
+      recencyWeight: number;
+      entityImportanceWeight: number;
+      topicImportanceWeight: number;
+      sourceCountWeight: number;
+      breakingBonus: number;
+      recencyHalfLifeHours: number;
+    };
   };
 }
 
@@ -144,6 +162,23 @@ export function loadConfiguration(): AppConfig {
       classification: {
         confidenceThreshold: env.NEWS_CLASSIFICATION_CONFIDENCE_THRESHOLD,
         batchLimit: env.NEWS_CLASSIFICATION_BATCH_LIMIT,
+      },
+      clustering: {
+        headlineWeight: env.NEWS_CLUSTERING_HEADLINE_WEIGHT,
+        entityWeight: env.NEWS_CLUSTERING_ENTITY_WEIGHT,
+        timeWeight: env.NEWS_CLUSTERING_TIME_WEIGHT,
+        similarityThreshold: env.NEWS_CLUSTER_SIMILARITY_THRESHOLD,
+        timeWindowHours: env.NEWS_CLUSTERING_TIME_WINDOW_HOURS,
+        candidateLimit: env.NEWS_CLUSTERING_CANDIDATE_LIMIT,
+      },
+      ranking: {
+        sourceAuthorityWeight: env.NEWS_RANKING_SOURCE_AUTHORITY_WEIGHT,
+        recencyWeight: env.NEWS_RANKING_RECENCY_WEIGHT,
+        entityImportanceWeight: env.NEWS_RANKING_ENTITY_IMPORTANCE_WEIGHT,
+        topicImportanceWeight: env.NEWS_RANKING_TOPIC_IMPORTANCE_WEIGHT,
+        sourceCountWeight: env.NEWS_RANKING_SOURCE_COUNT_WEIGHT,
+        breakingBonus: env.NEWS_RANKING_BREAKING_BONUS,
+        recencyHalfLifeHours: env.NEWS_RANKING_RECENCY_HALF_LIFE_HOURS,
       },
     },
   };

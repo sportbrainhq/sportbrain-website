@@ -6,9 +6,13 @@ import { EntityClassifier } from '../modules/news/classification/entity-classifi
 import { NoopLlmClassificationFallback } from '../modules/news/classification/llm-classification-fallback';
 import { SportClassifier } from '../modules/news/classification/sport-classifier';
 import { TopicClassifier } from '../modules/news/classification/topic-classifier';
+import { ClusteringRepository } from '../modules/news/clustering/clustering.repository';
+import { ClusteringService } from '../modules/news/clustering/clustering.service';
 import { NewsFetcherService } from '../modules/news/news-fetcher.service';
 import { NewsProcessorService } from '../modules/news/news-processor.service';
 import { NewsWorkerRepository } from '../modules/news/news-worker.repository';
+import { ImportanceScorer } from '../modules/news/ranking/importance-scorer';
+import { RankingRepository } from '../modules/news/ranking/ranking.repository';
 import { NewsFetchWorker } from './news-fetch.worker';
 import { NewsProcessWorker } from './news-process.worker';
 import { QueueService } from './queue.service';
@@ -45,6 +49,10 @@ import { QueueService } from './queue.service';
     SportClassifier,
     TopicClassifier,
     NoopLlmClassificationFallback,
+    ClusteringService,
+    ClusteringRepository,
+    ImportanceScorer,
+    RankingRepository,
     NewsFetchWorker,
     NewsProcessWorker,
   ],
@@ -54,6 +62,7 @@ import { QueueService } from './queue.service';
     NewsFetcherService,
     NewsProcessorService,
     ClassificationService,
+    ClusteringService,
   ],
 })
 export class QueueModule {}

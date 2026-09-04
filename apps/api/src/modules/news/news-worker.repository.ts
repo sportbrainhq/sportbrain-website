@@ -1,8 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { and, eq, isNull, lte, or, sql } from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
-import { newsArticles, newsFeedFetches, newsSources } from '../../database/schema';
+import { newsArticles, newsFeedFetches, newsSources, sport } from '../../database/schema';
 import type { newsSourceHealthStatusEnum } from '../../database/schema/news.schema';
+
+export interface ArticleForClustering {
+  id: string;
+  headline: string;
+  sportId: string | null;
+  publishedAt: Date;
+}
 
 type HealthStatus = (typeof newsSourceHealthStatusEnum.enumValues)[number];
 
@@ -314,6 +321,110 @@ export class NewsWorkerRepository {
       .returning({ id: newsArticles.id });
     if (!row) throw new Error('Insert of news_articles row returned no id');
     return row;
+  }
+
+  // --- Clustering / ranking (Phase 3.5) -----------------------------------
+  //
+  // These methods operate on `news_articles`, the same table this
+  // repository already owns the write path for, so they live here rather
+  // than duplicating a second `news_articles`-writing repository inside
+  // `modules/news/clustering`. `ClusteringRepository` and `RankingRepository`
+  // own the *new* Phase 3.5 tables/joins (`news_story_clusters`,
+  // `news_story_cluster_articles`, and the entity-notability lookups)
+  // instead.
+
+  /** An article's clustering-relevant fields, for `ClusteringService.clusterAndPublish`. */
+  async findArticleForClustering(id: string): Promise<ArticleForClustering | null> {
+    const [row] = await this.database.db
+      .select({
+        id: newsArticles.id,
+        headline: newsArticles.headline,
+        sportId: newsArticles.sportId,
+        publishedAt: newsArticles.publishedAt,
+      })
+      .from(newsArticles)
+      .where(eq(newsArticles.id, id))
+      .limit(1);
+    return row ?? null;
+  }
+
+  /** This article's classified topics (`rawMetadata.topics`), or `[]` if none. */
+  async findArticleTopics(id: string): Promise<string[]> {
+    const [row] = await this.database.db
+      .select({ rawMetadata: newsArticles.rawMetadata })
+      .from(newsArticles)
+      .where(eq(newsArticles.id, id))
+      .limit(1);
+
+    const metadata = (row?.rawMetadata ?? {}) as { topics?: unknown };
+    return Array.isArray(metadata.topics) ? (metadata.topics as string[]) : [];
+  }
+
+  async findImportanceScore(articleId: string): Promise<number> {
+    const [row] = await this.database.db
+      .select({ importanceScore: newsArticles.importanceScore })
+      .from(newsArticles)
+      .where(eq(newsArticles.id, articleId))
+      .limit(1);
+    return row ? Number(row.importanceScore) : 0;
+  }
+
+  async setArticleImportanceScore(articleId: string, importanceScore: number): Promise<void> {
+    await this.database.db
+      .update(newsArticles)
+      .set({ importanceScore: importanceScore.toFixed(3), updatedAt: new Date() })
+      .where(eq(newsArticles.id, articleId));
+  }
+
+  async markClustered(articleId: string): Promise<void> {
+    await this.database.db
+      .update(newsArticles)
+      .set({ processingStatus: 'clustered', updatedAt: new Date() })
+      .where(eq(newsArticles.id, articleId));
+  }
+
+  async markPublished(articleId: string): Promise<void> {
+    await this.database.db
+      .update(newsArticles)
+      .set({ processingStatus: 'published', updatedAt: new Date() })
+      .where(eq(newsArticles.id, articleId));
+  }
+
+  /**
+   * Marks an article `rejected` with a reason recorded in `rawMetadata`, per
+   * the "a processing failure must not silently disappear" requirement —
+   * mirrors `ClassificationRepository.markNeedsReview`'s approach of
+   * recording the reason on the row itself rather than only in a log line.
+   */
+  async markRejected(articleId: string, reason: string): Promise<void> {
+    const [row] = await this.database.db
+      .select({ rawMetadata: newsArticles.rawMetadata })
+      .from(newsArticles)
+      .where(eq(newsArticles.id, articleId))
+      .limit(1);
+
+    const existingMetadata = (row?.rawMetadata ?? {}) as Record<string, unknown>;
+
+    await this.database.db
+      .update(newsArticles)
+      .set({
+        processingStatus: 'rejected',
+        rawMetadata: {
+          ...existingMetadata,
+          rejection: { reason, rejectedAt: new Date().toISOString() },
+        },
+        updatedAt: new Date(),
+      })
+      .where(eq(newsArticles.id, articleId));
+  }
+
+  async findSportSlugById(sportId: string): Promise<string | null> {
+    const [row] = await this.database.db
+      .select({ slug: sport.slug })
+      .from(sport)
+      .where(eq(sport.id, sportId))
+      .limit(1);
+    return row?.slug ?? null;
   }
 }
 

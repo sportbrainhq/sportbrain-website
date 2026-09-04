@@ -7,6 +7,8 @@
  * pnpm --filter @sportbrain/api news reprocess-fetch <fetchId>
  * pnpm --filter @sportbrain/api news reprocess-article <articleId>
  * pnpm --filter @sportbrain/api news reclassify-all
+ * pnpm --filter @sportbrain/api news cluster-and-publish <articleId>
+ * pnpm --filter @sportbrain/api news reprocess-cluster <clusterId>
  * ```
  *
  * This CLI runs the same `NewsFetcherService`/`NewsProcessorService` logic
@@ -32,9 +34,14 @@ import { EntityClassifier } from '../modules/news/classification/entity-classifi
 import { NoopLlmClassificationFallback } from '../modules/news/classification/llm-classification-fallback';
 import { SportClassifier } from '../modules/news/classification/sport-classifier';
 import { TopicClassifier } from '../modules/news/classification/topic-classifier';
+import { ClusteringRepository } from '../modules/news/clustering/clustering.repository';
+import { ClusteringService } from '../modules/news/clustering/clustering.service';
 import { NewsFetcherService } from '../modules/news/news-fetcher.service';
 import { NewsProcessorService } from '../modules/news/news-processor.service';
 import { NewsWorkerRepository } from '../modules/news/news-worker.repository';
+import { ImportanceScorer } from '../modules/news/ranking/importance-scorer';
+import { RankingRepository } from '../modules/news/ranking/ranking.repository';
+import { InMemoryCacheService } from '../infrastructure/cache/cache.service';
 
 for (const candidate of [resolve(process.cwd(), '../../.env'), resolve(process.cwd(), '.env')]) {
   if (existsSync(candidate)) loadDotenv({ path: candidate });
@@ -45,7 +52,8 @@ async function main(): Promise<void> {
 
   if (!command) {
     process.stderr.write(
-      'Usage: news <fetch-source|fetch-due|reprocess-fetch|reprocess-article|reclassify-all> [arg]\n',
+      'Usage: news <fetch-source|fetch-due|reprocess-fetch|reprocess-article|reclassify-all|' +
+        'cluster-and-publish|reprocess-cluster> [arg]\n',
     );
     process.exitCode = 1;
     return;
@@ -76,7 +84,26 @@ async function main(): Promise<void> {
     new NoopLlmClassificationFallback(),
     typedConfig,
   );
-  const processor = new NewsProcessorService(repository, classificationService);
+  const clusteringRepository = new ClusteringRepository(database);
+  const rankingRepository = new RankingRepository(database);
+  const importanceScorer = new ImportanceScorer(typedConfig);
+  // A plain in-memory cache, not the shared app instance: this CLI is a
+  // separate one-shot process (see the module doc comment above), so
+  // there is no running API process's cache to invalidate here anyway.
+  // `ClusteringService.clusterAndPublish`'s invalidation call is still
+  // exercised (against this throwaway cache) so the CLI runs the same code
+  // path as the queue worker rather than a special-cased variant of it.
+  const cache = new InMemoryCacheService();
+  const clusteringService = new ClusteringService(
+    clusteringRepository,
+    repository,
+    rankingRepository,
+    importanceScorer,
+    cache,
+    typedConfig,
+  );
+
+  const processor = new NewsProcessorService(repository, classificationService, clusteringService);
 
   const startedAt = Date.now();
 
@@ -157,6 +184,31 @@ async function main(): Promise<void> {
               `topics=[${outcome.topics.join(', ')}] confidence=${outcome.overallConfidence.toFixed(2)}\n`,
           );
         }
+        break;
+      }
+
+      case 'cluster-and-publish': {
+        const [articleId] = args;
+        if (!articleId) throw new Error('Usage: news cluster-and-publish <articleId>');
+
+        const outcome = await clusteringService.clusterAndPublish(articleId);
+        process.stdout.write(
+          `article ${articleId}: ${outcome.status} cluster=${outcome.clusterId ?? 'null'} ` +
+            `importance=${outcome.importanceScore.toFixed(2)} (${outcome.reason})\n`,
+        );
+        break;
+      }
+
+      case 'reprocess-cluster': {
+        // Recomputes primary-article selection and importance scoring for an
+        // existing cluster without re-running the find-or-create step. Useful
+        // after tuning `NEWS_CLUSTERING_*`/`NEWS_RANKING_*` weights, so
+        // existing clusters reflect the new weights without re-ingesting.
+        const [clusterId] = args;
+        if (!clusterId) throw new Error('Usage: news reprocess-cluster <clusterId>');
+
+        await clusteringService.recomputeCluster(clusterId);
+        process.stdout.write(`cluster ${clusterId}: recomputed\n`);
         break;
       }
 

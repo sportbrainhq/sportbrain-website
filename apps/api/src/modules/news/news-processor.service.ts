@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ClassificationService } from './classification/classification.service';
+import { ClusteringService } from './clustering/clustering.service';
 import { resolveAdapter } from './lib/feed-adapter';
 import { parseFeed } from './lib/feed-parser';
 import { NewsWorkerRepository } from './news-worker.repository';
@@ -37,6 +38,20 @@ export interface ProcessFetchResult {
  * (e.g. once a real LLM fallback makes some articles slow/expensive to
  * classify). Classification failures are caught per-article, exactly like
  * normalization failures above, so one bad article never fails the batch.
+ *
+ * Phase 3.5 extends the same choice: once an article is successfully
+ * classified, `ClusteringService.clusterAndPublish` runs synchronously right
+ * after it, in the same per-item loop iteration, carrying the article from
+ * `classified` through `clustered` to `published` (or `rejected`). No new
+ * queue for the same reasons Phase 3 gave (cheap, no external calls,
+ * clustering only compares against a capped, time-windowed candidate set —
+ * see `ClusteringRepository.findCandidateClusters`), and clustering an
+ * article depends on it already being classified (it needs `sportId` and
+ * entity links), so it could not usefully run as an earlier or parallel step
+ * anyway. Clustering failures are caught per-article, exactly like
+ * classification failures: one bad article never fails the batch, and it is
+ * left at `classified` (visibly retryable via the `cluster-and-publish` CLI
+ * command) rather than silently lost.
  */
 @Injectable()
 export class NewsProcessorService {
@@ -45,6 +60,7 @@ export class NewsProcessorService {
   constructor(
     private readonly repository: NewsWorkerRepository,
     private readonly classificationService: ClassificationService,
+    private readonly clusteringService: ClusteringService,
   ) {}
 
   async processFetch(fetchId: string): Promise<ProcessFetchResult> {
@@ -122,7 +138,23 @@ export class NewsProcessorService {
         // unclassified rather than silently lost, and a later CLI batch
         // reclassify or a retried job can pick it up.
         try {
-          await this.classificationService.classifyArticle(insertedArticle.id);
+          const outcome = await this.classificationService.classifyArticle(insertedArticle.id);
+
+          // Only a successfully classified article has the `sportId` and
+          // entity links clustering/ranking need; an article left at
+          // 'ingested' for manual review is not carried further here (a
+          // later reclassify pass will pick it up and this runs again then).
+          if (outcome.status === 'classified') {
+            try {
+              await this.clusteringService.clusterAndPublish(insertedArticle.id);
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error);
+              warnings.push(`Clustering failed for article "${insertedArticle.id}": ${message}`);
+              this.logger.warn(
+                `Clustering failed for article "${insertedArticle.id}" in fetch "${fetchId}": ${message}`,
+              );
+            }
+          }
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           warnings.push(`Classification failed for article "${insertedArticle.id}": ${message}`);

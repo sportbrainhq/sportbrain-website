@@ -83,6 +83,37 @@ export const envSchema = z
     // Batch size cap for the CLI's "reclassify all ingested" command, so a
     // manual run is never unbounded.
     NEWS_CLASSIFICATION_BATCH_LIMIT: z.coerce.number().int().positive().default(100),
+
+    // News Engine clustering (Phase 3.5). Weighted combination of headline
+    // similarity, entity overlap and time proximity; see
+    // `modules/news/clustering/similarity.ts`. Weights are expected to sum to
+    // 1 but are not enforced to, since a deliberate experiment (e.g.
+    // temporarily zeroing one signal) should not require also renormalising
+    // the others by hand.
+    NEWS_CLUSTERING_HEADLINE_WEIGHT: z.coerce.number().min(0).max(1).default(0.5),
+    NEWS_CLUSTERING_ENTITY_WEIGHT: z.coerce.number().min(0).max(1).default(0.3),
+    NEWS_CLUSTERING_TIME_WEIGHT: z.coerce.number().min(0).max(1).default(0.2),
+    // How many hours apart two articles' publishedAt can be and still count
+    // as plausibly the same story; see `timeProximity` in similarity.ts for
+    // the decay curve. 72h covers a transfer saga breaking over a weekend.
+    NEWS_CLUSTERING_TIME_WINDOW_HOURS: z.coerce.number().positive().default(72),
+    // How many of a sport's most-recently-updated clusters a newly classified
+    // article is compared against, so clustering never scans every cluster
+    // ever created for that sport. See ClusteringRepository.findCandidateClusters.
+    NEWS_CLUSTERING_CANDIDATE_LIMIT: z.coerce.number().int().positive().default(50),
+
+    // News Engine importance/ranking (Phase 3.5). See
+    // `modules/news/ranking/importance-scorer.ts` for the full formula.
+    // Weights are point contributions toward the 0-10 score, not fractions of 1.
+    NEWS_RANKING_SOURCE_AUTHORITY_WEIGHT: z.coerce.number().nonnegative().default(2.5),
+    NEWS_RANKING_RECENCY_WEIGHT: z.coerce.number().nonnegative().default(2.5),
+    NEWS_RANKING_ENTITY_IMPORTANCE_WEIGHT: z.coerce.number().nonnegative().default(2),
+    NEWS_RANKING_TOPIC_IMPORTANCE_WEIGHT: z.coerce.number().nonnegative().default(1),
+    NEWS_RANKING_SOURCE_COUNT_WEIGHT: z.coerce.number().nonnegative().default(1.5),
+    NEWS_RANKING_BREAKING_BONUS: z.coerce.number().nonnegative().default(0.5),
+    // Recency decays to (about) zero influence after this many hours; see
+    // `computeRecencyScore`.
+    NEWS_RANKING_RECENCY_HALF_LIFE_HOURS: z.coerce.number().positive().default(18),
   })
   .superRefine((config, ctx) => {
     if (config.NODE_ENV !== 'production') return;
