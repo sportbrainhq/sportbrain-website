@@ -4,6 +4,7 @@ import {
   TENNIS_OTHER_TITLE_FIELDS,
   TENNIS_SLAM_FIELDS,
 } from '../../../database/seed/tennis-competitions';
+import { GOLF_MAJOR_FIELDS, GOLF_WIN_COUNT_FIELDS } from '../../../database/seed/golf-competitions';
 import {
   findTableByHeading,
   parseDefinitionLists,
@@ -300,6 +301,113 @@ export interface TennisCareer {
   highestSinglesRanking: number | null;
   highestDoublesRanking: number | null;
   titles: TennisTitle[];
+}
+
+/** One major championship won, as stated by `Infobox golfer`. */
+export interface GolfMajorWin {
+  /** The curated competition slug, or null for a discontinued major. */
+  slug: string | null;
+  name: string;
+  year: number;
+  tour: 'mens' | 'womens';
+}
+
+/** A golfer's career, as stated by `Infobox golfer`. */
+export interface GolfCareer {
+  turnedPro: number | null;
+  /** The year the article states they retired, where it states one at all. */
+  retiredYear: number | null;
+  /** The most recent year any major was won. The activity signal, see below. */
+  lastMajorYear: number | null;
+  /** "PGA Tour", "LPGA Tour (joined 1994)". Free text, as written. */
+  tour: string | null;
+  college: string | null;
+  /** Win counts by tour, keyed by `GOLF_WIN_COUNT_FIELDS.key`. */
+  winCounts: Record<string, number>;
+  /** The year they entered the World Golf Hall of Fame, if they have. */
+  hallOfFameYear: number | null;
+  majors: GolfMajorWin[];
+}
+
+/**
+ * The playing positions this catalogue actually uses, lower-cased.
+ *
+ * Taken from the position values already on record across the
+ * american-football person table, rather than every position name Wikipedia
+ * might write, because the point is recognising a genuine playing position
+ * and rejecting everything else (a coaching or front-office title, an
+ * unrelated sport's fielding position), not building an exhaustive gridiron
+ * position glossary.
+ */
+const GRIDIRON_PLAYING_POSITIONS = new Set([
+  'quarterback',
+  'running back',
+  'halfback',
+  'fullback',
+  'wide receiver',
+  'tight end',
+  'offensive tackle',
+  'offensive lineman',
+  'tackle',
+  'guard',
+  'center',
+  'defensive end',
+  'defensive tackle',
+  'nose tackle',
+  'edge rusher',
+  'linebacker',
+  'inside linebacker',
+  'outside linebacker',
+  'cornerback',
+  'safety',
+  'free safety',
+  'strong safety',
+  'defensive back',
+  'nickel back',
+  'placekicker',
+  'kicker',
+  'punter',
+  'long snapper',
+  'return specialist',
+  'kick returner',
+  'punt returner',
+  'end',
+]);
+
+/**
+ * An NFL team's championship record, read from `Infobox NFL team`.
+ *
+ * Every count is null rather than 0 when the field is absent, the same
+ * distinction `WikiHonourCount` draws: a team article this reader cannot parse
+ * must not look identical to a team that has genuinely won nothing.
+ */
+export interface NflTeamTitles {
+  superBowlTitles: number | null;
+  conferenceTitles: number | null;
+  divisionTitles: number | null;
+  leagueTitles: number | null;
+  playoffAppearances: number | null;
+  /** The seasons `sb_champs` credits as Super Bowl wins. */
+  superBowlYears: number[];
+}
+
+/** One club spell read from a gridiron player's `pastteams` infobox field. */
+export interface GridironTeamSpell {
+  /** The team name as linked, e.g. "Kansas City Chiefs". */
+  teamName: string;
+  startYear: number | null;
+  /** Null when the spell is still open ("present") or the end year is unstated. */
+  endYear: number | null;
+  current: boolean;
+}
+
+/** A quarterback's career regular-season passing totals. */
+export interface QuarterbackCareerPassing {
+  yards: number | null;
+  touchdowns: number | null;
+  interceptions: number | null;
+  completions: number | null;
+  attempts: number | null;
 }
 
 export interface WikiStatBlock {
@@ -1130,13 +1238,20 @@ export class WikipediaProvider {
       ['location', 'Location', 'identity', 28],
       ['colors', 'Colours', 'identity', 26],
       ['league_champs', 'Championships', 'honours', 50],
-      ['conf_champs', 'Conference titles', 'honours', 54],
-      // `div_champs` is deliberately not mapped. A division title is the
-      // weakest thing an NBA franchise wins and there are far more of them than
-      // anything else, so the fact rendered as a wall of years that dwarfed the
-      // championships above it: the Lakers listed 36 division titles across
-      // eight lines, against 18 championships. The data stays in Wikipedia; it
-      // is simply not a fact worth a panel on a team page.
+      // `conf_champs` and `div_champs` are deliberately not mapped, for the
+      // same reason: a conference or division title is a lesser honour with
+      // far more instances than a championship, so the fact rendered as a
+      // wall of years that dwarfed the championships above it. The Lakers
+      // listed 36 division titles across eight lines, against 18
+      // championships. American football's version of the same field is
+      // worse still, since `conf_champs` there is what this shared reader
+      // used to surface before the NFL's Super Bowl/conference/league title
+      // counts got a proper structured honour table
+      // (`ingestNflTeamTitles`/`fetchNflTeamTitles`): the generic prose fact
+      // and the structured honour chips both rendered under a heading called
+      // "Honours" on the same team page, saying the same thing twice in two
+      // different shapes. The data stays in Wikipedia; it is simply not a
+      // fact worth a panel on a team page for any sport this reader serves.
       ['gm', 'General manager', 'people', 67],
       ['ceo', 'Chief executive', 'people', 68],
       ['president', 'President', 'people', 69],
@@ -2769,6 +2884,23 @@ export class WikipediaProvider {
       if (cleaned.length < 1 || cleaned.length > 300) continue;
       if (!/[a-zA-Z0-9]/.test(cleaned)) continue;
 
+      // A field mapped to the `honours` category is meant to state a count
+      // ("18"), not enumerate the years: `league_champs` reads that way for
+      // the NBA (Lakers: "18") but as a bulleted list of seasons for the NFL
+      // (Chiefs: "AFL championships (3) 1962, 1966, 1969"), and there is no
+      // per-sport switch in this shared field map to tell the two apart in
+      // advance. Three or more four-digit years is the shape of the list
+      // form specifically, so it is caught here rather than by dropping the
+      // field for every sport that uses it usefully. See the note beside
+      // `league_champs` below for why `conf_champs`/`div_champs` are instead
+      // simply not mapped at all: those are *always* a list, never a count.
+      if (
+        category === 'honours' &&
+        (cleaned.match(/\b(1[89]\d{2}|20\d{2})\b/g)?.length ?? 0) >= 3
+      ) {
+        continue;
+      }
+
       seen.add(label);
       facts.push({
         key: label.toLowerCase().replace(/[^a-z0-9]+/g, '_'),
@@ -3135,6 +3267,923 @@ export class WikipediaProvider {
       highestDoublesRanking: this.rankingNumber(box.highestdoublesranking),
       titles: deduped,
     };
+  }
+
+  /**
+   * Reads a golfer's career out of `Infobox golfer`.
+   *
+   * The golf counterpart of `fetchTennisCareer`, and it exists for the same
+   * reason: golf has no clubs, so every signal the pipeline normally derives
+   * from a club spell is missing, and the infobox is the only place the sport's
+   * own evidence is written down.
+   *
+   * ## Why the major fields are parsed differently from tennis's
+   *
+   * `Infobox tennis biography` writes a result as `W (2004, 2006)`, so tennis
+   * anchors on a leading `W`. `Infobox golfer` writes it as
+   * `'''Won''': [[1997 Masters Tournament|1997]], [[2001 Masters Tournament|2001]]`,
+   * and the same field for a non-winner reads `T2: 2019` or `DNP`. So the test
+   * here is for a leading "Won", and the years are taken from the wikilinks
+   * that follow it.
+   *
+   * The link targets are where the years must come from rather than the whole
+   * field, because a field can carry a footnote with an unrelated year in it.
+   * Taking every four-digit number in the string would read those as wins.
+   *
+   * ## Why `retired` is not the status signal here
+   *
+   * Tennis reads status from whether the infobox has a `retired` field. That
+   * works for tennis and does not work for golf: the golf template carries
+   * `retired` as an empty placeholder on almost every article, including Jack
+   * Nicklaus's and Gary Player's, so its presence says nothing at all. Only a
+   * filled value means anything, and the caller combines that with the last
+   * year the player actually won a major to decide.
+   */
+  async fetchGolfCareer(title: string): Promise<GolfCareer | null> {
+    const wikitext = await this.client.fetchWikitext(title);
+    if (!wikitext) return null;
+
+    // The golfer box specifically, and nothing else.
+    //
+    // Same reasoning as the tennis equivalent: Wikidata's "sport: golf"
+    // statement is true of anybody who ever played a round, and this catalogue
+    // contains Heinrich Harrer, the Austrian mountaineer who climbed the Eiger.
+    // `parseInfobox` would fall back to his mountaineer box, find no result
+    // fields and return an empty career that reads as "golfer who won nothing"
+    // rather than "not a golfer". Requiring the template by name is what makes
+    // a null here mean something.
+    if (!/\{\{\s*Infobox\s+golfer\b/i.test(wikitext)) return null;
+
+    const box = parseInfobox(wikitext, 'golfer');
+    if (!box) return null;
+
+    /**
+     * The years a major result field records as wins.
+     *
+     * Anchored on a leading "Won". A field reading `T2: 2019` or `DNP` is a
+     * result and not a win, and must contribute nothing.
+     *
+     * Years come from the wikilink targets rather than from the raw string, so
+     * that a trailing footnote or a "(record)" parenthetical cannot be read as
+     * an extra championship. A bare year with no link is accepted too, since
+     * older articles write `'''Won''': 1962, 1967` without linking.
+     */
+    const winYears = (value: string | undefined): number[] => {
+      if (!value) return [];
+      if (!/^\s*(?:'{2,5})?\s*Won\b/i.test(value)) return [];
+
+      // Everything after the "Won" label, which is where the years live.
+      const tail = value.replace(/^[^:]*:/, '');
+      const years = new Set<number>();
+
+      // Linked years: [[1997 Masters Tournament|1997]] and [[1997]] both give
+      // 1997, and the piped label is preferred because the target can carry a
+      // different year for an event spanning a new year.
+      for (const match of tail.matchAll(/\[\[([^\]]+)\]\]/g)) {
+        const linkText = match[1] ?? '';
+        const label = linkText.includes('|') ? linkText.split('|').pop()! : linkText;
+        const year = /\b(1[89]\d{2}|20\d{2})\b/.exec(label);
+        if (year) years.add(Number(year[1]));
+      }
+
+      // Unlinked years, for the older articles that write them plainly. Only
+      // consulted when no link produced anything, so a linked field cannot pick
+      // up a stray number from a footnote.
+      if (years.size === 0) {
+        for (const match of tail.matchAll(/\b(1[89]\d{2}|20\d{2})\b/g)) {
+          years.add(Number(match[1]));
+        }
+      }
+
+      return [...years];
+    };
+
+    const majors: GolfMajorWin[] = [];
+    for (const major of GOLF_MAJOR_FIELDS) {
+      for (const year of winYears(box[major.field.toLowerCase()])) {
+        majors.push({ slug: major.slug, name: major.name, year, tour: major.tour });
+      }
+    }
+
+    // Deduplicated on (major, year). A field occasionally names a year twice
+    // through a footnote, and the honour table holds one row per title and
+    // year, so the second would silently do nothing on insert.
+    const seen = new Set<string>();
+    const deduped = majors.filter((entry) => {
+      const key = `${entry.name}:${entry.year}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    const winCounts: Record<string, number> = {};
+    for (const field of GOLF_WIN_COUNT_FIELDS) {
+      const value = this.leadingCount(box[field.field.toLowerCase()]);
+      if (value !== null) winCounts[field.key] = value;
+    }
+
+    /** The years inside a field: "1996" gives [1996]. */
+    const yearsIn = (value: string | undefined): number[] =>
+      [...(value ?? '').matchAll(/\b(1[89]\d{2}|20\d{2})\b/g)].map((match) => Number(match[1]));
+
+    const turnedProYears = yearsIn(box.yearpro);
+    const retiredYears = yearsIn(box.retired);
+    const hallOfFameYears = yearsIn(box.wghofyear);
+    const lastMajorYear =
+      deduped.length > 0 ? Math.max(...deduped.map((entry) => entry.year)) : null;
+
+    return {
+      turnedPro: turnedProYears.length > 0 ? Math.min(...turnedProYears) : null,
+      // The last year named, because a comeback writes a range.
+      retiredYear: retiredYears.length > 0 ? Math.max(...retiredYears) : null,
+      lastMajorYear,
+      tour: box.tour ?? null,
+      college: box.college ?? null,
+      winCounts,
+      hallOfFameYear: hallOfFameYears.length > 0 ? Math.min(...hallOfFameYears) : null,
+      majors: deduped,
+    };
+  }
+
+  /**
+   * An NFL team's championship counts and Super Bowl-winning years.
+   *
+   * The infobox states these as counts (`no_sb_champs`, `no_conf_champs`,
+   * `no_div_champs`, `no_league_champs`, `no_playoff_appearances`) rather than
+   * as an honours table the way a football club's article does, which is why
+   * this needs its own reader rather than `fetchClubTitles`: there is no table
+   * to sum, only fields to read directly.
+   *
+   * Two template names are accepted. Wikipedia is mid-migration from the
+   * sport-specific `Infobox NFL team` to the generic `Infobox gridiron
+   * football team`, and which one a given team's article uses is not
+   * predictable from anything but reading it: the Chiefs and the Cowboys still
+   * carry the old template, the Patriots and the Steelers the new one, and
+   * both name the championship fields identically. Requiring either by name,
+   * rather than falling back to whatever infobox happens to be first in the
+   * article, is what makes a null here mean "not a team article" rather than
+   * "the wrong infobox parsed into nothing".
+   *
+   * `sbYears` comes from `sb_champs` separately from the counts, because a
+   * team's honour rows need the actual seasons it won in, not just how many
+   * times. `parseInfobox` resolves wikilinks to their display text before this
+   * reader ever sees the field, so `[[2001 New England Patriots season|2001]]
+   * ([[Super Bowl XXXVI|XXXVI]])` has already become plain `2001 (XXXVI)` by
+   * the time it reaches `box.sb_champs`, and there are no brackets left to
+   * split on. One bare four-digit year per comma-separated entry is read
+   * instead; the roman numeral beside it contributes no digits, so it cannot
+   * be mistaken for a second season.
+   */
+  async fetchNflTeamTitles(title: string): Promise<NflTeamTitles | null> {
+    const wikitext = await this.client.fetchWikitext(title);
+    if (!wikitext) return null;
+
+    const templateMatch = /\{\{\s*Infobox\s+(NFL team|gridiron football team)\b/i.exec(wikitext);
+    if (!templateMatch) return null;
+
+    const box = parseInfobox(wikitext, templateMatch[1]);
+    if (!box) return null;
+
+    const yearsIn = (value: string | undefined): number[] => {
+      if (!value) return [];
+      const years = new Set<number>();
+      for (const entry of value.split(',')) {
+        const year = /\b(19[0-9]\d|20\d{2})\b/.exec(entry);
+        if (year) years.add(Number(year[1]));
+      }
+      return [...years];
+    };
+
+    return {
+      superBowlTitles: this.leadingCount(box.no_sb_champs),
+      conferenceTitles: this.leadingCount(box.no_conf_champs),
+      divisionTitles: this.leadingCount(box.no_div_champs),
+      leagueTitles: this.leadingCount(box.no_league_champs),
+      playoffAppearances: this.leadingCount(box.no_playoff_appearances),
+      superBowlYears: yearsIn(box.sb_champs),
+    };
+  }
+
+  /**
+   * A named column group's own labels and the "Career" row's values within it,
+   * from an American football player's season-by-season statistics table.
+   *
+   * The shared machinery behind `fetchQuarterbackCareerPassing`,
+   * `fetchRunningBackCareerTotals`, `fetchReceiverCareerTotals` and
+   * `fetchDefenderCareerTotals`. Every position's article uses the same table
+   * shape (Year, Team, one or more named column groups, a trailing "Career"
+   * row), but the group names and the columns inside them differ entirely by
+   * position: a quarterback's article groups Passing then Rushing, a running
+   * back's groups Rushing then Receiving, a cornerback's groups Tackles then
+   * Interceptions. Column *position* within a group is not reliable either,
+   * even among players at the same position: Mahomes' Passing block has ten
+   * sub-columns, Brady's and Rodgers' have eleven in a different order. This
+   * reads the header row's own labels to find each stat by name rather than
+   * assuming where it sits, and returns null for a position or article this
+   * reader cannot find the named group in, rather than guessing.
+   *
+   * Every quirk below was found by testing against a real player's article
+   * and checking the result against the article's own stated career totals,
+   * not assumed:
+   *
+   *   - The section can open with a "Legend" key table before the season
+   *     table itself, whenever the fallback `Career statistics` heading is
+   *     used rather than a `Regular season` subheading (Sam Darnold's article
+   *     is one). Reading the first `{|...|}` unconditionally finds that
+   *     legend, not the season table. Every `{|...|}` block from the section
+   *     onward is tried in turn, and the one whose header actually declares
+   *     the wanted group is the one used.
+   *   - A group's colspan can be wrong: Mahomes' Fumbles group claims 3 but
+   *     the table has 2. This only matters when the miscounted group is
+   *     *before* the one being read, so the label count is checked only up to
+   *     the end of the wanted group, not across the whole row.
+   *   - A column label is usually `{{abbr|Label|...}}`, but two other forms
+   *     exist on real articles: a plain unwrapped header (Rex Grossman's
+   *     "Record" column, no template at all) and `{{tooltip|Label|...}}` in
+   *     place of `{{abbr|...}}`. All three are matched in one pass so their
+   *     document order is preserved; missing the unwrapped form silently
+   *     shifts every later index. A label can also nest a wikilink,
+   *     `{{abbr|[[Passer rating|...]]|Passer rating}}` (Grossman's Rtg), which
+   *     is unwrapped to the link's own display text.
+   *   - The Career row's own header cell reads two different ways: a plain
+   *     `colspan="2" | Career<ref>...` (Rodgers) or "Career" as the display
+   *     text of an external link to Pro Football Reference,
+   *     `colspan="2"| [https://...Career]` (Mahomes, Brady). Anchored on the
+   *     cell rather than on "Career]" specifically, or the first form is
+   *     never matched at all.
+   *   - Cells are usually separated by `!!`, but some articles (Darnold's)
+   *     mix in a lone `\n!` for the one cell right after the row's own header
+   *     cell. Splitting on `!!` alone silently drops that cell and shifts
+   *     every later value by one column.
+   *   - A highlighted cell carries a wikitable attribute prefix before its
+   *     own content pipe, `style="background:#e0cef2;"| 89,214`, which is
+   *     wikitext cell syntax rather than HTML and so is not something
+   *     `plainText` strips on its own; it is stripped here first.
+   */
+  private async fetchCareerColumnGroup(
+    title: string,
+    groupName: string,
+  ): Promise<{
+    labels: string[];
+    groupStart: number;
+    offset: number;
+    cells: (number | null)[];
+  } | null> {
+    const wikitext = await this.client.fetchWikitext(title);
+    if (!wikitext) return null;
+
+    const sectionStart =
+      wikitext.search(/====\s*Regular season\s*====/i) >= 0
+        ? wikitext.search(/====\s*Regular season\s*====/i)
+        : wikitext.search(/==\s*Career statistics\s*==/i);
+    if (sectionStart === -1) return null;
+
+    const groupPattern = new RegExp(`colspan="\\d+"\\s*\\|\\s*${groupName}\\b`, 'i');
+    let table: string | null = null;
+    let groupRow: string | undefined;
+    let labelRow: string | undefined;
+    let cursor = sectionStart;
+    while (cursor < wikitext.length) {
+      const tableStart = wikitext.indexOf('{|', cursor);
+      if (tableStart === -1) break;
+      const tableEnd = wikitext.indexOf('\n|}', tableStart);
+      if (tableEnd === -1) break;
+      // Includes the closing `\n|}` rather than stopping short of it, because
+      // the Career row is read up to that marker via a lookahead, and a
+      // lookahead cannot match text that was sliced away before it ran.
+      const candidate = wikitext.slice(tableStart, tableEnd + 3);
+
+      const headerRows = candidate.split(/\n\|-\n?/).slice(0, 3);
+      const groupIndex = headerRows.findIndex((row) => groupPattern.test(row));
+      if (groupIndex !== -1) {
+        // The label row is whichever segment immediately follows the group
+        // row, not identified by its own content: most articles wrap every
+        // label in `{{abbr|Label|...}}`, but some (Tyreek Hill's) write plain
+        // `! GP !! GS` with no template at all, and a pattern requiring
+        // `{{abbr|` finds nothing to read on those. Position relative to the
+        // group row is reliable either way.
+        table = candidate;
+        groupRow = headerRows[groupIndex];
+        labelRow = headerRows[groupIndex + 1];
+        break;
+      }
+
+      cursor = tableEnd + 3;
+    }
+    if (!table || !groupRow || !labelRow) return null;
+
+    // How many single-column header cells (`rowspan="2"| Year`, `| Team`, and
+    // sometimes `| GP`) precede the first named column group. Some articles'
+    // "Games" columns are their own colspan group the way Passing and Rushing
+    // are (Mahomes: Year, Team as rowspan cells, then a `colspan="3"| Games`
+    // group holding GP/GS/Record); others give GP its own rowspan cell
+    // alongside Year and Team with no group of its own at all (Cedric
+    // Benson's rushing table: three rowspan cells, then straight into
+    // `colspan="6"| Rushing`). The label row never repeats a rowspan cell's
+    // own label, so `labels[0]` is always the first sub-column of the first
+    // *named* group either way, and `groupStart` computed purely from colspan
+    // sums stays correct for indexing into `labels`. What differs is how many
+    // data cells the Career row carries before that first labelled value:
+    // Mahomes' Career row has one merged Year+Team cell and nothing else
+    // ungrouped; Benson's has the same merged cell plus a separate GP value.
+    // Counted here, once, from the group row itself, rather than assumed.
+    const firstColspanIndex = groupRow.search(/colspan="\d+"/i);
+    const leadingRowspans =
+      firstColspanIndex === -1
+        ? 0
+        : (groupRow.slice(0, firstColspanIndex).match(/rowspan="\d+"/gi)?.length ?? 0);
+
+    let groupStart = 0;
+    let groupSpan = 0;
+    let seen = 0;
+    for (const match of groupRow.matchAll(/colspan="(\d+)"\s*\|\s*([^!|\n]+)/gi)) {
+      const span = Number(match[1]);
+      const label = match[2]!.trim();
+      if (new RegExp(`^${groupName}$`, 'i').test(label)) {
+        groupStart = seen;
+        groupSpan = span;
+        break;
+      }
+      seen += span;
+    }
+    if (groupSpan === 0) return null;
+
+    const cellTokens = labelRow.matchAll(
+      /\{\{(?:abbr|tooltip)\|([^{}]+)\|[^{}]*\}\}|!\s*([A-Za-z][A-Za-z0-9%/ ]{0,15})\s*(?=!!|\n)/gi,
+    );
+    const labels: string[] = [];
+    for (const match of cellTokens) {
+      const raw = match[1] ?? match[2] ?? '';
+      const link = /\[\[([^|\]]*\|)?([^\]]+)\]\]/.exec(raw);
+      labels.push((link ? link[2]! : raw).trim());
+    }
+    if (labels.length < groupStart + groupSpan) return null;
+
+    const careerWordIndex = table.search(/colspan="2"\s*\|\s*(?:\[[^\]]*)?Career\b/i);
+    if (careerWordIndex === -1) return null;
+    const rowStart = table.lastIndexOf('\n|-\n', careerWordIndex) + '\n|-\n'.length;
+    const nextRowBoundary = table.indexOf('\n|-\n', careerWordIndex);
+    const tableCloseBoundary = table.indexOf('\n|}', careerWordIndex);
+    const rowEnd =
+      nextRowBoundary === -1
+        ? tableCloseBoundary
+        : tableCloseBoundary === -1
+          ? nextRowBoundary
+          : Math.min(nextRowBoundary, tableCloseBoundary);
+    if (rowStart === -1 || rowEnd === -1) return null;
+    const careerRow = table.slice(rowStart, rowEnd);
+
+    const cellsRaw = careerRow.split(/\n?!!|\|\||\n!(?!!)/);
+    const cells = cellsRaw.map((cell) => {
+      const withoutAttributes = /^[^|]*\|(?!\|)(.*)$/s.exec(cell)?.[1] ?? cell;
+      return parseNumber(this.plainText(withoutAttributes));
+    });
+
+    // The Career row's own header cell always merges exactly two rowspan
+    // columns (Year and Team) under one `colspan="2"`, whatever else precedes
+    // the first named group. Any further leading rowspan cell beyond those
+    // two (Benson's GP) is not merged away and still occupies one data cell
+    // of its own, so it is added to the base offset of 1. Verified against
+    // both Mahomes' table (2 leading rowspans, offset 1: label index 6 "Yds"
+    // is data cell 7, giving 35,939) and Benson's (3 leading rowspans, offset
+    // 2: label index 1 "Yds" is data cell 3, giving 6,017, his real career
+    // rushing total).
+    const offset = 1 + Math.max(0, leadingRowspans - 2);
+
+    return { labels: labels.slice(groupStart, groupStart + groupSpan), groupStart, offset, cells };
+  }
+
+  /**
+   * A single stat's value from a column group already read by
+   * `fetchCareerColumnGroup`.
+   *
+   * The row leads with one cell merging Year and Team, and `group.offset`
+   * (computed in `fetchCareerColumnGroup`, see its own comment) accounts for
+   * any further leading column the merge did not absorb, so a label at
+   * absolute index N is data cell N + offset.
+   */
+  private readGroupStat(
+    group: { labels: string[]; groupStart: number; offset: number; cells: (number | null)[] },
+    labelName: string,
+  ): number | null {
+    const index = group.labels.findIndex(
+      (label) => label.toLowerCase() === labelName.toLowerCase(),
+    );
+    if (index === -1) return null;
+    return group.cells[group.groupStart + index + group.offset] ?? null;
+  }
+
+  /**
+   * A quarterback's career regular-season passing totals.
+   *
+   * Passing and Rushing each have their own `Yds` and `TD` columns, which is
+   * why only the "Passing" group's span is searched. See
+   * `fetchCareerColumnGroup`'s doc comment for the table-reading quirks this
+   * relies on.
+   */
+  async fetchQuarterbackCareerPassing(title: string): Promise<QuarterbackCareerPassing | null> {
+    const group = await this.fetchCareerColumnGroup(title, 'Passing');
+    if (!group) return null;
+    const yards = this.readGroupStat(group, 'Yds');
+    const touchdowns = this.readGroupStat(group, 'TD');
+    if (yards === null || touchdowns === null) return null;
+    return {
+      yards,
+      touchdowns,
+      interceptions: this.readGroupStat(group, 'Int'),
+      completions: this.readGroupStat(group, 'Cmp'),
+      attempts: this.readGroupStat(group, 'Att'),
+    };
+  }
+
+  /**
+   * A running back's career rushing totals, from the "Rushing" column group.
+   *
+   * A running back's own article also carries a Receiving group, read
+   * separately by `fetchReceiverCareerTotals` so a runner's yards after catch
+   * are not folded into their rushing figure or the reverse.
+   */
+  async fetchRunningBackCareerTotals(
+    title: string,
+  ): Promise<{ yards: number | null; touchdowns: number | null; attempts: number | null } | null> {
+    const group = await this.fetchCareerColumnGroup(title, 'Rushing');
+    if (!group) return null;
+    const yards = this.readGroupStat(group, 'Yds');
+    const touchdowns = this.readGroupStat(group, 'TD');
+    if (yards === null && touchdowns === null) return null;
+    return { yards, touchdowns, attempts: this.readGroupStat(group, 'Att') };
+  }
+
+  /**
+   * A receiver's career receiving totals, from the "Receiving" column group.
+   *
+   * Works the same for a wide receiver, a tight end, or a running back's own
+   * receiving line: whichever position's article is passed in, only the
+   * "Receiving" group is read.
+   */
+  async fetchReceiverCareerTotals(
+    title: string,
+  ): Promise<{
+    yards: number | null;
+    touchdowns: number | null;
+    receptions: number | null;
+  } | null> {
+    const group = await this.fetchCareerColumnGroup(title, 'Receiving');
+    if (!group) return null;
+    const yards = this.readGroupStat(group, 'Yds');
+    const touchdowns = this.readGroupStat(group, 'TD');
+    if (yards === null && touchdowns === null) return null;
+    return { yards, touchdowns, receptions: this.readGroupStat(group, 'Rec') };
+  }
+
+  /**
+   * A defender's career tackle and takeaway totals.
+   *
+   * Two groups rather than one, because a defensive player's headline numbers
+   * split across them: sacks live in "Tackles" alongside solo and assisted
+   * tackle counts, while interceptions have their own group. A player with
+   * only one of the two (an edge rusher with no interceptions, a cornerback
+   * whose article carries no sack column) still returns whichever group was
+   * found rather than nulling the whole result.
+   */
+  async fetchDefenderCareerTotals(
+    title: string,
+  ): Promise<{
+    tackles: number | null;
+    sacks: number | null;
+    interceptions: number | null;
+  } | null> {
+    const [tacklesGroup, interceptionsGroup] = await Promise.all([
+      this.fetchCareerColumnGroup(title, 'Tackles'),
+      this.fetchCareerColumnGroup(title, 'Interceptions'),
+    ]);
+    if (!tacklesGroup && !interceptionsGroup) return null;
+
+    // "Cmb" (combined tackles: solo plus assisted), the article's own
+    // headline tackle figure. Verified against Micah Parsons' and Patrick
+    // Surtain II's own tables (2026-09-04): neither carries a column literally
+    // named "Total" or "Tackles".
+    const tackles = tacklesGroup ? this.readGroupStat(tacklesGroup, 'Cmb') : null;
+    const sacks = tacklesGroup ? this.readGroupStat(tacklesGroup, 'Sck') : null;
+    const interceptions = interceptionsGroup ? this.readGroupStat(interceptionsGroup, 'Int') : null;
+    if (tackles === null && sacks === null && interceptions === null) return null;
+
+    return { tackles, sacks, interceptions };
+  }
+
+  /**
+   * A gridiron player's club history, read from the `pastteams` infobox
+   * field rather than from Wikidata's "member of sports team" statements.
+   *
+   * The reason this exists: those Wikidata statements are frequently
+   * undated, which is how the American football catalogue ended up with
+   * Jerry Rice credited with four simultaneous "current" spells (the
+   * Seahawks, the Broncos, the 49ers and the Raiders all showing no end
+   * date), rather than the sequential 49ers (1985-2000), Raiders
+   * (2001-2004), Seahawks (2004) career his own Wikipedia infobox states.
+   * `pastteams` is a bulleted list, one team per line, each with a
+   * `{{NFL Year|...}}` date range, and it is present on essentially every
+   * gridiron player's article regardless of era or position, unlike the
+   * season-by-season statistics table `fetchCareerColumnGroup` reads (which
+   * is a materially newer convention and absent from most players who
+   * retired before the 2000s).
+   *
+   * Three date forms are seen on real articles, all handled here:
+   *   - `{{NFL Year|2017}}-present` - a single template, open-ended
+   *   - `{{NFL Year|1985|2000}}` - one template naming both years
+   *   - `{{NFL Year|1968}}-{{NFL Year|1969}}` - two templates, one each
+   *
+   * A team name is kept as written rather than resolved to a slug here;
+   * matching it against the team catalogue is the caller's job, the same
+   * division of labour `fetchFootballCareers`' underlying reader uses.
+   */
+  async fetchGridironTeamSpells(title: string): Promise<GridironTeamSpell[] | null> {
+    const wikitext = await this.client.fetchWikitext(title);
+    if (!wikitext) return null;
+
+    const fieldMatch = /\|\s*pastteams\s*=\s*\n?((?:\*[^\n]*\n?)+)/.exec(wikitext);
+    if (!fieldMatch) return null;
+
+    const spells: GridironTeamSpell[] = [];
+
+    for (const rawLine of fieldMatch[1]!.split('\n')) {
+      const line = rawLine.trim();
+      if (!line.startsWith('*')) continue;
+
+      const teamMatch = /\[\[([^|\]]+)(?:\|[^\]]+)?\]\]/.exec(line);
+      if (!teamMatch) continue;
+      const teamName = teamMatch[1]!.trim();
+
+      const current = /present/i.test(line);
+
+      const yearTemplates = [...line.matchAll(/\{\{NFL Year\|(\d{4})(?:\|(\d{4}))?\}\}/gi)];
+      let startYear: number | null = null;
+      let endYear: number | null = null;
+
+      if (yearTemplates.length >= 1) {
+        const first = yearTemplates[0]!;
+        startYear = Number(first[1]);
+        // A single template can itself carry both years
+        // (`{{NFL Year|1985|2000}}`).
+        if (first[2]) endYear = Number(first[2]);
+      }
+      if (yearTemplates.length >= 2 && endYear === null) {
+        endYear = Number(yearTemplates[1]![1]);
+      }
+
+      // A bare year outside any template, for the rare article that writes
+      // one plainly rather than through the template.
+      if (startYear === null) {
+        const bareYears = [...line.matchAll(/\b(19[0-9]\d|20\d{2})\b/g)];
+        if (bareYears.length >= 1) startYear = Number(bareYears[0]![1]);
+        if (bareYears.length >= 2) endYear = Number(bareYears[1]![1]);
+      }
+
+      if (startYear === null) continue;
+
+      spells.push({ teamName, startYear, endYear: current ? null : endYear, current });
+    }
+
+    return spells.length > 0 ? spells : null;
+  }
+
+  /**
+   * A gridiron player's position and current team, read directly from their
+   * own `Infobox NFL biography` / `Infobox gridiron football biography`
+   * rather than trusted from Wikidata's `P413` ("position played") statement.
+   *
+   * The reason this exists: `P413` is a general-purpose property with no
+   * per-sport scoping, and a genuinely dual-sport person's Wikidata item can
+   * carry a value for each sport they played. The enrichment query that reads
+   * it takes whichever one Wikidata's own statement ranking happens to
+   * return, with no way to prefer the American-football one. Real
+   * consequences on this catalogue: John Lynch, the Hall of Fame safety and
+   * 49ers general manager, was tagged `position: 'pitcher'` from a brief
+   * baseball statement on the same Wikidata item; Kyler Murray and Deion
+   * Sanders, both correctly identified as gridiron players, were tagged their
+   * MLB fielding positions the same way. A Wikipedia infobox has no such
+   * ambiguity: this reads the specific template the article about the
+   * football career actually uses, so there is only one position to find.
+   *
+   * `position` is still checked against a whitelist of real playing
+   * positions before being returned, because the same field carries a
+   * different problem for a legend whose infobox has moved on to describe
+   * their life after playing: John Lynch's `position` field now reads
+   * "President of football operations & general manager" and Deion Sanders'
+   * reads "Head coach", both true statements about the person and neither a
+   * playing position. `career_position` is read first where present and
+   * falls back to `position` where it is not: the template carries the
+   * former specifically for a person like Lynch, whose article states
+   * `career_position = Safety` alongside the executive title in `position`,
+   * and most articles have no such split because most subjects have no
+   * second career the infobox needs to describe. A value neither field gives
+   * that the whitelist does not recognise is dropped rather than written, so
+   * a corrupted-by-crossover tag is not simply replaced with a different
+   * wrong one.
+   */
+  async fetchGridironPlayerAttributes(
+    title: string,
+  ): Promise<{ position: string | null; currentTeam: string | null } | null> {
+    const wikitext = await this.client.fetchWikitext(title);
+    if (!wikitext) return null;
+
+    const templateMatch = /\{\{\s*Infobox\s+(NFL biography|gridiron football biography)\b/i.exec(
+      wikitext,
+    );
+    if (!templateMatch) return null;
+
+    const box = parseInfobox(wikitext, templateMatch[1]);
+    if (!box) return null;
+
+    const rawPosition = box.career_position
+      ? this.plainText(box.career_position)
+      : box.position
+        ? this.plainText(box.position)
+        : null;
+    const position =
+      rawPosition && GRIDIRON_PLAYING_POSITIONS.has(rawPosition.toLowerCase())
+        ? rawPosition.toLowerCase()
+        : null;
+    const currentTeam = box.current_team ? this.plainText(box.current_team) : null;
+    if (!position && !currentTeam) return null;
+
+    return { position, currentTeam: currentTeam || null };
+  }
+
+  /**
+   * A mixed martial artist's professional record, read from
+   * `Infobox martial artist`.
+   *
+   * Unlike every career total this file reads from a season-by-season table
+   * elsewhere, MMA's infobox states the breakdown directly as nine separate
+   * counts (three ways to win, four ways to lose, plus draws and no-contests),
+   * which is what a fight record actually is: there is no season to sum, only
+   * a list of results. Verified against two real fighters before trusting the
+   * field names (2026-09-04): Khabib Nurmagomedov reads
+   * `mma_kowin=8, mma_subwin=11, mma_decwin=10`, summing to his real 29-0
+   * career; Amanda Nunes reads 13+4+6 wins against 2+2+1 losses, her real
+   * 23-5 record.
+   *
+   * `mma_dqwin` is read too, though rare enough that neither test case had
+   * one, for the same reason `mma_dqloss` is: a disqualification win is
+   * still a win, and omitting the field would undercount the handful of
+   * fighters who have one.
+   */
+  async fetchMmaRecord(title: string): Promise<{
+    wins: number;
+    losses: number;
+    draws: number;
+    noContests: number;
+    knockoutWins: number;
+    submissionWins: number;
+    decisionWins: number;
+    weightClass: string | null;
+    yearsActive: string | null;
+  } | null> {
+    const wikitext = await this.client.fetchWikitext(title);
+    if (!wikitext) return null;
+
+    if (!/\{\{\s*Infobox\s+martial\s+artist\b/i.test(wikitext)) return null;
+
+    const box = parseInfobox(wikitext, 'martial artist');
+    if (!box) return null;
+
+    const count = (field: string): number => this.leadingCount(box[field]) ?? 0;
+
+    const winFields = ['mma_kowin', 'mma_subwin', 'mma_decwin', 'mma_dqwin'];
+    const lossFields = ['mma_koloss', 'mma_subloss', 'mma_decloss', 'mma_dqloss'];
+
+    const wins = winFields.reduce((sum, field) => sum + count(field), 0);
+    const losses = lossFields.reduce((sum, field) => sum + count(field), 0);
+    const draws = count('mma_draw');
+    const noContests = count('mma_nc');
+    const knockoutWins = count('mma_kowin');
+    const submissionWins = count('mma_subwin');
+    const decisionWins = count('mma_decwin');
+
+    // No result field at all, distinct from every field genuinely reading
+    // zero: an amateur or a fighter this reader found the wrong infobox
+    // for should not be recorded as 0-0.
+    const hasAnyRecordField = [...winFields, ...lossFields, 'mma_draw', 'mma_nc'].some(
+      (field) => box[field] !== undefined,
+    );
+    if (!hasAnyRecordField) return null;
+
+    const weightClass = box.weight_class ? this.plainText(box.weight_class) : null;
+    const yearsActive = box.years_active ? this.plainText(box.years_active) : null;
+
+    return {
+      wins,
+      losses,
+      draws,
+      noContests,
+      knockoutWins,
+      submissionWins,
+      decisionWins,
+      weightClass,
+      yearsActive,
+    };
+  }
+
+  /**
+   * A mixed martial artist's title reigns, from the "Championships and
+   * accomplishments" section of their article.
+   *
+   * The section is a nested wikitext list, one promotion per top-level
+   * bullet (`*'''[[Promotion]]'''`) and one championship per sub-bullet
+   * (`**[[Some Championship]] (N times)`), where N states how many separate
+   * reigns the fighter held it across, not how many title defences. A reign
+   * is what `honour` rows should count: two Jon Jones rows for his Light
+   * Heavyweight title, one for his Heavyweight title, matching the "(Two
+   * times)" and "(One time)" his own article states, and likewise three rows
+   * for Amanda Nunes across her two divisions.
+   *
+   * Only sub-bullets stating a repeat count are read. A promotion's other
+   * bullets (finalist placings, hall-of-fame inductions, tournament wins)
+   * have no such count and are correctly left out, the same way
+   * `fetchFootballHonours` excludes a club's non-title honours from its
+   * count.
+   *
+   * The section heading's own whitespace is inconsistent between articles
+   * (`==Championships and accomplishments==` on Fedor Emelianenko's page,
+   * `== Championships and accomplishments ==` on Khabib Nurmagomedov's), so
+   * both are matched. Verified against four real fighters before trusting
+   * the pattern (2026-09-04): Jon Jones reads two Light Heavyweight reigns
+   * and one Heavyweight reign; Amanda Nunes two Bantamweight and one
+   * Featherweight; Khabib Nurmagomedov one Lightweight; Fedor Emelianenko's
+   * PRIDE and RINGS titles are read correctly by title text, but resolve to
+   * no honour row since neither promotion is in this sport's curated
+   * competitions, which is correct: he never held a UFC, Bellator, ONE or
+   * PFL title.
+   */
+  async fetchMmaTitles(title: string): Promise<{ title: string; count: number }[]> {
+    const wikitext = await this.client.fetchWikitext(title);
+    if (!wikitext) return [];
+
+    const headingMatch = /==\s*Championships and accomplishments\s*==/i.exec(wikitext);
+    if (!headingMatch) return [];
+
+    const sectionStart = headingMatch.index + headingMatch[0].length;
+    const nextHeading = /\n==[^=]/.exec(wikitext.slice(sectionStart));
+    const section = wikitext.slice(
+      sectionStart,
+      nextHeading ? sectionStart + nextHeading.index : undefined,
+    );
+
+    const results: { title: string; count: number }[] = [];
+    const wordToNumber: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5 };
+
+    for (const match of section.matchAll(
+      /^\*\*\s*(?:\[\[File:[^\]]*\]\]\s*)?\[\[([^\]]*Championship[^\]]*)\]\][^\n]*?\((one|two|three|four|five|\d+)\s*times?(?:;[^)]*)?\)/gim,
+    )) {
+      const link = match[1]!;
+      const label = link.includes('|') ? link.split('|').pop()! : link;
+      const countText = match[2]!.toLowerCase();
+      const count = wordToNumber[countText] ?? Number(countText);
+      if (!Number.isFinite(count) || count < 1) continue;
+      results.push({ title: this.plainText(label), count });
+    }
+
+    return results;
+  }
+
+  /**
+   * A mixed martial artist's UFC title-fight bouts, win or loss, from the
+   * `{{MMA record start}}` fight-by-fight table.
+   *
+   * `fetchMmaTitles` only counts title *reigns won*, so a fighter who has
+   * challenged for a UFC title and lost (Chael Sonnen: 0 reigns, 2 losing
+   * title challenges) is invisible to it and would be invisible to a "Most
+   * Title Bouts" table built on titles won alone, which is a different claim
+   * than the table's name makes. This reads the record table's Notes column
+   * instead, which states the title context on both a winning and a losing
+   * row alike ("Defended the [[UFC Heavyweight Championship]]." on a win row,
+   * "For the [[UFC Lightweight Championship]]." on a loss row that did not
+   * change hands).
+   *
+   * Each `|-`-delimited row is ten pipe-separated cells in a fixed order:
+   * Result, Record, Opponent, Method, Event, Date, Round, Time, Location,
+   * Notes. Split on `|` rather than matched by a per-field regex, because the
+   * Method and Notes cells hold free text that can itself contain
+   * parentheses and wikilinks a field-specific pattern would have to special
+   * case; splitting the row once and reading cells by position is simpler and
+   * matches how `parseInfobox` already treats the safer case of a flat
+   * `|key=value` list.
+   *
+   * Scoped to the UFC by the Event cell rather than trusted globally: a
+   * fighter's table properly includes non-UFC bouts (Bellator, PRIDE, an
+   * amateur promotion), and "for the [[Bellator Lightweight
+   * Championship]]" is a real title bout, just not a UFC one. Only event
+   * cells naming UFC are counted, matching this sport's curated competition
+   * list being UFC-only.
+   */
+  async fetchMmaTitleBouts(
+    title: string,
+  ): Promise<{ titleBoutWins: number; titleBoutLosses: number } | null> {
+    const wikitext = await this.client.fetchWikitext(title);
+    if (!wikitext) return null;
+
+    const startMatch = /\{\{\s*MMA record start\s*\}\}/i.exec(wikitext);
+    if (!startMatch) return null;
+
+    const tableStart = startMatch.index + startMatch[0].length;
+    const endMatch = /\{\{\s*MMA record end\s*\}\}/i.exec(wikitext.slice(tableStart));
+    const table = wikitext.slice(tableStart, endMatch ? tableStart + endMatch.index : undefined);
+
+    let titleBoutWins = 0;
+    let titleBoutLosses = 0;
+
+    for (const rowText of table.split(/\n\|-/).slice(1)) {
+      // Splitting on the cell delimiter leaves an empty leading element: the
+      // row text starts with the delimiter itself (`\n|{{no2}}Loss...`), so
+      // index 0 is always "" and the Result cell is at index 1, not 0.
+      const cells = rowText
+        .split(/\n\|/)
+        .slice(1, 11)
+        .map((cell) => cell.trim());
+      if (cells.length < 10) continue;
+
+      const [resultCell, , , , eventCell, , , , , notesCell] = cells;
+      if (!/\[\[\s*UFC\b/i.test(eventCell ?? '')) continue;
+      if (!/Championship/i.test(notesCell ?? '')) continue;
+
+      // The result token is usually a template (`{{yes2}}Win`,
+      // `{{no2}}Loss`) but not always: McGregor's own table writes plain
+      // "Loss" and "Win" with no wrapper on some rows. Matched on the
+      // trailing word either way, and a draw or no-contest counted as
+      // neither a win nor a loss, since holding a title is not decided by
+      // one.
+      if (/\bWin\b/i.test(resultCell ?? '')) {
+        titleBoutWins += 1;
+      } else if (/\bLoss\b/i.test(resultCell ?? '')) {
+        titleBoutLosses += 1;
+      }
+    }
+
+    return { titleBoutWins, titleBoutLosses };
+  }
+
+  /**
+   * The UFC weight classes a fighter currently holds the title in, from the
+   * same `{{MMA record start}}` table `fetchMmaTitleBouts` reads.
+   *
+   * A fighter is read as the current champion of a division when their most
+   * recent bout for that division's title (rows are written newest-first, the
+   * same order the table is displayed in) is a win whose Notes do not say the
+   * title was later vacated, stripped, or relinquished. That is also
+   * correctly what excludes a fighter who has since lost the title in a
+   * later bout: their most recent bout for that division becomes a Loss row,
+   * which this only credits a win for, or a different fighter's win row
+   * supersedes it because the newest bout for that title belongs to them.
+   *
+   * Verified against four real UFC pages (2026-09-04): Islam Makhachev,
+   * Alex Pereira and Ilia Topuria all read as champions of a division from
+   * an older bout in their record, correctly excluded because a later bout
+   * of theirs for that same title is a loss; Justin Gaethje, who beat
+   * Topuria most recently for the lightweight title with no override text on
+   * the row, reads as the current lightweight champion.
+   */
+  async fetchMmaCurrentUfcTitles(title: string): Promise<string[]> {
+    const wikitext = await this.client.fetchWikitext(title);
+    if (!wikitext) return [];
+
+    const startMatch = /\{\{\s*MMA record start\s*\}\}/i.exec(wikitext);
+    if (!startMatch) return [];
+
+    const tableStart = startMatch.index + startMatch[0].length;
+    const endMatch = /\{\{\s*MMA record end\s*\}\}/i.exec(wikitext.slice(tableStart));
+    const table = wikitext.slice(tableStart, endMatch ? tableStart + endMatch.index : undefined);
+
+    const divisionsWon = new Set<string>();
+    const divisionsSettled = new Set<string>();
+
+    for (const rowText of table.split(/\n\|-/).slice(1)) {
+      const cells = rowText
+        .split(/\n\|/)
+        .slice(1, 11)
+        .map((cell) => cell.trim());
+      if (cells.length < 10) continue;
+
+      const [resultCell, , , , eventCell, , , , , notesCell] = cells;
+      if (!/\[\[\s*UFC\b/i.test(eventCell ?? '')) continue;
+
+      const titleMatch = /\[\[\s*(UFC[^\]|]*Championship)[^\]]*\]\]/i.exec(notesCell ?? '');
+      if (!titleMatch) continue;
+      const division = this.plainText(titleMatch[1]!);
+
+      // Rows are read newest-first, so the first bout seen for a division is
+      // this fighter's most recent for it, and settles the question for that
+      // division: a later (older) row for the same title cannot change who
+      // holds it now.
+      if (divisionsSettled.has(division)) continue;
+      divisionsSettled.add(division);
+
+      const isWin = /\bWin\b/i.test(resultCell ?? '');
+      const overridden = /\b(vacat|stripp|relinquish)/i.test(notesCell ?? '');
+      if (isWin && !overridden) divisionsWon.add(division);
+    }
+
+    return [...divisionsWon];
   }
 
   /**

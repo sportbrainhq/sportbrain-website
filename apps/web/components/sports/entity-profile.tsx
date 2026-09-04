@@ -76,6 +76,8 @@ export function FactPanel({
     // club history below it. "Career details" distinguishes the two while
     // staying honest about the mixture.
     career: !suppressCurrentClub && onlyClub ? 'Current club' : 'Career details',
+    // The UFC's current champion per weight class, one fact per division.
+    titles: 'Current champions',
   };
 
   return (

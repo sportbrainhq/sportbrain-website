@@ -112,6 +112,35 @@ export interface ProviderVenue extends ProviderEntity {
 }
 
 /**
+ * A match, race or fixture as a provider describes it.
+ *
+ * Unlike the other `Provider*` shapes this is not written to `event` directly
+ * by an ingestion job today; the fixtures module reads it straight through to
+ * the API behind a cache, because live/upcoming/finished status changes faster
+ * than a nightly ingestion run would keep up with. It is still shaped as a
+ * `ProviderEntity` so the same identity-resolution path can absorb it later
+ * without a second parallel type.
+ */
+export interface ProviderFixture extends ProviderEntity {
+  fields: {
+    sport: string;
+    competitionName: string;
+    competitionLogo?: string;
+    homeTeam: string;
+    awayTeam: string;
+    homeTeamLogo?: string;
+    awayTeamLogo?: string;
+    /** String, not number: cricket's "-" placeholder and similar non-numeric scores are real provider output, not an error to coerce away. */
+    homeScore: string | null;
+    awayScore: string | null;
+    status: 'scheduled' | 'live' | 'finished' | 'unknown';
+    statusText: string;
+    startTime: string;
+    liveMinute?: string | null;
+  };
+}
+
+/**
  * What one fetch produced.
  *
  * `cursor` is what makes a job resumable. Historical backfill runs for weeks
@@ -168,6 +197,21 @@ export interface SportsDataProvider {
     cursor?: string,
   ): Promise<ProviderPage<ProviderCompetition>>;
   fetchVenues?(sportSlug: string, cursor?: string): Promise<ProviderPage<ProviderVenue>>;
+
+  /**
+   * Fixtures for one sport: whatever the provider's own "current window"
+   * covers. Not date-scoped, because not every provider accepts a date and
+   * the ones that don't should not be made to pretend otherwise. Callers
+   * bucket by status and by `startTime` themselves.
+   */
+  fetchFixtures?(sportSlug: string): Promise<ProviderFixture[]>;
+
+  /** One competition's fixtures, most-recent/most-imminent first depending on `window`. */
+  fetchCompetitionFixtures?(
+    sportSlug: string,
+    competitionRef: string,
+    window: 'past' | 'next',
+  ): Promise<ProviderFixture[]>;
 }
 
 /**

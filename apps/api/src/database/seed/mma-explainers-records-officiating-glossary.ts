@@ -1,0 +1,2065 @@
+import type { SourceSeed } from './football-overview';
+import type { ExplainerSeed } from './explainer-types';
+import { standard, definition, rulesetConcept, statistic } from './mma-explainer-helpers';
+
+/**
+ * MMA explainers: Fighter Records & Stats, Analytics, Officiating, Fouls,
+ * Corners & Coaching, Career Path, Terminology (glossary top-up) and
+ * Advanced Concepts.
+ *
+ * The largest single batch in the library. Follows the same section-order
+ * and builder conventions as `mma-explainers.ts` (Phase 1) and
+ * `mma-explainer-helpers.ts`. No real fighters, fights, incidents or
+ * statistics are used anywhere below; every example is a generic
+ * "a fighter" framing.
+ *
+ * ── SKIP LIST (concepts named in the brief that are NOT written here) ──
+ *
+ * fighter-records:
+ * - "MMA Records Explained" — already exists as Phase 1's `mma-fighter-records-explained` (start-here).
+ *
+ * mma-analytics:
+ * - "Strike Accuracy" — covered in fighter-records category (`strike-accuracy`); cross-referenced via `related`.
+ * - "Strike Defense" — covered in fighter-records category (`strike-defense`); cross-referenced via `related`.
+ * - "Takedown Accuracy" — covered in fighter-records category (`takedown-accuracy`); cross-referenced via `related`.
+ * - "Takedown Defense" — covered in fighter-records category (`takedown-defense-stat`); cross-referenced via `related`.
+ * - "Control Time" — covered in fighter-records category (`control-time`); cross-referenced via `related`.
+ * - "Finish Rate" — covered in fighter-records category (`finish-rate`); cross-referenced via `related`.
+ *
+ * officiating:
+ * - "Doctor Stoppage" — already exists as Phase 1 slug `doctor-stoppage` in `ways-to-win`; cross-referenced via `related`.
+ * - "Fouls" (category overview) — belongs to this file's own `mma-fouls-explained` entry in the fouls category instead.
+ *
+ * fouls:
+ * - "Point Deduction" (singular) — covered by officiating category's `point-deductions` (plural, per brief instruction); not duplicated.
+ * - "Disqualification" — already exists as Phase 1 slug `disqualification` in `ways-to-win`; cross-referenced via `related`.
+ *
+ * corners-and-coaching: none skipped; all 12 written.
+ *
+ * career-path:
+ * - "Contender Series" (UFC-angle) — expected to be covered by a parallel promotions/events batch as `contender-series-explained` in the `ufc` category; this file writes a distinct career-path-angle entry at `contender-series-as-a-pathway` instead, so no duplicate.
+ * - "Fighting on Short Notice" — expected to be covered by a parallel matchmaking-category batch as `short-notice-fight`; cross-referenced via `related`, not duplicated here.
+ *
+ * terminology (glossary top-up — most brief terms already exist elsewhere and are skipped):
+ * - Armbar, Back Control, Body Lock, Catchweight, Clinch, Decision, Double Leg, Fight Camp,
+ *   Ground-and-Pound, Guard, Guillotine, Interim Champion, Jab, KO, Leg Kick, Mount, No Contest,
+ *   Pound-for-Pound, Rear-Naked Choke, Scramble, Southpaw, Sprawl, Submission, Takedown, Tap,
+ *   TKO, Title Shot, Underhook, Unanimous Decision, Weight Cut
+ *   — all already exist as full pages elsewhere in the library (Phase 1 or other sport-content batches); no new content written for any of these, per the brief's explicit instruction to avoid duplicating existing full pages.
+ *
+ * advanced-concepts:
+ * - "Chain Wrestling" — expected to be covered in the wrestling category with `alsoIn: ['advanced-concepts']`.
+ * - "Cage Wrestling" — this is a whole category in the taxonomy, not a single entry.
+ * - "Hand Fighting" — expected to be covered in a striking-concepts category.
+ * - "Stance Switching" — expected to be covered as `switch-stance`/`switching-stances` in a striking or style category.
+ * - "Southpaw Dynamics" — expected to be covered by a style-matchups category.
+ * - "Cage Cutting" — expected to be covered by a striking-concepts or fight-strategy category.
+ * - "Mat Returns" — expected to be covered in the wrestling category.
+ *
+ * All other named concepts across all eight categories are written below in full.
+ */
+
+export const MMA_RECORDS_OFFICIATING_GLOSSARY_SOURCES: SourceSeed[] = [
+  {
+    key: 'wp-mma-stats',
+    provider: 'wikipedia',
+    title: 'Mixed martial arts',
+    url: 'https://en.wikipedia.org/wiki/Mixed_martial_arts',
+    license: 'CC BY-SA 4.0',
+  },
+  {
+    key: 'wp-tko-2',
+    provider: 'wikipedia',
+    title: 'Technical knockout',
+    url: 'https://en.wikipedia.org/wiki/Technical_knockout',
+    license: 'CC BY-SA 4.0',
+  },
+  {
+    key: 'wp-unified-rules-2',
+    provider: 'wikipedia',
+    title: 'Unified Rules of Mixed Martial Arts',
+    url: 'https://en.wikipedia.org/wiki/Unified_Rules_of_Mixed_Martial_Arts',
+    license: 'CC BY-SA 4.0',
+  },
+  {
+    key: 'wp-ten-point-must-2',
+    provider: 'wikipedia',
+    title: 'Ten-point must system',
+    url: 'https://en.wikipedia.org/wiki/Ten-point_must_system',
+    license: 'CC BY-SA 4.0',
+  },
+  {
+    key: 'wp-submission-2',
+    provider: 'wikipedia',
+    title: 'Submission (combat sports)',
+    url: 'https://en.wikipedia.org/wiki/Submission_(combat_sports)',
+    license: 'CC BY-SA 4.0',
+  },
+  {
+    key: 'wp-octagon-2',
+    provider: 'wikipedia',
+    title: 'Octagon (mixed martial arts)',
+    url: 'https://en.wikipedia.org/wiki/Octagon_(mixed_martial_arts)',
+    license: 'CC BY-SA 4.0',
+  },
+  {
+    key: 'wp-referee-mma',
+    provider: 'wikipedia',
+    title: 'Mixed martial arts rules',
+    url: 'https://en.wikipedia.org/wiki/Mixed_martial_arts_rules',
+    license: 'CC BY-SA 4.0',
+  },
+  {
+    key: 'wp-cutman',
+    provider: 'wikipedia',
+    title: 'Cutman',
+    url: 'https://en.wikipedia.org/wiki/Cutman',
+    license: 'CC BY-SA 4.0',
+  },
+  {
+    key: 'wp-instant-replay',
+    provider: 'wikipedia',
+    title: 'Instant replay',
+    url: 'https://en.wikipedia.org/wiki/Instant_replay',
+    license: 'CC BY-SA 4.0',
+  },
+  {
+    key: 'wp-amateur-mma',
+    provider: 'wikipedia',
+    title: 'Amateur mixed martial arts',
+    url: 'https://en.wikipedia.org/wiki/Amateur_mixed_martial_arts',
+    license: 'CC BY-SA 4.0',
+  },
+  {
+    key: 'wp-dana-white-contender',
+    provider: 'wikipedia',
+    title: "Dana White's Contender Series",
+    url: 'https://en.wikipedia.org/wiki/Dana_White%27s_Contender_Series',
+    license: 'CC BY-SA 4.0',
+  },
+  {
+    key: 'wp-fouls-mma',
+    provider: 'wikipedia',
+    title: 'Mixed martial arts rules',
+    url: 'https://en.wikipedia.org/wiki/Mixed_martial_arts_rules#Fouls',
+    license: 'CC BY-SA 4.0',
+  },
+  {
+    key: 'wd-mma',
+    provider: 'wikidata',
+    title: 'mixed martial arts',
+    url: 'https://www.wikidata.org/wiki/Q114466',
+    license: 'CC0 1.0',
+  },
+];
+
+// ─── Fighter Records & Stats ────────────────────────────────────────────────
+
+const FIGHTER_RECORDS: ExplainerSeed[] = [
+  definition({
+    slug: 'what-does-20-4-mean',
+    title: 'What Does 20–4 Mean?',
+    category: 'fighter-records',
+    aliases: ['what does 20-4 mean', 'how to read a fight record', 'mma record notation'],
+    summary: 'Reading a fighter’s win–loss notation at a glance.',
+    difficulty: 'beginner',
+    readMinutes: 2,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `A record written as **20–4** means 20 wins and 4 losses, with no draws. A third number, when present, is draws: 20–4–1 means 20 wins, 4 losses, 1 draw. A fourth number after that, sometimes shown in parentheses or after an "NC", is no contests, results that count as neither a win nor a loss.`,
+    example: `A fighter listed as 18–2–0 (1 NC) has fought 21 times: 18 wins, 2 losses, no draws, and one additional bout that was ruled a no contest and does not count toward either total.`,
+    misunderstandings: `A common one: assuming the numbers are always wins–draws–losses. The order is standardised as wins first, then losses, then draws; reading a record with the wrong order attached produces a completely wrong impression of a fighter.`,
+  }),
+
+  statistic({
+    slug: 'ko-tko-wins',
+    title: 'KO/TKO Wins',
+    category: 'fighter-records',
+    aliases: ['ko tko wins', 'knockout wins stat', 'wins by knockout'],
+    summary: 'The count of a fighter’s wins that ended by knockout or technical knockout.',
+    difficulty: 'beginner',
+    isOfficial: true,
+    readMinutes: 2,
+    sourceKeys: [{ key: 'wp-tko-2' }],
+    measures: `How many of a fighter's career wins ended by knockout or technical knockout, as opposed to submission or decision.`,
+    formula: `A simple count: every win result officially recorded as "KO" or "TKO" is added together. Some records list KO and TKO separately; most summary listings combine them into one figure.`,
+    example: `A fighter with a 15–2 record and 10 KO/TKO wins has finished two-thirds of their career wins by strikes, a very different profile from a fighter with the same overall record built mostly on decisions.`,
+    interpret: `A high KO/TKO win count relative to total wins signals a fighter who finishes fights standing, which matters for style matchups, betting-market-style discussion of finish probability, and a promotion's own marketing of a fighter as a dangerous striker.`,
+    limitations: `The count alone says nothing about opposition quality, how long ago the wins came, or a fighter's durability against strikers with heavier hands than their past opponents.`,
+  }),
+
+  statistic({
+    slug: 'submission-wins',
+    title: 'Submission Wins',
+    category: 'fighter-records',
+    aliases: ['submission wins stat', 'wins by submission'],
+    summary: 'The count of a fighter’s wins that ended by tap-out or referee-stopped submission.',
+    difficulty: 'beginner',
+    isOfficial: true,
+    readMinutes: 2,
+    sourceKeys: [{ key: 'wp-submission-2' }],
+    measures: `How many of a fighter's career wins ended by submission, whether by tap, verbal submission, or a referee stopping the fight because a hold is fully applied and the danger is clear.`,
+    formula: `A count of every win officially recorded with the method "submission", regardless of which specific technique (choke, joint lock, or otherwise) produced it.`,
+    example: `A fighter with 12 wins, 9 of them by submission, has built their career almost entirely around finishing fights on the ground or in a scramble, a profile that shapes how opponents are likely to game-plan against them.`,
+    interpret: `A high submission-win count is a reasonable proxy for grappling danger, though it does not distinguish a fighter who hunts submissions aggressively from one who only finds them opportunistically when a fight happens to end up on the mat.`,
+    limitations: `The raw count does not separate the specific submissions used, nor does it show how many submission attempts were unsuccessful along the way; see "Submission Attempts" for that half of the picture.`,
+  }),
+
+  statistic({
+    slug: 'decision-wins',
+    title: 'Decision Wins',
+    category: 'fighter-records',
+    aliases: ['decision wins stat', 'wins by decision'],
+    summary:
+      'The count of a fighter’s wins that went the scheduled distance and were awarded on the judges’ scorecards.',
+    difficulty: 'beginner',
+    isOfficial: true,
+    readMinutes: 2,
+    sourceKeys: [{ key: 'wp-ten-point-must-2' }],
+    measures: `How many of a fighter's career wins were decided by the judges rather than ending early by knockout, technical knockout or submission.`,
+    formula: `A count of every win recorded with the method "decision" (unanimous, split or majority all count toward this total, since the distinction is about how the fight ended, not by what margin).`,
+    example: `A fighter with a 20–3 record and 14 decision wins has a style that tends to win rounds without finishing, which is neither a better nor a worse profile than a heavy finisher's, just a different one, and one judges' scorecards are built to reward.`,
+    interpret: `A high proportion of decision wins is often, though not always, associated with a control-based or high-volume style rather than a one-punch or submission-hunting style; it says something about how a fighter wins, not how good they are.`,
+    limitations: `The figure does not show how close those decisions were, nor whether they were comfortable wins or narrow ones a different set of three judges might have scored the other way.`,
+  }),
+
+  statistic({
+    slug: 'win-streak',
+    title: 'Win Streak',
+    category: 'fighter-records',
+    aliases: ['winning streak', 'current win streak mma'],
+    summary:
+      'The number of consecutive wins a fighter currently holds without a loss or no contest in between.',
+    difficulty: 'beginner',
+    isOfficial: true,
+    readMinutes: 2,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    measures: `How many fights in a row, most recent first, a fighter has won without an intervening loss.`,
+    formula: `Counted back from the most recent result: a loss resets the streak to zero, while most tracking treats a no contest as neither ending nor extending it, since it is not a win or a loss.`,
+    example: `A fighter who has won their last six fights, regardless of the methods, is on a six-fight win streak, and that streak would reset to zero the moment they lose their next bout, even if their overall career record remains strongly positive.`,
+    interpret: `A long win streak is often used in matchmaking and promotion to argue for a title opportunity, though the streak's length alone says nothing about the quality of opposition it was built against.`,
+    limitations: `A win streak treats every win identically regardless of opponent, method, or how competitive the fight was, which is exactly the gap "Opponent Quality" and "Strength of Schedule" in the Analytics category exist to address.`,
+  }),
+
+  statistic({
+    slug: 'finish-rate',
+    title: 'Finish Rate',
+    category: 'fighter-records',
+    aliases: ['finishing rate mma', 'finish percentage'],
+    summary:
+      'The percentage of a fighter’s wins that ended by knockout, technical knockout or submission rather than decision.',
+    difficulty: 'intermediate',
+    isOfficial: true,
+    readMinutes: 2,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    measures: `How often a fighter ends a fight before the judges get involved, expressed as a share of their total wins.`,
+    formula: `(KO/TKO wins + submission wins) ÷ total wins, expressed as a percentage.`,
+    example: `A fighter with 10 wins, 8 of them by KO/TKO or submission, has an 80% finish rate; a fighter with the same 10-win total but only 3 finishes has a 30% finish rate, even if both fighters have identical overall records.`,
+    interpret: `A high finish rate is one input into predicting how a future fight might end, and is often discussed alongside an opponent's own finish rate and durability, though it should not be read as a guarantee: even fighters with very high finish rates go the distance regularly against durable or defensively sound opponents.`,
+    limitations: `Finish rate treats a first-round knockout over a weak opponent the same as a hard-fought finish in the final round of a five-round fight, and, like every record-based statistic, does not adjust for who the wins came against.`,
+  }),
+
+  statistic({
+    slug: 'significant-strikes',
+    title: 'Significant Strikes',
+    category: 'fighter-records',
+    aliases: ['significant strikes landed', 'sig strikes mma'],
+    summary:
+      'Strikes landed at effective range or with genuine force, as distinct from every strike thrown or landed.',
+    difficulty: 'intermediate',
+    isOfficial: true,
+    readMinutes: 3,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    measures: `Not every strike landed in a fight; specifically, strikes landed either at distance with power, or strikes landed in a clinch or on the ground that a stats provider's scoring criteria judge to be genuinely damaging or meaningful, as opposed to short-range strikes, glancing blows, or a high volume of light ground-and-pound that lands but does little.`,
+    formula: `A promotion's official statistics provider applies its own published criteria, scored live by trained statisticians watching the broadcast, to separate "significant" strikes from strikes thrown at close range with a clinch for control, or light shots that land while grinding out position, none of which is counted as significant even though contact was made.`,
+    example: `A fighter who lands 40 strikes in a round but 25 of them are short, glancing shots thrown while pressed against the fence controlling a clinch might be credited with only 15 significant strikes for that round, a materially different picture from the raw total.`,
+    interpret: `Significant strikes are the figure most commonly quoted in broadcasts and used to argue who "won the striking" in a given round or fight, and are a meaningfully better indicator of clean, meaningful offence than a raw total-strikes count.`,
+    limitations: `The line between "significant" and merely-landed is a judgment call made by the tracking statistician in real time, not a mechanically precise measurement, so figures from different providers, or even different rounds scored by different statisticians, are not perfectly comparable.`,
+  }),
+
+  statistic({
+    slug: 'strike-accuracy',
+    title: 'Strike Accuracy',
+    category: 'fighter-records',
+    aliases: ['striking accuracy mma', 'strikes landed percentage'],
+    summary: 'The share of a fighter’s attempted significant strikes that actually land.',
+    difficulty: 'intermediate',
+    isOfficial: true,
+    readMinutes: 2,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    measures: `How often a fighter's attempted significant strikes find their target, rather than being blocked, slipped, or missed entirely.`,
+    formula: `Significant strikes landed ÷ significant strikes attempted, expressed as a percentage, tracked by a promotion's official statistics provider from the same live scoring that produces the significant-strikes count itself.`,
+    example: `A fighter who attempts 60 significant strikes in a fight and lands 30 of them has a 50% strike accuracy for that fight, regardless of how many total strikes were thrown at close range or on the ground.`,
+    interpret: `High strike accuracy is generally read as a sign of a sharp, efficient striker who does not waste output, and is often discussed alongside volume: a fighter with modest volume but very high accuracy can still be dangerous, since a smaller number of clean, accurate strikes can matter more than a higher, less accurate volume.`,
+    limitations: `Accuracy alone does not capture power: a fighter can land a high percentage of relatively light strikes and still lose rounds to an opponent landing fewer, harder shots. It also does not adjust for an opponent's own output or defensive style, both of which affect how hard a given accuracy figure is to achieve.`,
+  }),
+
+  statistic({
+    slug: 'strike-defense',
+    title: 'Strike Defense',
+    category: 'fighter-records',
+    aliases: ['striking defense mma', 'strikes absorbed percentage'],
+    summary: 'The share of an opponent’s attempted significant strikes a fighter avoids.',
+    difficulty: 'intermediate',
+    isOfficial: true,
+    readMinutes: 2,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    measures: `How often a fighter avoids taking their opponent's significant strikes, whether by blocking, slipping, moving out of range, or otherwise not being hit.`,
+    formula: `1 minus (opponent's significant strikes landed against this fighter ÷ opponent's significant strikes attempted against this fighter), expressed as a percentage. A fighter who is hit by 40% of the significant strikes thrown at them has a strike defense of 60%.`,
+    example: `A fighter whose opponents attempt 50 significant strikes against them across a fight, of which only 15 land, has a strike defense of 70% for that fight, reflecting head movement, footwork or a high guard that keeps most incoming offence from finding its target.`,
+    interpret: `Strike defense is generally read alongside strike accuracy on the other side of a matchup: a fighter with strong offensive accuracy against an opponent with weak strike defense is expected to have a clear path to landing clean, and the reverse is expected to be a harder fight to solve.`,
+    limitations: `The figure does not distinguish a fighter who avoids strikes through elite technical defense from one whose opponents simply have low volume or poor accuracy to begin with; it is a measurement relative to whatever was thrown at them, not an absolute skill score.`,
+  }),
+
+  statistic({
+    slug: 'takedown-accuracy',
+    title: 'Takedown Accuracy',
+    category: 'fighter-records',
+    aliases: ['takedown accuracy mma', 'takedowns landed percentage'],
+    summary: 'The share of a fighter’s attempted takedowns that are successfully completed.',
+    difficulty: 'intermediate',
+    isOfficial: true,
+    readMinutes: 2,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    measures: `How often a fighter's takedown attempts actually bring the fight to the ground, as opposed to being stuffed, defended, or abandoned mid-attempt.`,
+    formula: `Takedowns landed ÷ takedowns attempted, expressed as a percentage, tracked officially by a promotion's statistics provider.`,
+    example: `A fighter who attempts 8 takedowns across a fight and completes 5 of them has a 62.5% takedown accuracy for that fight, a strong figure against a durable or well-prepared wrestler on the other side.`,
+    interpret: `Takedown accuracy is used to judge how effectively a fighter can dictate where a fight happens, which matters most against opponents whose game plan depends on staying on the feet.`,
+    limitations: `It does not capture how much effort or how many exchanges (and how much energy or risk of being countered) went into setting up each successful attempt, nor does it adjust for the specific opponent's takedown defense, which is the other half of the same exchange.`,
+  }),
+
+  statistic({
+    slug: 'takedown-defense-stat',
+    title: 'Takedown Defense',
+    category: 'fighter-records',
+    aliases: ['takedown defense stat', 'takedowns stuffed percentage'],
+    summary: 'The share of an opponent’s attempted takedowns a fighter successfully stops.',
+    difficulty: 'intermediate',
+    isOfficial: true,
+    readMinutes: 2,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    measures: `How often a fighter prevents an opponent's takedown attempts from landing, as a tracked statistic. This is the countable, official record-keeping figure; the underlying skill of sprawling, hand-fighting and staying off the fence is covered as a technique elsewhere in the library.`,
+    formula: `1 minus (opponent's takedowns landed against this fighter ÷ opponent's takedowns attempted against this fighter), expressed as a percentage.`,
+    example: `A fighter whose opponents attempt 10 takedowns against them across a career sample, of which only 2 land, has a takedown defense of 80%, a figure often cited to argue a fighter's fight is unlikely to end up on the ground against their will.`,
+    interpret: `High takedown defense is a strong predictor that a fighter can keep a fight standing against most opposition, which matters enormously for style matchups between strikers and wrestlers.`,
+    limitations: `Like takedown accuracy, the figure does not adjust for the quality of the wrestlers attempting those takedowns, and a fighter's takedown defense against a weak schedule of opponents is not the same evidence as the same figure against elite wrestlers.`,
+  }),
+
+  statistic({
+    slug: 'control-time',
+    title: 'Control Time',
+    category: 'fighter-records',
+    aliases: ['control time mma', 'ground control time'],
+    summary: 'The total time a fighter spends in a dominant grappling position over an opponent.',
+    difficulty: 'intermediate',
+    isOfficial: true,
+    readMinutes: 2,
+    sourceKeys: [{ key: 'wp-ten-point-must-2' }],
+    measures: `How long, across a round or a fight, a fighter holds a top or otherwise dominant position (in a clinch against the fence, or on the ground in guard, half guard, side control, mount or back control) over their opponent.`,
+    formula: `Tracked live by a promotion's statistics provider as a running clock, started and stopped as position changes, and reported as total minutes and seconds for the round or fight.`,
+    example: `A fighter who takes an opponent down early in a round and holds top position for the remaining four minutes without being finished or reversed would be credited with roughly four minutes of control time for that round, a figure judges are instructed to weigh heavily even without a finish.`,
+    interpret: `Control time is one of the clearest, most direct inputs into how judges are meant to score a round under the criteria used across most jurisdictions, and heavy control time without significant offensive output is still a common source of scoring debate.`,
+    limitations: `Raw control time does not distinguish a fighter using top position to land damaging strikes and work for a submission from one who is largely stalling in a dominant position without advancing the fight, a distinction judges are separately asked to weigh.`,
+  }),
+
+  statistic({
+    slug: 'submission-attempts',
+    title: 'Submission Attempts',
+    category: 'fighter-records',
+    aliases: ['submission attempts mma', 'sub attempts stat'],
+    summary: 'The count of times a fighter attempts to finish a fight with a submission hold.',
+    difficulty: 'intermediate',
+    isOfficial: true,
+    readMinutes: 2,
+    sourceKeys: [{ key: 'wp-submission-2' }],
+    measures: `How many times, across a round or fight, a fighter attempts a submission, whether or not it comes close to finishing the fight.`,
+    formula: `A count tracked live by a promotion's statistics provider each time a fighter transitions into a recognisable submission attempt (locking in a choke, isolating a limb for a joint lock), regardless of how far the attempt progresses before being defended.`,
+    example: `A fighter who attacks with three different choke attempts across a single round, defended each time by their opponent's hand-fighting or posture, would be credited with three submission attempts for that round even though none of them resulted in a tap.`,
+    interpret: `Submission attempts are read as a sign of grappling aggression and are one of the criteria judges are instructed to weigh, since a fighter attacking for finishes is generally viewed more favourably in a close round than one who is merely controlling position passively.`,
+    limitations: `The count does not distinguish a deep, nearly-finished attempt from a fleeting one abandoned in half a second, both of which are typically logged the same way; commentary and film review, not the raw number, usually carry that distinction.`,
+  }),
+
+  statistic({
+    slug: 'knockdowns',
+    title: 'Knockdowns',
+    category: 'fighter-records',
+    aliases: ['knockdowns mma stat', 'knockdowns landed'],
+    summary: 'The count of times a fighter’s strikes put an opponent on the canvas.',
+    difficulty: 'beginner',
+    isOfficial: true,
+    readMinutes: 2,
+    sourceKeys: [{ key: 'wp-tko-2' }],
+    measures: `How many times a fighter's legal strikes cause their opponent to be knocked down, whether by a clean knockout blow that puts them fully down, or a strike that puts a hand, knee or the seat down without the fight ending on the spot.`,
+    formula: `A count tracked officially each time a strike visibly buckles or drops an opponent, judged by the tracking statistician (and separately noted by the referee and judges, since a knockdown carries direct scoring weight under most jurisdictions' criteria).`,
+    example: `A fighter who lands a hard right hand that drops their opponent to a knee, who then recovers and continues, would be credited with a knockdown for that exchange, distinct from a full knockout, where the fight ends immediately.`,
+    interpret: `A knockdown is one of the single most heavily weighted events under most rounds-scoring criteria: a round where one fighter scores a knockdown is difficult for the other fighter to win on the cards even with a clear volume advantage otherwise.`,
+    limitations: `The figure does not, on its own, show how quickly a fighter recovered from being knocked down, nor how much danger they were in afterward, both of which matter more to how a round is actually scored than the bare count.`,
+  }),
+
+  statistic({
+    slug: 'fight-time',
+    title: 'Fight Time',
+    category: 'fighter-records',
+    aliases: ['total fight time mma', 'career fight time'],
+    summary:
+      'The total time a fighter has spent actively competing, summed across their career or a given fight.',
+    difficulty: 'beginner',
+    isOfficial: true,
+    readMinutes: 2,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    measures: `Either the length of a single fight (from the opening bell to the finish or the final bell) or, summed across a career, the total number of minutes a fighter has spent actively competing in the cage or ring.`,
+    formula: `For a single fight: rounds completed multiplied by round length, plus the elapsed time of any unfinished final round. For a career total: the sum of every fight's individual time.`,
+    example: `A fighter finished 2 minutes 14 seconds into round one has a fight time of 2:14 for that bout; a fighter who goes the full three rounds has a fight time of 15:00.`,
+    interpret: `Career fight time is sometimes used alongside a fighter's age and total fight count to discuss wear and durability, since two fighters with the same number of fights can have very different amounts of accumulated time spent absorbing and dealing damage.`,
+    limitations: `Fight time treats a fight spent almost entirely controlling on the ground the same as one spent in a full-output striking battle, so it is a rough proxy for wear at best, not a precise measure of physical toll.`,
+  }),
+
+  standard({
+    slug: 'reach',
+    title: 'Reach',
+    category: 'fighter-records',
+    aliases: ['mma reach measurement', 'fighter reach stat'],
+    summary:
+      'The distance between the tips of a fighter’s middle fingers with both arms fully extended to the sides.',
+    difficulty: 'beginner',
+    readMinutes: 2,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `**Reach** is a fixed physical measurement, taken with a fighter standing with both arms stretched out to the sides, from the tip of one middle finger to the tip of the other. It is published alongside height and weight class as part of a fighter's basic profile.`,
+    howItWorks: `Unlike a performance statistic, reach does not change fight to fight (barring measurement error or a fighter's profile being updated) and is not itself something a fighter does; it is a physical attribute that shapes what range a fighter can fight at comfortably.`,
+    example: `A fighter with a notably longer reach than their opponent may be able to land jabs and kicks while staying outside their opponent's own effective range, a tactical advantage often discussed before a fight and tested (or neutralised by clever footwork) once it starts.`,
+    whyItMatters: `Reach is one of the first things broadcasters and analysts point to when previewing a fight, since it directly affects what range each fighter is likely to want to fight at.`,
+    misunderstandings: `A common one: assuming a reach advantage guarantees a striking advantage. Reach matters far less without the footwork, timing and jab to actually use it; a shorter fighter with better range management and setups routinely beats a longer fighter who cannot use their length effectively.`,
+    related: ['height-vs-reach', 'strike-accuracy'],
+  }),
+
+  standard({
+    slug: 'height-vs-reach',
+    title: 'Height vs Reach',
+    category: 'fighter-records',
+    aliases: ['height vs reach mma', 'height and reach differences'],
+    summary: 'Two separate measurements that do not always move together.',
+    difficulty: 'beginner',
+    readMinutes: 2,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `Height and reach are correlated but not the same measurement, and fighters' proportions vary: a shorter fighter can have a longer-than-expected reach relative to their height, and a taller fighter can have a comparatively shorter one.`,
+    howItWorks: `Both figures are published in a fighter's profile, and comparing them for a single fighter, or between two fighters ahead of a matchup, tells a reader more about likely range dynamics than either number alone.`,
+    example: `A fighter listed at 5'9" with a 76-inch reach has unusually long arms for their height, and may be able to strike effectively from a range that would normally suit a taller opponent, complicating an opponent's plan to simply "out-reach" them based on height alone.`,
+    whyItMatters: `Fight previews frequently cite reach differentials to predict how a striking matchup will play out, and understanding that height alone is an incomplete proxy for that avoids a common oversimplification.`,
+    misunderstandings: `A common one: assuming the taller fighter always has the longer reach. It usually correlates, but not reliably enough to skip checking the actual reach figures for a specific matchup.`,
+    related: ['reach'],
+  }),
+];
+
+// ─── MMA Analytics ──────────────────────────────────────────────────────────
+
+const MMA_ANALYTICS: ExplainerSeed[] = [
+  standard({
+    slug: 'how-to-read-mma-statistics',
+    title: 'How to Read MMA Statistics',
+    category: 'mma-analytics',
+    aliases: ['how to read mma stats', 'mma statistics explained', 'official vs derived mma stats'],
+    summary:
+      'Three different kinds of number get called "MMA stats", and they are not interchangeable.',
+    difficulty: 'intermediate',
+    isFeatured: true,
+    readMinutes: 4,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `Numbers quoted about a fighter or a fight come from three genuinely different sources, and conflating them is the single most common mistake in how MMA statistics get discussed. **Official promotion statistics** are tracked and published by the promotion itself or its licensed statistics provider, using a fixed, published methodology, and cover things like significant strikes, takedowns, and control time. **Third-party analytics** come from independent sites and analysts who build their own tracked datasets, sometimes duplicating what a promotion tracks and sometimes covering things promotions do not track at all, using methodologies that are their own and not officially sanctioned. **Derived, SportBrainHQ-style metrics** are calculated from underlying official or third-party data using a specific formula an analyst has chosen: a rate stat like strikes landed per minute, or a more elaborate model like an opponent-quality score, neither of which any promotion publishes directly.`,
+    howItWorks: `The practical test for which bucket a number falls into: was it tracked live, at the event, by the promotion's own statisticians, using their published criteria? That is official. Was it tracked independently, by someone outside the promotion, using their own criteria? That is third-party analytics. Was it calculated afterward, from other numbers, using a formula somebody chose? That is derived. A single figure quoted in a broadcast or an article does not always make clear which of the three it is, which is exactly why it is worth learning to ask.`,
+    example: `"Significant strikes landed" is an official promotion statistic: it was tracked live by the promotion's contracted statisticians during the fight. "Significant strikes landed per minute" is a derived metric: nobody tracks it directly, it is calculated afterward by dividing the official strike count by the official fight time. Both numbers are legitimate and useful, but only one of them is an official published figure, and the other is one analyst's choice of how to present that figure as a rate.`,
+    whyItMatters: `Understanding which bucket a statistic belongs to changes how much weight it deserves and how comparable it is across sources: two derived metrics with the same name calculated by two different analysts can differ, because there is no single official formula behind them, while two citations of the same official statistic for the same fight should always match.`,
+    misunderstandings: `A common one: treating every number that appears next to a fighter's name as equally authoritative. A promotion's own significant-strikes figure and an independent site's home-built "power score" for the same fighter are not the same kind of fact, even when they are presented in the same table.`,
+    takeaways: `Ask, for any MMA statistic: was this tracked live by the promotion (official), tracked independently by someone else (third-party analytics), or calculated afterward from other numbers using a chosen formula (derived)? The rest of this category applies that distinction to every specific metric covered.`,
+    related: [
+      'significant-strikes',
+      'strike-accuracy',
+      'significant-strikes-per-minute',
+      'opponent-quality',
+    ],
+  }),
+
+  statistic({
+    slug: 'significant-strikes-per-minute',
+    title: 'Significant Strikes per Minute',
+    category: 'mma-analytics',
+    aliases: ['sig strikes per minute', 'striking output rate mma'],
+    summary:
+      'A rate stat expressing how much significant striking output a fighter produces per minute of fight time.',
+    difficulty: 'intermediate',
+    isDerived: true,
+    readMinutes: 2,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    measures: `How much significant striking volume a fighter generates, normalised for how long they have actually been fighting, so a fighter's output can be compared regardless of how many rounds or minutes their fights have lasted.`,
+    formula: `Total significant strikes landed ÷ total fight time in minutes, calculated from the official significant-strikes and fight-time figures rather than published directly by any promotion.`,
+    example: `A fighter who lands 60 significant strikes across 15 minutes of total fight time has a significant strikes per minute figure of 4.0, which can then be compared directly against a fighter whose fights have run much shorter or much longer.`,
+    interpret: `A high figure indicates a high-output striker, useful for comparing activity levels between fighters who fight different numbers of rounds or finish fights at different points, something the raw significant-strikes count cannot do fairly on its own.`,
+    limitations: `The rate rewards volume without regard to accuracy or power; a fighter can post a high per-minute figure by throwing a high volume of strikes that mostly miss or land softly.`,
+  }),
+
+  statistic({
+    slug: 'strike-differential',
+    title: 'Strike Differential',
+    category: 'mma-analytics',
+    aliases: ['striking differential mma', 'strikes landed minus absorbed'],
+    summary:
+      'The net difference between significant strikes a fighter lands and significant strikes they absorb.',
+    difficulty: 'intermediate',
+    isDerived: true,
+    readMinutes: 2,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    measures: `Whether a fighter tends to come out ahead or behind in the raw exchange of significant strikes, combining their offensive output and their defensive exposure into a single net number.`,
+    formula: `(Significant strikes landed per minute) minus (significant strikes absorbed per minute), calculated from the underlying official per-fight figures.`,
+    example: `A fighter who lands 4.5 significant strikes per minute and absorbs 2.0 has a strike differential of +2.5, a strongly positive figure suggesting they tend to win striking exchanges by a wide margin, at least by volume.`,
+    interpret: `A consistently positive strike differential across a career is often cited as evidence of a fighter's overall striking dominance, and a negative one as a durability or defensive concern, particularly if paired with a low finish rate for opponents.`,
+    limitations: `Volume differential says nothing about power or fight-changing moments: a fighter can have a strongly negative differential in a fight they still won by landing one decisive strike, and the figure treats every strike as equal weight regardless of how much damage it did.`,
+  }),
+
+  statistic({
+    slug: 'takedown-average',
+    title: 'Takedown Average',
+    category: 'mma-analytics',
+    aliases: ['takedowns per 15 minutes', 'takedown rate mma'],
+    summary:
+      'A rate stat expressing how often a fighter completes takedowns, normalised for fight time.',
+    difficulty: 'intermediate',
+    isDerived: true,
+    readMinutes: 2,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    measures: `How frequently a fighter lands takedowns across their career or recent fights, adjusted for how much time they have spent competing, so fighters who fight different numbers of rounds can be compared fairly.`,
+    formula: `Total takedowns landed ÷ total fight time, commonly expressed per 15 minutes (roughly one three-round fight) to give the figure an intuitive scale, calculated from the underlying official takedown and fight-time counts.`,
+    example: `A fighter who lands 9 takedowns across 45 minutes of total career fight time has a takedown average of 3.0 per 15 minutes, a figure that can be set directly against another fighter's own average regardless of how many total fights either has had.`,
+    interpret: `A high takedown average is used to characterise a fighter's overall approach as wrestling-heavy, and is often discussed alongside takedown accuracy, since a high average built on a low accuracy still implies constant attempts even if many fail.`,
+    limitations: `The rate does not adjust for opposition, so a high average built against weak takedown defense is a different signal from the same average built against elite wrestlers, a gap that opponent-quality-style metrics try, imperfectly, to address.`,
+  }),
+
+  statistic({
+    slug: 'knockdown-rate',
+    title: 'Knockdown Rate',
+    category: 'mma-analytics',
+    aliases: ['knockdown rate mma', 'knockdowns per fight rate'],
+    summary:
+      'How often a fighter scores a knockdown, normalised across their fights or fight time.',
+    difficulty: 'intermediate',
+    isDerived: true,
+    readMinutes: 2,
+    sourceKeys: [{ key: 'wp-tko-2' }],
+    measures: `How frequently a fighter's power translates into actually dropping opponents, rather than simply landing strikes, as a rate rather than a raw count so fighters with different numbers of fights can be compared.`,
+    formula: `Total career knockdowns scored ÷ total fights (or, alternatively, ÷ total fight time), calculated from the underlying official knockdown counts. Different sites use either denominator, which is part of why this is a derived rather than official figure.`,
+    example: `A fighter who has scored 6 knockdowns across 12 career fights has a knockdown rate of 0.5 per fight, a notably higher figure than a fighter with 2 knockdowns across the same number of fights, even if both fighters have similar overall records.`,
+    interpret: `A high knockdown rate is generally read as a sign of genuine one-strike power, distinct from a high finish rate, since a fighter can finish fights by cumulative damage or a late stoppage without ever scoring a discrete knockdown along the way.`,
+    limitations: `Like every rate stat in this category, it does not adjust for the durability of opponents faced, and different sites calculating it with different denominators (per fight vs per minute) will not produce directly comparable figures for the same fighter.`,
+  }),
+
+  statistic({
+    slug: 'opponent-quality',
+    title: 'Opponent Quality',
+    category: 'mma-analytics',
+    aliases: ['opponent quality metric', 'strength of opposition mma'],
+    summary:
+      'An attempt to quantify how difficult a fighter’s past opposition has been, with no single agreed method for doing it.',
+    difficulty: 'advanced',
+    isDerived: true,
+    readMinutes: 3,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    measures: `How strong the fighters a given fighter has faced were, at the time they fought, an attempt to add context to a raw win-loss record.`,
+    formula: `There is no single, industry-standard formula. Different analysts build their own versions, typically weighting factors such as an opponent's ranking or win percentage at the time of the fight, the level of competition the opponent themselves had faced, and sometimes a rating-system-style calculation similar to those used in other sports. Two sites' "opponent quality" scores for the same fighter can differ substantially because the underlying methodology differs.`,
+    example: `Two fighters can both hold 12–0 records, but one has faced mostly unranked or debuting opponents while the other has faced several ranked contenders; an opponent-quality metric is an attempt, imperfect and method-dependent, to put a number on that gap rather than leaving it to prose description alone.`,
+    interpret: `Treat any single opponent-quality figure as one analyst's model output, not an agreed fact, useful for a rough comparison but not precise enough to settle close arguments about, say, whether one 12–0 record is "really" better than another.`,
+    limitations: `Because there is no standard formula, opponent-quality scores are among the least comparable of all derived MMA metrics across sources; a figure quoted without naming its source and methodology should be treated with real caution.`,
+  }),
+
+  statistic({
+    slug: 'strength-of-schedule',
+    title: 'Strength of Schedule',
+    category: 'mma-analytics',
+    aliases: ['strength of schedule mma', 'career opposition strength'],
+    summary:
+      'A cumulative, career-level version of opponent quality: how tough a fighter’s overall run of opposition has been.',
+    difficulty: 'advanced',
+    isDerived: true,
+    readMinutes: 3,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    measures: `The overall difficulty of every opponent a fighter has faced across their career (or across a defined stretch of it), rather than any single fight's opponent quality in isolation.`,
+    formula: `Typically built by averaging or summing an opponent-quality figure across every fight in the sample, again with no single agreed method; some versions weight recent fights more heavily than early-career ones, on the reasoning that a fighter's level and their opponents' level both tend to rise together over a career.`,
+    example: `A fighter who has fought largely regional-level competition early in their career and then several ranked contenders in their last few fights will have a strength-of-schedule figure that reflects a mix of both, and how that mix is weighted (recent-heavy or evenly) changes the resulting number.`,
+    interpret: `Strength of schedule is most useful as a rough sanity check on an otherwise gaudy record, and is regularly invoked in debates about whether a fighter deserves a ranking or a title opportunity relative to a rival with a similar record but a different run of opposition.`,
+    limitations: `As with opponent quality, the absence of a standard formula means figures are analyst-specific, and a career-long average can also obscure genuine improvement or decline by blending very different stretches of a fighter's career into one number.`,
+  }),
+
+  standard({
+    slug: 'win-probability-concepts',
+    title: 'Win Probability Concepts',
+    category: 'mma-analytics',
+    aliases: ['win probability mma', 'fight prediction models'],
+    summary:
+      'How analysts and models turn a fight matchup into a probability, as an analytical concept rather than betting advice.',
+    difficulty: 'advanced',
+    readMinutes: 3,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `A **win probability** is a statement that one fighter is estimated to be more likely than not to win a given matchup, typically expressed as a percentage (for example, "estimated at roughly 60% to win"). It is a way of expressing uncertainty about a fight's outcome numerically rather than only in prose, and it is produced by a model or an analyst's judgement, not observed directly like an official statistic.`,
+    howItWorks: `A win-probability estimate is generally built from some combination of the two fighters' records, styles, recent form, physical attributes like reach and age, and, in more sophisticated models, rating systems similar to those used in other sports that update after every fight based on who beat whom and how. None of this guarantees an outcome: a fight estimated as heavily favouring one fighter can still be won by the other, since MMA has structurally high variance, a single strike or submission can end a fight regardless of how the overall matchup was assessed beforehand.`,
+    example: `A model might estimate one fighter at a 65% win probability against an opponent based on style matchup, recent form and physical attributes, meaning that, if the same matchup were fought many times under similar conditions, the model expects that fighter to win roughly two times out of three, not that the fight is a foregone conclusion.`,
+    whyItMatters: `Win-probability thinking is a genuinely useful way to reason about uncertain outcomes without pretending a prediction is a fact, and understanding the concept helps separate "this fighter is favoured" (a probabilistic estimate) from "this fighter will win" (a claim of certainty the sport rarely supports).`,
+    misunderstandings: `A common one: treating a stated probability as a guarantee, or, conversely, dismissing the entire concept because an underdog occasionally wins. Both miss the point: a well-calibrated 30% probability should, and is expected to, come true roughly three times in ten, so a single underdog win does not invalidate the estimate that preceded it.`,
+    related: ['opponent-quality', 'strength-of-schedule', 'how-to-read-mma-statistics'],
+  }),
+
+  statistic({
+    slug: 'pace',
+    title: 'Pace',
+    category: 'mma-analytics',
+    aliases: ['fight pace mma', 'activity level mma'],
+    summary:
+      'A measure of overall activity level: how much offence, striking and grappling combined, a fighter attempts per minute.',
+    difficulty: 'intermediate',
+    isDerived: true,
+    readMinutes: 2,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    measures: `How busy a fighter is across a fight, combining both striking attempts and takedown attempts into one overall activity figure, rather than looking at either in isolation.`,
+    formula: `(Total significant strikes attempted + total takedowns attempted) ÷ total fight time in minutes, calculated from the underlying official attempt counts.`,
+    example: `A fighter who attempts a large volume of strikes and takedowns across every round is described as fighting at a "high pace", while a fighter who attempts relatively little of either, even if efficient with what they do attempt, is described as fighting at a "low pace" or a "measured" one.`,
+    interpret: `Pace is used to characterise a fighter's overall style (pressure fighter versus counter-striker, for instance) and to anticipate how a fight might unfold physically over its later rounds, since a high pace early can lead to fatigue later.`,
+    limitations: `Pace measures volume of attempts, not effectiveness: a high-pace fighter attempting a great deal that lands or completes little is not necessarily winning more of the fight than a lower-pace fighter landing efficiently.`,
+  }),
+
+  statistic({
+    slug: 'distance-vs-clinch-vs-ground-strikes',
+    title: 'Distance vs Clinch vs Ground Strikes',
+    category: 'mma-analytics',
+    aliases: ['striking position breakdown mma', 'strikes by position'],
+    summary:
+      'An official breakdown of where on the fight a fighter’s significant strikes were landed: at range, in the clinch, or on the ground.',
+    difficulty: 'intermediate',
+    isOfficial: true,
+    readMinutes: 2,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    measures: `Where, positionally, a fighter's significant strikes are landed, split into three buckets: at distance (striking range, both fighters on their feet and not in contact), in the clinch (close-range standing contact), and on the ground.`,
+    formula: `Each significant strike tracked live is tagged by the statistician with the position it occurred in, and the three totals are reported separately alongside (and summing to) the overall significant-strikes figure.`,
+    example: `A fighter credited with 40 significant strikes for a fight might have that broken down as 28 at distance, 6 in the clinch and 6 on the ground, a profile that describes a fighter who does most of their damage while both fighters are on the feet and unattached.`,
+    interpret: `This breakdown is used to characterise a fighter's actual striking profile in more detail than the single significant-strikes total allows, and is particularly useful for previewing how a matchup between a distance striker and a clinch-heavy fighter is likely to unfold.`,
+    limitations: `The breakdown does not itself explain why the split looks the way it does (a fighter's own preference, or their opponent forcing the fight into a particular range), which usually requires watching the fight rather than reading the table alone.`,
+  }),
+
+  statistic({
+    slug: 'head-body-leg-strike-distribution',
+    title: 'Head / Body / Leg Strike Distribution',
+    category: 'mma-analytics',
+    aliases: ['strike target distribution mma', 'strikes by target area'],
+    summary:
+      'An official breakdown of where on an opponent’s body a fighter’s significant strikes land.',
+    difficulty: 'intermediate',
+    isOfficial: true,
+    readMinutes: 2,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    measures: `What proportion of a fighter's significant strikes target the head, the body and the legs respectively, tracked as three separate totals.`,
+    formula: `Each significant strike tracked live is tagged by target area by the statistician, and the three totals are reported separately alongside the overall significant-strikes figure.`,
+    example: `A fighter whose significant strikes for a fight break down heavily toward the legs might be systematically attacking an opponent's lead leg with kicks to slow their movement, a strategy that shows up clearly in this breakdown even if it doesn't produce a single dramatic highlight.`,
+    interpret: `This breakdown is used to identify a fighter's specific game plan or tendencies, such as a body-and-leg-focused approach intended to slow an opponent down over the course of a fight rather than seeking an immediate finish to the head.`,
+    limitations: `Like the positional breakdown, this data describes what happened without explaining the tactical reasoning behind it, and the same distribution can reflect a deliberate strategy in one fight and simply what an opponent's defense allowed in another.`,
+  }),
+];
+
+// ─── Officiating ────────────────────────────────────────────────────────────
+
+const OFFICIATING: ExplainerSeed[] = [
+  standard({
+    slug: 'mma-referee-explained',
+    title: 'MMA Referee Explained',
+    category: 'officiating',
+    aliases: ['mma referee role', 'what does an mma referee do'],
+    summary:
+      'The official inside the cage responsible for enforcing the rules and, above all, fighter safety.',
+    difficulty: 'beginner',
+    isFeatured: true,
+    readMinutes: 3,
+    sourceKeys: [{ key: 'wp-referee-mma' }],
+    explanation: `The **referee** is the licensed official positioned inside the cage or ring throughout a fight, responsible for enforcing the rules, warning or penalising fouls, and, most importantly, stopping the fight the moment a fighter can no longer safely or intelligently continue.`,
+    howItWorks: `A referee watches from close range throughout, moving around the fighters to keep a clear line of sight, and has sole authority in the moment to stop a fight, issue a standing count, separate fighters against the fence, or restart the action from a neutral position after a break in the rules. A referee's decisions are made in real time and are not subject to review by the fighters or corners during the fight itself.`,
+    example: `During a ground exchange, a referee moves in close to check whether a fighter trapped in a dominant position is still defending intelligently, ready to step in the instant that stops being true, while also watching for fouls like an illegal grip on the fence or fingers in an opponent's eye.`,
+    whyItMatters: `The referee is the sport's primary safety mechanism in real time, and their judgment calls, when to stop a fight, when to warn rather than penalise, when to restart from feet or from the position where action stopped, shape the outcome of fights as much as anything the fighters themselves do.`,
+    misunderstandings: `A common one: assuming the referee is purely a rules enforcer, similar to an official in a non-combat sport. A referee's central job in MMA is fighter safety first, with rules enforcement second, which is why a referee can and will stop a fight that is still, technically, within the rules.`,
+    related: [
+      'when-does-a-referee-stop-a-fight',
+      'intelligent-defense-explained',
+      'referee-stoppage',
+    ],
+  }),
+
+  rulesetConcept({
+    slug: 'when-does-a-referee-stop-a-fight',
+    title: 'When Does a Referee Stop a Fight?',
+    category: 'officiating',
+    aliases: ['when does the ref stop a fight', 'referee stoppage criteria mma'],
+    summary: 'The situations that trigger a referee to step in and end a fight.',
+    difficulty: 'intermediate',
+    readMinutes: 3,
+    sourceKeys: [{ key: 'wp-referee-mma' }, { key: 'nsac-unified-rules' }],
+    recognition: `A referee stepping directly between two fighters, waving off the action, is the clearest visual sign a fight has just been stopped by referee decision rather than by a tap, a bell, or outside input.`,
+    explanation: `A referee stops a fight when they judge a fighter can no longer intelligently defend themselves against strikes, when a fighter is caught in a fully applied submission and the danger of serious injury is clear even without a tap, when a serious accidental injury (commonly an eye poke or clash of heads) makes continuing unsafe, or when a serious foul occurs that the fight cannot fairly continue from. Each of these is a distinct trigger, and a referee is trained to recognise all of them, often within a fraction of a second.`,
+    example: `In one fight, a referee stops the action because a fighter absorbing strikes has stopped meaningfully covering up or responding; in another, a referee stops a different fight because a choke is locked in fully and the defending fighter's arm has gone limp without a visible tap. Both are referee stoppages, triggered by entirely different signs.`,
+    whyItMatters: `Understanding the different triggers explains why some stoppages look sudden and others look like they were building for a while: a strikes-based stoppage is a judgment call built on a pattern of diminishing defense, while a submission-based stoppage can come the instant a hold is fully locked in.`,
+    misunderstandings: `A common one: assuming every stoppage is for the same reason. See "Intelligent Defense Explained" and "Early Stoppage vs Late Stoppage" for the specific judgment calls behind a strikes-based stoppage.`,
+    related: ['referee-stoppage', 'ko-vs-tko', 'intelligent-defense-explained'],
+  }),
+
+  standard({
+    slug: 'intelligent-defense-explained',
+    title: 'Intelligent Defense Explained',
+    category: 'officiating',
+    aliases: ['intelligent defense mma', 'can no longer intelligently defend'],
+    summary:
+      'The specific judgment a referee makes when deciding a fighter can no longer meaningfully protect themselves.',
+    difficulty: 'intermediate',
+    isFeatured: true,
+    readMinutes: 3,
+    sourceKeys: [{ key: 'wp-referee-mma' }],
+    explanation: `**Intelligent defense** is the standard a referee applies when watching a fighter absorb strikes: is this fighter still doing something purposeful to protect themselves and improve their position, such as blocking, moving, clinching, or attempting to escape, or have they stopped doing anything meaningful in response to the strikes landing on them? The moment a referee judges the answer has become the latter, the fight is stopped, regardless of whether the fighter is still technically conscious or on their feet.`,
+    howItWorks: `This is a judgment call, not a mechanical test: there is no fixed number of unanswered strikes or fixed period of inactivity written into the rules that automatically triggers a stoppage. A referee is trained to read specific signs, glazed or unfocused eyes, hands that drop and stay down rather than merely dip, a body that goes loose rather than braced, turning away rather than defending, and to weigh those signs together in real time, often over a period of only one or two seconds.`,
+    example: `A fighter pinned against the fence who is still actively blocking with their forearms, angling their head to avoid clean shots, and attempting to tie up or create space is judged to still be intelligently defending themselves, even while absorbing some strikes. The same fighter, moments later, with their hands no longer coming up and their head not moving to avoid anything, has crossed the line a referee is watching for.`,
+    whyItMatters: `This is the single hardest real-time call in the sport, and it is the reason stoppages sometimes look premature to a home viewer watching a replay in slow motion and sometimes look overdue: a referee is making an irreversible safety decision from a worse vantage point and in far less time than anyone reviewing the footage afterward.`,
+    misunderstandings: `A common one: assuming a fighter who is still conscious and upright is automatically still defending themselves intelligently. Consciousness and intelligent defense are not the same thing; a fighter can be conscious, even standing, while no longer meaningfully protecting themselves, which is exactly the state this standard exists to catch.`,
+    takeaways: `Intelligent defense asks whether a fighter is still doing something purposeful in response to the danger they are in, not merely whether they are still conscious or on their feet. It is a real-time judgment call with no fixed mechanical trigger, made under real time pressure.`,
+    related: [
+      'when-does-a-referee-stop-a-fight',
+      'early-stoppage-vs-late-stoppage',
+      'referee-stoppage',
+    ],
+  }),
+
+  standard({
+    slug: 'early-stoppage-vs-late-stoppage',
+    title: 'Early Stoppage vs Late Stoppage',
+    category: 'officiating',
+    aliases: ['early stoppage mma', 'late stoppage mma', 'stoppage timing debate'],
+    summary: 'The genuine, unresolved tension in judging exactly when to end a fight.',
+    difficulty: 'intermediate',
+    readMinutes: 3,
+    sourceKeys: [{ key: 'wp-referee-mma' }],
+    explanation: `Stopping a fight too soon denies a fighter the chance to recover and continue competing, something fighters, coaches and fans can all feel strongly about in the moment. Stopping a fight too late risks a fighter absorbing unnecessary and potentially serious additional damage after the point they could no longer meaningfully defend themselves. Both outcomes are considered failures of officiating, and the two risks pull directly against each other: erring further toward one increases the other.`,
+    howItWorks: `There is no way to eliminate this tension entirely, because it stems from the same underlying judgment call (see "Intelligent Defense Explained") having to be made under real time pressure, from a single vantage point, without the benefit of instant replay or slow motion. Different referees, and the same referee on different nights, will draw the line in slightly different places, and reasonable, well-trained officials can watch the same sequence and disagree about which side of the line it fell on.`,
+    example: `A fight stopped the moment a fighter's guard first drops noticeably will strike some observers as too early, since the fighter might have recovered; the same fight allowed to continue for several more unanswered strikes before being stopped will strike other observers as too late, since real risk existed in that gap. Neither reaction is unreasonable, and the debate over where exactly the line should sit is a recurring, legitimate one in the sport rather than a sign officiating has failed.`,
+    whyItMatters: `Understanding that this tension is structural, not a simple matter of a referee "getting it right" or "getting it wrong", is what separates informed commentary on a stoppage from reflexive complaining about any given call, in either direction.`,
+    misunderstandings: `A common one: assuming a stoppage debate always has an obviously correct answer visible on replay. Slow-motion, multiple-angle review after the fact makes a call look far more obvious than it was in real time, from one angle, at full speed, which is why this debate exists at all rather than being settled by simply watching the footage back.`,
+    related: [
+      'intelligent-defense-explained',
+      'when-does-a-referee-stop-a-fight',
+      'referee-stoppage',
+    ],
+  }),
+
+  standard({
+    slug: 'fighter-safety-officiating',
+    title: 'Fighter Safety',
+    category: 'officiating',
+    aliases: ['fighter safety mma officiating', 'safety apparatus mma'],
+    summary:
+      'The layered system of officials whose job is protecting fighters before, during and after a bout.',
+    difficulty: 'intermediate',
+    readMinutes: 3,
+    sourceKeys: [{ key: 'wp-referee-mma' }, { key: 'nsac-unified-rules' }],
+    explanation: `Fighter safety in MMA is not the referee's job alone; it is a layered system involving the referee (real-time in-fight authority), ringside physicians (who can stop a fight on medical grounds and who examine a fighter between rounds if needed), and the athletic commission overseeing the event (which licenses fighters and officials, and which can intervene at an administrative level, such as by refusing to license a fighter with an unresolved medical issue).`,
+    howItWorks: `Before a fight, commissions require pre-fight medical screening. During a fight, the referee has real-time stoppage authority and a ringside physician can call for a fight to be stopped or can be called in by the referee to assess a fighter, most commonly for a cut or a serious-looking injury. After a fight, a commission can impose a medical suspension, restricting when a fighter is licensed to compete again, based on what happened in the bout.`,
+    example: `A fighter cut badly enough that the cut may impair their vision might have the referee call the ringside physician in between rounds to assess whether the fighter can safely continue; the physician's medical opinion, not the referee's own judgment of the cut, decides whether the fight goes on.`,
+    whyItMatters: `Recognising that safety is a layered system, not one person's call, explains why a fight can be stopped by a doctor's decision even when a fighter and their corner both want to continue, and why commissions, not promotions, hold the final regulatory authority over licensing and suspensions.`,
+    misunderstandings: `A common one: assuming the referee is solely responsible for every fighter-safety decision in a fight. Doctors and commissions each hold distinct authority that can override a fighter's or corner's wishes, and, in specific circumstances, the referee's own preference to let a fight continue.`,
+    related: ['mma-referee-explained', 'doctor-stoppage', 'referee-warnings'],
+  }),
+
+  standard({
+    slug: 'referee-warnings',
+    title: 'Referee Warnings',
+    category: 'officiating',
+    aliases: ['referee warning mma', 'verbal warning mma foul'],
+    summary: 'A referee’s verbal caution to a fighter, usually issued before any formal penalty.',
+    difficulty: 'beginner',
+    readMinutes: 2,
+    sourceKeys: [{ key: 'wp-referee-mma' }],
+    explanation: `A **referee warning** is a verbal caution given to a fighter, most often after a minor or borderline rule violation, such as grabbing the fence briefly or an accidental low strike, without yet imposing a formal penalty such as a point deduction.`,
+    howItWorks: `Warnings are typically used as a first step: a referee gives a fighter clear notice that a specific behaviour is against the rules and will be penalised if it continues, before escalating to a point deduction or, for serious or repeated fouls, disqualification. How many warnings precede a formal penalty is left to the referee's discretion and varies by the severity of the conduct rather than following a fixed count.`,
+    example: `A fighter briefly grips the fence to stop a takedown attempt; the referee calls out a warning to let go and not do it again, without stopping the fight or deducting a point, since the infraction was minor and did not affect the position of the fight.`,
+    whyItMatters: `Warnings give the sport a graduated response to rule violations rather than a strict binary of no consequence versus disqualification, which matters given how many technical, borderline fouls (brief fence grabs, grazing low strikes) occur in the flow of a fight without clear intent.`,
+    misunderstandings: `A common one: assuming a warning has no real consequence. A recorded warning can be cited by the referee as justification for a subsequent point deduction if the same behaviour continues, so warnings function as a formal part of the escalation path, not merely a verbal aside.`,
+    related: ['point-deductions', 'accidental-fouls', 'mma-referee-explained'],
+  }),
+
+  rulesetConcept({
+    slug: 'point-deductions',
+    title: 'Point Deductions',
+    category: 'officiating',
+    alsoIn: ['fouls'],
+    aliases: ['point deduction mma', 'losing a point mma'],
+    summary:
+      'A referee-ordered penalty that reduces a fighter’s score on the judges’ cards for the round in which it occurs.',
+    difficulty: 'intermediate',
+    readMinutes: 3,
+    sourceKeys: [{ key: 'wp-unified-rules-2' }, { key: 'wp-ten-point-must-2' }],
+    recognition: `The referee stops the action, addresses the fighter directly, and clearly signals to the judges (typically by holding up a hand and stating it aloud) that a point is being deducted, which the announcer will usually confirm.`,
+    explanation: `A **point deduction** is a penalty imposed by the referee, usually after a foul that follows an earlier warning or that is serious enough to warrant an immediate penalty without one, which reduces the offending fighter's score for that round on the judges' scorecards, typically by one point under the ten-point-must system most jurisdictions use.`,
+    example: `A fighter who repeatedly grabs the fence to stop a takedown despite an earlier warning might have a point deducted in round two; if that round would otherwise have been scored 10–9 in their favour, the deduction changes it to 9–9, a meaningful swing on the overall cards.`,
+    whyItMatters: `Point deductions give referees a way to penalise fouls that do not merit disqualification but are serious or repeated enough to warrant a real consequence, and a single deduction can decide a close fight that goes the distance.`,
+    misunderstandings: `A common one: assuming a point deduction is minor because the fight continues afterward. On a close scorecard, a single deducted point is often the entire difference between winning and losing a fight on decision.`,
+    related: ['referee-warnings', 'disqualification', 'how-three-judges-score-a-fight'],
+  }),
+
+  rulesetConcept({
+    slug: 'accidental-fouls',
+    title: 'Accidental Fouls',
+    category: 'officiating',
+    aliases: ['accidental foul mma', 'unintentional foul mma'],
+    summary:
+      'A rule violation the referee judges was not deliberate, handled differently from an intentional one.',
+    difficulty: 'intermediate',
+    readMinutes: 3,
+    sourceKeys: [{ key: 'wp-fouls-mma' }],
+    recognition: `The referee stops the fight, gives the fouled fighter time to recover (often up to five minutes for a low blow, for example), and does not automatically penalise the fighter who committed the foul, distinguishing it visibly from a deliberate-foul sequence.`,
+    explanation: `An **accidental foul** is a rule violation the referee judges was not intentional, most commonly an inadvertent eye poke, an accidental clash of heads, or a low blow that occurs in the course of a legal technique gone slightly astray. The fight is typically paused to let the fouled fighter recover, without an automatic point deduction, though a referee retains discretion to deduct a point even for an accidental foul if it is serious or repeated.`,
+    example: `During a striking exchange, a fighter's finger accidentally catches their opponent's eye while throwing a legal strike. The referee stops the fight, allows recovery time, and, judging the contact was not deliberate, does not deduct a point, though the fight cannot continue until the affected fighter is cleared to do so.`,
+    whyItMatters: `If an accidental foul is serious enough that the fouled fighter cannot continue at all, and enough rounds have not been completed to go to the scorecards, the result becomes a no contest rather than a win or loss for either fighter, a direct consequence of the foul being judged accidental rather than deliberate.`,
+    misunderstandings: `A common one: assuming any foul that stops the fight temporarily must lead to a penalty. Many accidental fouls simply pause the action for recovery time and otherwise leave the fight and scorecards unaffected.`,
+    related: ['no-contest', 'technical-decision', 'intentional-fouls'],
+  }),
+
+  rulesetConcept({
+    slug: 'intentional-fouls',
+    title: 'Intentional Fouls',
+    category: 'officiating',
+    aliases: ['intentional foul mma', 'deliberate foul mma'],
+    summary:
+      'A rule violation the referee judges was deliberate, carrying much harsher consequences than an accidental one.',
+    difficulty: 'intermediate',
+    readMinutes: 3,
+    sourceKeys: [{ key: 'wp-fouls-mma' }],
+    recognition: `The referee's response is visibly firmer and faster than for an accidental foul: an immediate point deduction is common even on a first offence, and a serious or repeated intentional foul can end the fight in disqualification on the spot.`,
+    explanation: `An **intentional foul** is a rule violation the referee judges was deliberate rather than an unfortunate accident in the course of legal action. Consequences escalate faster and further than for accidental fouls: an intentional foul is more likely to draw an immediate point deduction even without a prior warning, and a serious or repeated intentional foul can result in disqualification, with the fouling fighter losing regardless of how the fight was going up to that point.`,
+    example: `A fighter who is clearly losing on the feet deliberately strikes their opponent in the groin to buy recovery time is committing an intentional foul; depending on severity, the referee may deduct a point immediately, and a fighter who repeats the behaviour risks disqualification.`,
+    whyItMatters: `The distinction between intentional and accidental protects the sport from fouls being used as a tactical escape valve: if intentional fouls carried no worse consequence than accidental ones, a fighter in trouble would have an incentive to foul deliberately to buy time.`,
+    misunderstandings: `A common one: assuming the referee must prove intent beyond doubt before treating a foul as intentional. The referee makes a real-time judgment call based on what they see, including the context of the exchange, not a formal determination of intent decided after the fact.`,
+    related: ['disqualification', 'point-deductions', 'accidental-fouls'],
+  }),
+
+  standard({
+    slug: 'replay-in-mma',
+    title: 'Replay in MMA',
+    category: 'officiating',
+    aliases: ['instant replay mma', 'video review mma'],
+    summary:
+      'Instant replay exists in MMA, but its use is far less standardised across jurisdictions than in many other sports.',
+    difficulty: 'intermediate',
+    readMinutes: 3,
+    sourceKeys: [{ key: 'wp-instant-replay' }, { key: 'nsac-unified-rules' }],
+    explanation: `Some athletic commissions permit referees or ringside officials to consult instant replay in specific, limited circumstances, most often to determine whether a fight-ending sequence resulted from a legal or illegal technique (for example, whether a finishing knee was landed against a downed opponent). Other commissions make little or no use of replay at all, leaving the in-fight call entirely to the referee's real-time judgment.`,
+    howItWorks: `Where replay is used, it is typically limited to narrow questions, usually whether a specific technique that ended or altered a fight was legal, rather than a general tool for reviewing scoring or stoppage-timing decisions the way replay is used in some other sports. Because MMA is regulated jurisdiction by jurisdiction rather than by one global governing body, exactly what replay is permitted for, and whether it is available at all, depends on the specific commission overseeing that event.`,
+    example: `A fight ends after a strike that might have landed on a downed opponent's head, a scenario governed by rules that vary by ruleset; in a jurisdiction that permits it, officials might briefly review replay footage to confirm whether the technique was legal before a final result is announced. In a jurisdiction without that provision, the call stands as made in real time.`,
+    whyItMatters: `Being honest about this variability matters because MMA broadcasts sometimes reference "review" in ways that suggest a single, universal system; in reality, whether any review happens at all, and what it can be used for, changes from commission to commission.`,
+    misunderstandings: `A common one: assuming instant replay works the same way everywhere in MMA that it does in other major sports, with clear, standardised triggers and a defined review process. No single global standard exists across the sport's many regulating bodies, and a viewer should not assume this event's rules for replay match the last one they watched.`,
+    related: ['when-does-a-referee-stop-a-fight', 'no-contest-after-accidental-foul'],
+  }),
+];
+
+// ─── Fouls ──────────────────────────────────────────────────────────────────
+
+const FOULS: ExplainerSeed[] = [
+  rulesetConcept({
+    slug: 'mma-fouls-explained',
+    title: 'MMA Fouls Explained',
+    category: 'fouls',
+    aliases: ['mma fouls list', 'illegal techniques mma', 'banned techniques mma'],
+    summary:
+      'The category of banned techniques and behaviours that referees are trained to penalise.',
+    difficulty: 'beginner',
+    isFeatured: true,
+    readMinutes: 3,
+    sourceKeys: [{ key: 'wp-fouls-mma' }],
+    recognition: `A referee stopping the action sharply, pointing at a specific technique, or issuing a verbal warning or point deduction outside the normal flow of striking, grappling and scoring, is usually a sign a foul has just occurred.`,
+    explanation: `MMA's banned techniques exist to protect fighter safety without removing the sport's full-contact, multi-discipline nature. They typically include strikes to particularly vulnerable or illegal areas, certain small-joint manipulations, and behaviours like grabbing the fence or an opponent's hair for an unfair advantage. **Always check the relevant ruleset for a specific event**: legal and illegal techniques vary meaningfully by jurisdiction, athletic commission and promotion, and no single foul list applies universally across the entire sport.`,
+    example: `A technique banned under one commission's ruleset, such as a specific kind of knee to a grounded opponent, may be explicitly permitted under another promotion's rules for the same fight discipline, which is why commentators sometimes note "under these rules" when discussing a borderline technique.`,
+    whyItMatters: `Understanding fouls as a category, rather than memorising one fixed list, is the more durable and more accurate way to follow the sport, since the specific list a fighter is competing under can change from one event to the next depending on where and under which commission the fight is held.`,
+    misunderstandings: `A common one: assuming MMA has one single, unchanging list of fouls that applies everywhere. The individual entries in this category cover the most widely recognised fouls, but each one notes where its status commonly varies by ruleset.`,
+    related: ['mma-rules-explained', 'point-deductions', 'disqualification'],
+  }),
+
+  rulesetConcept({
+    slug: 'eye-pokes',
+    title: 'Eye Pokes',
+    category: 'fouls',
+    aliases: ['eye poke mma', 'eye gouging mma foul'],
+    summary:
+      'Contact to the eye, almost always ruled accidental, but banned as a deliberate technique under every major ruleset.',
+    difficulty: 'beginner',
+    readMinutes: 2,
+    sourceKeys: [{ key: 'wp-fouls-mma' }],
+    recognition: `A fighter turns away, covers an eye, or signals to the referee that they cannot see clearly, prompting the referee to step in and call time regardless of whether the contact looked deliberate.`,
+    explanation: `**Eye pokes** (contact to the eye, typically from an open hand or an extended finger during a strike or grappling exchange) are banned under every major ruleset, whether deliberate or, as is far more common, an accidental result of a legal strike or grip gone slightly off target. As with all fouls, always check the relevant ruleset and commission for the exact standard being applied at a given event.`,
+    example: `A fighter throwing a legal open-hand strike accidentally catches their opponent's eye with an extended finger; the referee stops the fight, checks on the fouled fighter, and typically allows recovery time before restarting, treating the contact as accidental absent clear evidence otherwise.`,
+    whyItMatters: `Eye pokes are one of the most common fouls in the sport specifically because open-hand striking and grappling both put fingers near an opponent's face constantly, making truly accidental contact far more frequent than deliberate eye-gouging.`,
+    misunderstandings: `A common one: assuming an eye poke is always deliberate. The overwhelming majority are judged accidental, a byproduct of legal technique, and are handled as accidental fouls rather than penalised outright.`,
+    related: ['accidental-fouls', 'no-contest-after-accidental-foul'],
+  }),
+
+  rulesetConcept({
+    slug: 'groin-strikes',
+    title: 'Groin Strikes',
+    category: 'fouls',
+    aliases: ['low blow mma', 'groin strike foul'],
+    summary:
+      'Strikes to the groin, banned under every major ruleset, with recovery time given regardless of intent.',
+    difficulty: 'beginner',
+    readMinutes: 2,
+    sourceKeys: [{ key: 'wp-fouls-mma' }],
+    recognition: `A fighter drops, grimaces, or otherwise clearly signals a low blow has landed, prompting the referee to call time immediately and allow recovery time, commonly up to five minutes under most rulesets.`,
+    explanation: `**Groin strikes** are banned under every major ruleset. When one occurs, the referee stops the fight and gives the affected fighter time to recover, since a serious enough low blow can otherwise prevent a fighter from safely continuing at all. Whether a deducted point follows depends on whether the referee judges the strike deliberate; check the relevant ruleset for the specific recovery-time allowance at a given event.`,
+    example: `A kick aimed at the body lands slightly low during a fast exchange; the referee stops the action, the fouled fighter is given time to recover, and, judging the strike unintentional, the fight resumes without a point deduction once the fighter confirms they can continue.`,
+    whyItMatters: `A low blow can end a fighter's ability to continue entirely if serious enough, which is why the sport treats recovery time seriously rather than expecting a fighter to simply continue immediately.`,
+    misunderstandings: `A common one: assuming a fighter is exaggerating recovery time. Commissions and referees are generally deferential to a fighter's own report of whether they can continue after a genuine low blow, given the real risk of a fighter attempting to continue before they are actually able to defend themselves.`,
+    related: ['accidental-fouls', 'intentional-fouls', 'point-deductions'],
+  }),
+
+  rulesetConcept({
+    slug: 'biting',
+    title: 'Biting',
+    category: 'fouls',
+    aliases: ['biting mma foul', 'biting opponent'],
+    summary:
+      'Biting an opponent, banned outright under every major ruleset with no accidental version.',
+    difficulty: 'beginner',
+    readMinutes: 2,
+    sourceKeys: [{ key: 'wp-fouls-mma' }],
+    recognition: `Extremely rare in practice; when it occurs, referees treat it as a clear-cut intentional foul rather than something requiring judgment about intent.`,
+    explanation: `**Biting** an opponent is banned outright under every major ruleset, and, unlike many fouls covered in this category, is essentially never treated as accidental: there is no plausible legal technique that results in a bite the way a legal strike can accidentally result in an eye poke or low blow. As always, the specific penalty applied depends on the commission and ruleset governing the event.`,
+    example: `In the rare event a bite occurs during a grappling exchange, a referee is likely to treat it as a clear intentional foul, warranting an immediate point deduction or, depending on severity, disqualification.`,
+    whyItMatters: `Because there is essentially no accidental pathway to a bite, it sits at the more severe end of the sport's foul spectrum by default, closer in treatment to a deliberate strike to an illegal area than to a genuinely ambiguous foul like an eye poke.`,
+    misunderstandings: `A common one: assuming biting is a frequent problem in the sport. It is exceptionally rare precisely because it offers no tactical advantage and carries severe consequences with essentially no defense of accident available.`,
+    related: ['intentional-fouls', 'disqualification'],
+  }),
+
+  rulesetConcept({
+    slug: 'headbutts',
+    title: 'Headbutts',
+    category: 'fouls',
+    aliases: ['headbutt mma foul', 'illegal headbutt'],
+    summary:
+      'Deliberately striking an opponent with the head, banned under every major MMA ruleset.',
+    difficulty: 'beginner',
+    readMinutes: 2,
+    sourceKeys: [{ key: 'wp-fouls-mma' }],
+    recognition: `A referee separating two fighters at close range and issuing an immediate warning or point deduction, distinct from an accidental clash of heads during a scramble, which is handled as an accidental foul instead.`,
+    explanation: `**Headbutts**, deliberately striking an opponent with the head, are banned under every major ruleset, which distinguishes MMA clearly from combat sports and disciplines in which headbutting is or has historically been permitted. An accidental clash of heads during a clinch or scramble is treated separately, as an accidental foul, since it is not a deliberate technique.`,
+    example: `In a tight clinch exchange, a fighter deliberately drives their forehead into their opponent's face; the referee, judging this a clear intentional foul rather than incidental contact from the scramble, is likely to issue an immediate penalty.`,
+    whyItMatters: `Distinguishing a deliberate headbutt from an accidental clash of heads matters because the two carry very different consequences: one is an intentional foul that can draw a serious penalty, the other is typically handled with recovery time and no penalty at all.`,
+    misunderstandings: `A common one: assuming any head-to-head contact during a fight is automatically a foul. Accidental clashes of heads happen during close-range scrambles and clinch exchanges without either fighter doing anything deliberately illegal.`,
+    related: ['accidental-fouls', 'intentional-fouls', 'strikes-to-illegal-areas'],
+  }),
+
+  rulesetConcept({
+    slug: 'strikes-to-illegal-areas',
+    title: 'Strikes to Illegal Areas',
+    category: 'fouls',
+    aliases: ['illegal strikes mma', 'back of the head strikes', 'strikes to the throat mma'],
+    summary:
+      'Strikes to specific areas of the body, most commonly the back of the head, spine and throat, banned under every major ruleset.',
+    difficulty: 'intermediate',
+    readMinutes: 3,
+    sourceKeys: [{ key: 'wp-fouls-mma' }],
+    recognition: `A referee stopping the action sharply and often pointing directly at the back of the head, the neck, or the throat area to signal to both fighters and the crowd why the fight was paused.`,
+    explanation: `Certain areas of the body are considered illegal targets under every major ruleset because of the elevated risk of serious injury, most commonly the back of the head and the spine (the "kidney of MMA" area behind the ear down to the base of the skull), and the throat. The exact boundary of what counts as "the back of the head" versus a legal target on the side of the head can be a genuinely close call in a fast-moving fight, which is part of why this is one of the more debated categories of foul in real time.`,
+    example: `In a scramble, a fighter throws a legal strike toward the side of an opponent's head, but the opponent's head turns at the last moment and the strike lands closer to the back of the skull than intended; the referee has to judge, in the instant, whether the strike itself was aimed illegally or whether the target area shifted due to the opponent's own movement.`,
+    whyItMatters: `These specific illegal areas correspond to the body's most vulnerable structures for serious injury, which is why they are treated seriously across every major ruleset even as the precise boundary lines can vary somewhat by commission.`,
+    misunderstandings: `A common one: assuming any strike that lands anywhere on the back half of the head is automatically illegal. Referees weigh where the strike was aimed and how the target moved, not simply where contact ultimately landed, and always check the specific ruleset for a precise definition of the illegal zone.`,
+    related: ['headbutts', 'intentional-fouls', 'accidental-fouls'],
+  }),
+
+  rulesetConcept({
+    slug: 'small-joint-manipulation',
+    title: 'Small-Joint Manipulation',
+    category: 'fouls',
+    aliases: ['small joint manipulation mma', 'finger lock foul', 'toe lock foul'],
+    summary:
+      'Twisting or attacking the small joints of the fingers or toes specifically, banned under every major ruleset, distinct from legal major-joint submissions.',
+    difficulty: 'intermediate',
+    readMinutes: 3,
+    sourceKeys: [{ key: 'wp-fouls-mma' }],
+    recognition: `A referee intervening specifically at a fighter's hand or foot rather than a larger joint, distinguishing this foul visually from a legal armbar, kneebar or similar major-joint submission attempt.`,
+    explanation: `**Small-joint manipulation**, isolating and attacking a single finger or toe specifically, is banned under every major ruleset, in contrast to legal major-joint submissions like an armbar (elbow), a kneebar (knee) or an ankle lock (ankle, generally treated as a major joint under most rulesets), which attack a larger joint the body is better able to withstand controlled pressure on. The distinction is specifically about which joint is being isolated, not about submissions in general being restricted.`,
+    example: `During a grappling exchange, a fighter grabs a single finger of their opponent's hand and applies pressure to it in isolation, rather than controlling the wrist, elbow or shoulder as part of a legal submission; the referee is likely to warn or penalise this as small-joint manipulation.`,
+    whyItMatters: `This rule protects fighters from a category of injury (broken or dislocated fingers and toes) that offers a foul-committing fighter a disproportionate, low-effort way to injure an opponent compared with the far more demanding technical setup a legal major-joint submission requires.`,
+    misunderstandings: `A common one: assuming all joint locks are banned, or conversely that grabbing any part of the hand during a grappling exchange is automatically illegal. Controlling a wrist as part of setting up a legal technique is different from isolating and attacking a single finger, and always check the specific ruleset for exact boundaries.`,
+    related: ['accidental-fouls', 'intentional-fouls'],
+  }),
+
+  rulesetConcept({
+    slug: 'fence-grabbing',
+    title: 'Fence Grabbing',
+    category: 'fouls',
+    aliases: ['grabbing the cage', 'holding the fence mma'],
+    summary:
+      'Gripping the cage fencing for leverage or to prevent a takedown, banned under every major ruleset that uses a cage.',
+    difficulty: 'beginner',
+    readMinutes: 2,
+    sourceKeys: [{ key: 'wp-fouls-mma' }],
+    recognition: `A referee physically prying a fighter's fingers off the fence during a grappling exchange along the cage wall, often issuing a verbal warning in the same motion.`,
+    explanation: `**Fence grabbing**, gripping the cage's fencing with the fingers for leverage, balance, or specifically to stop a takedown attempt, is banned under every major ruleset that uses a cage rather than a ring. It is one of the most commonly called fouls in the sport because so much of the fight's clinch and takedown battles happen directly against the fence, making an instinctive grab for stability a frequent temptation.`,
+    example: `A fighter being taken down against the cage instinctively grips the fencing with their fingers to stay upright; the referee, seeing the grip, immediately calls out a warning to let go, and a repeated grip after warning risks a point deduction.`,
+    whyItMatters: `Because fence-adjacent grappling exchanges are so common, this is one of the most frequently enforced fouls in practice, and referees typically give fighters real-time verbal reminders throughout closely fought cage exchanges rather than waiting for a clear violation to call it out.`,
+    misunderstandings: `A common one: assuming any contact with the fence is illegal. Leaning or pressing against the fence with the body is normal and legal; the foul specifically concerns gripping it with the fingers for leverage.`,
+    related: ['point-deductions', 'referee-warnings'],
+  }),
+
+  rulesetConcept({
+    slug: 'hair-pulling',
+    title: 'Hair Pulling',
+    category: 'fouls',
+    aliases: ['pulling hair mma foul', 'hair grab mma'],
+    summary:
+      'Grabbing an opponent’s hair for control or leverage, banned under every major ruleset.',
+    difficulty: 'beginner',
+    readMinutes: 2,
+    sourceKeys: [{ key: 'wp-fouls-mma' }],
+    recognition: `A referee stepping in to separate fighters specifically after noticing a grip on the hair, usually accompanied by a clear verbal warning.`,
+    explanation: `**Hair pulling**, grabbing an opponent's hair to control their head or body position, is banned under every major ruleset, since it offers a fighter with longer hair's opponent a form of control that has nothing to do with technique or skill and carries a real risk of neck injury if used forcefully.`,
+    example: `In a clinch exchange, a fighter grabs a handful of their opponent's hair to control their head position while landing knees; the referee is likely to stop the action and issue at least a warning, with repeated use risking a point deduction.`,
+    whyItMatters: `This rule exists partly for fairness (hair length varies between fighters and is not a trained skill) and partly for safety, since forceful control of the head through the hair can produce dangerous neck torque outside of any technical submission.`,
+    misunderstandings: `A common one: assuming incidental contact with an opponent's hair during a scramble is a foul. The rule concerns deliberately gripping hair for control or leverage, not brief, unavoidable contact in a fast exchange.`,
+    related: ['fence-grabbing', 'point-deductions'],
+  }),
+
+  rulesetConcept({
+    slug: 'illegal-knees',
+    title: 'Illegal Knees',
+    category: 'fouls',
+    aliases: ['illegal knee mma', 'knee to grounded opponent'],
+    summary:
+      'Certain knee strikes, most notably to a grounded opponent’s head, that are illegal under some rulesets and legal under others.',
+    difficulty: 'intermediate',
+    readMinutes: 3,
+    sourceKeys: [{ key: 'wp-fouls-mma' }],
+    recognition: `A referee stopping the fight sharply after a knee strike specifically, checking whether the opponent had a hand or knee down (commonly the definition of "grounded" under stricter rulesets) at the moment of contact.`,
+    explanation: `Knee strikes to a grounded opponent's head are a clear example of a technique whose legality genuinely differs by ruleset and promotion: some rulesets ban any knee to the head of an opponent who has any point of contact with the ground beyond their feet, while others permit knees to a grounded opponent's head under more limited conditions, or define "grounded" itself differently (for example, requiring both hands, or a hand and a knee, down rather than just one hand). **Always check the specific ruleset governing a given event before assuming which knees are legal.**`,
+    example: `A fighter in one promotion's cage lands a knee to the head of an opponent who has one hand down, ruled illegal under that event's definition of "grounded"; the identical strike, thrown against an opponent in an identical position, could be entirely legal under a different promotion's ruleset that defines "grounded" more narrowly.`,
+    whyItMatters: `This is one of the clearest cases in the sport where assuming one universal rule leads a viewer astray: fighters who compete across different promotions or jurisdictions over a career genuinely have to adjust their game plan to the specific illegal-knee rule in force for that fight.`,
+    misunderstandings: `A common one: assuming a technique legal in the last event a viewer watched is legal in the next one too. The definition of "grounded" and the legality of knees to a grounded opponent's head are exactly the kind of rule that varies by commission and promotion, and always deserve a specific check.`,
+    related: ['downed-opponent-rules', 'twelve-to-six-elbow-rules-and-rule-changes'],
+  }),
+
+  rulesetConcept({
+    slug: 'downed-opponent-rules',
+    title: 'Downed Opponent Rules',
+    category: 'fouls',
+    aliases: ['grounded opponent definition mma', 'downed fighter rules'],
+    summary:
+      'What counts as "grounded", and which strikes remain legal against a downed opponent, varies by promotion and commission.',
+    difficulty: 'intermediate',
+    readMinutes: 3,
+    sourceKeys: [{ key: 'wp-fouls-mma' }],
+    recognition: `A referee closely watching the exact points of contact a fighter has with the mat (a single hand down, two hands down, a knee down) before allowing or stopping certain strikes against them.`,
+    explanation: `MMA rulesets generally restrict some strikes, most often kicks and knees to the head, against a fighter judged to be "grounded" or "downed", but the precise definition of what makes a fighter grounded, and exactly which strikes remain legal against them once they are, differs meaningfully across commissions and promotions. Common variants include requiring only one hand or knee down, requiring two points of contact beyond the feet, or, under some rulesets, requiring the fighter to be flat on the mat rather than simply touching it. **Always check the specific event's ruleset rather than assuming a fixed universal standard.**`,
+    example: `A fighter who touches the mat briefly with one hand while defending a takedown might be considered "grounded" under one ruleset (making certain strikes to their head illegal from that instant) but not yet grounded under a stricter definition used elsewhere, where two points of contact are required first.`,
+    whyItMatters: `Because this rule directly determines which strikes are legal in a very common fight scenario (a takedown attempt where one fighter briefly touches the mat), it is one of the more consequential ruleset variations for how a fight can actually be finished.`,
+    misunderstandings: `A common one: assuming "grounded" has one settled, sport-wide meaning. It is one of the more variable definitions across commissions and promotions, and confusion over exactly this point has been a recurring source of controversy around specific finishing sequences in the sport's history.`,
+    related: ['illegal-knees', 'twelve-to-six-elbow-rules-and-rule-changes'],
+  }),
+
+  rulesetConcept({
+    slug: 'twelve-to-six-elbow-rules-and-rule-changes',
+    title: '12-to-6 Elbow Rules and Rule Changes',
+    category: 'fouls',
+    aliases: ['12 to 6 elbow mma', 'downward elbow strike rule', 'vertical elbow ban mma'],
+    summary:
+      'A vertical, straight-down elbow strike that has historically been banned under some rulesets, with its status discussed and revised over time.',
+    difficulty: 'advanced',
+    readMinutes: 3,
+    sourceKeys: [{ key: 'wp-unified-rules-2' }, { key: 'wp-fouls-mma' }],
+    recognition: `Commentary specifically calling out a "12-to-6" elbow, referring to a clock-face description of the strike travelling straight downward (from the 12 position to the 6 position) rather than at an angle.`,
+    explanation: `A **"12-to-6" elbow strike** describes a vertical, straight downward elbow strike, distinct from elbow strikes thrown at an angle (which are widely legal). This specific downward elbow has, for a number of years, been a distinctly banned technique under the Unified Rules framework used across much of the sport's largest markets, drawing debate within the sport over both the injury-prevention rationale for banning specifically this angle of strike and the difficulty referees face distinguishing a banned vertical elbow from a legal, steeply angled one in real time.`,
+    example: `A fighter throwing a series of angled elbow strikes during a ground exchange has to be careful not to let one drift into a fully vertical, straight-down trajectory, since the two can look similar at speed but only one is banned under rulesets that prohibit the 12-to-6 strike specifically.`,
+    misunderstandings: `A common one: assuming all downward-travelling elbows are banned, or that the rule is identical and permanent across every ruleset. This is a technique whose precise rules and status have been the subject of discussion and revision within the sport's governing bodies over time, and a reader should check the current standard for a specific ruleset rather than assume the historical Unified Rules position still applies unchanged everywhere.`,
+    related: ['illegal-knees', 'downed-opponent-rules'],
+  }),
+
+  standard({
+    slug: 'no-contest-after-accidental-foul',
+    title: 'No Contest After Accidental Foul',
+    category: 'fouls',
+    aliases: ['no contest accidental foul mma', 'nc due to injury from foul'],
+    summary:
+      'How an accidental foul severe enough to end a fight early, before enough rounds are complete, becomes a no contest rather than a win or loss.',
+    difficulty: 'intermediate',
+    readMinutes: 3,
+    sourceKeys: [{ key: 'wp-fouls-mma' }],
+    explanation: `When an accidental foul, most commonly an eye poke or an accidental clash of heads, causes an injury serious enough that a fighter genuinely cannot continue, and the fight has not yet completed enough rounds to be sent to the judges' scorecards under the relevant ruleset, the result is ruled a **no contest**: neither fighter is credited with a win or a loss, and neither takes a loss on their official record for that bout.`,
+    howItWorks: `The key conditions are that the foul must be judged accidental (see "Accidental Fouls") rather than intentional, and that not enough of the fight has been completed for a decision to be reached instead; if enough rounds have been completed, the same scenario instead produces a technical decision, based on the scorecards through the point of stoppage, rather than a no contest.`,
+    example: `In the first round of a three-round fight, an accidental clash of heads opens a serious cut that a doctor rules prevents a fighter from continuing safely. Because the foul was accidental and almost the entire fight remains unfought, the result is a no contest rather than a win, loss, or decision for either fighter.`,
+    whyItMatters: `This distinction protects a fighter from an unfair loss (or an undeserved win credited to their opponent) purely because of an accidental injury that had nothing to do with either fighter's performance in the fight, while still giving the sport a mechanism (technical decision) for scenarios where enough of the fight was actually completed to judge fairly.`,
+    misunderstandings: `A common one: confusing a no contest with a draw. A draw means the fight was completed and scored evenly by the judges; a no contest means the fight, for a specific accidental reason, is treated as though the result cannot be fairly determined at all.`,
+    related: ['no-contest', 'accidental-fouls', 'technical-decision'],
+  }),
+];
+
+// ─── Corners & Coaching ─────────────────────────────────────────────────────
+
+const CORNERS_AND_COACHING: ExplainerSeed[] = [
+  standard({
+    slug: 'fighter-corner-explained',
+    title: 'Fighter Corner Explained',
+    category: 'corners-and-coaching',
+    aliases: ['mma corner team', 'fighter cornermen'],
+    summary: 'The team of coaches and support staff working a fighter’s corner during a bout.',
+    difficulty: 'beginner',
+    isFeatured: true,
+    readMinutes: 3,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `A fighter's **corner** is the small team permitted at cageside during a fight: typically a head coach and one or more specialist coaches (striking, wrestling, or Brazilian jiu-jitsu, depending on the fighter's team), and a cutman. Commissions generally cap how many people are allowed in a corner for safety and space reasons.`,
+    howItWorks: `Between rounds, the corner has one minute to communicate instructions, adjust the fighter's mindset, and, if needed, treat a cut or swelling before the next round starts. During the round itself, coaches can call out instructions from outside the cage or ring, though the fighter alone makes every decision in the moment.`,
+    example: `A fighter's corner between rounds might include the head coach delivering the round's key tactical point, a striking coach reminding the fighter of a specific opening they've been leaving, and the cutman working quickly on a cut above an eye, all within the same one-minute window.`,
+    whyItMatters: `A strong corner can meaningfully change the course of a fight through in-round guidance and between-round adjustments, and a corner's decision to throw in the towel is one of the sport's recognised ways a fight can end.`,
+    misunderstandings: `A common one: assuming a corner can somehow "win" a fight for a fighter through coaching alone. A corner's role is guidance and support; every strike, takedown and decision inside the cage remains the fighter's own.`,
+    related: [
+      'head-coach',
+      'cutman-explained',
+      'what-happens-between-rounds',
+      'throwing-in-the-towel',
+    ],
+  }),
+
+  definition({
+    slug: 'head-coach',
+    title: 'Head Coach',
+    category: 'corners-and-coaching',
+    aliases: ['mma head coach', 'main coach mma'],
+    summary:
+      'The lead voice in a fighter’s corner, responsible for overall strategy and between-round instruction.',
+    difficulty: 'beginner',
+    readMinutes: 2,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `A **head coach** is the lead figure in a fighter's corner and training camp, usually responsible for the overall game plan for a fight and for being the primary voice a fighter hears between rounds, coordinating input from any specialist coaches also in the corner.`,
+    example: `Between rounds, a head coach might deliver a single clear directive, such as "cut the angle, stop squaring up", while a striking or wrestling coach adds a more specific technical cue.`,
+    misunderstandings: `A common one: assuming the head coach is always the fighter's striking or grappling specialist. A head coach's core job is strategy and communication, and they are sometimes not the most technically specialised coach in the corner for any one discipline.`,
+  }),
+
+  definition({
+    slug: 'striking-coach',
+    title: 'Striking Coach',
+    category: 'corners-and-coaching',
+    aliases: ['mma striking coach', 'boxing coach mma corner'],
+    summary:
+      'A specialist coach focused on a fighter’s stand-up game: boxing, kickboxing, and Muay Thai.',
+    difficulty: 'beginner',
+    readMinutes: 2,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `A **striking coach** specialises in a fighter's stand-up skills, drawing on backgrounds such as boxing, kickboxing or Muay Thai, and is typically responsible for a fighter's striking preparation in camp and for specific striking cues from the corner during a fight.`,
+    example: `A striking coach might spend fight camp drilling a specific counter to an opponent's expected jab, then call out a reminder to use it the moment that exact pattern appears in the fight.`,
+    misunderstandings: `A common one: assuming a striking coach only matters for fighters known as strikers. Even a wrestling-heavy fighter needs enough striking coaching to defend themselves and to set up takedowns off feints and strikes.`,
+  }),
+
+  definition({
+    slug: 'wrestling-coach',
+    title: 'Wrestling Coach',
+    category: 'corners-and-coaching',
+    aliases: ['mma wrestling coach'],
+    summary: 'A specialist coach focused on takedowns, takedown defense and top-position control.',
+    difficulty: 'beginner',
+    readMinutes: 2,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `A **wrestling coach** specialises in a fighter's takedown offence and defence and their ability to control position once a fight reaches the clinch or the ground, typically drawing on a folkstyle, freestyle or Greco-Roman wrestling background.`,
+    example: `Ahead of a fight against a dangerous striker, a wrestling coach might focus fight camp heavily on takedown entries designed to close distance safely and take the fight to the ground, where the fighter's own strengths lie.`,
+    misunderstandings: `A common one: assuming a wrestling coach's job ends once a fighter lands a takedown. Controlling position on top, and defending against being reversed or swept, is just as much a wrestling coach's responsibility as the takedown itself.`,
+  }),
+
+  definition({
+    slug: 'bjj-coach',
+    title: 'BJJ Coach',
+    category: 'corners-and-coaching',
+    aliases: ['brazilian jiu-jitsu coach mma', 'jiu jitsu coach'],
+    summary: 'A specialist coach focused on ground grappling, submissions, and submission defence.',
+    difficulty: 'beginner',
+    readMinutes: 2,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `A **BJJ coach** specialises in a fighter's ground grappling: positional control, submission attacks, and submission defence, drawing on a Brazilian jiu-jitsu background adapted for MMA's rule set (which allows striking on the ground, unlike pure BJJ competition).`,
+    example: `A BJJ coach preparing a fighter for an opponent known for aggressive submission attempts might spend camp specifically on escapes and defensive grips, rather than only offensive submissions.`,
+    misunderstandings: `A common one: assuming a BJJ coach's methods transfer unchanged from pure grappling competition. MMA's ground game is shaped by the constant threat of strikes, which changes which positions and submissions are prioritised compared with a no-strikes grappling ruleset.`,
+  }),
+
+  standard({
+    slug: 'cutman-explained',
+    title: 'Cutman Explained',
+    category: 'corners-and-coaching',
+    aliases: ['mma cutman role', 'what does a cutman do'],
+    summary:
+      'The corner specialist responsible for treating cuts, swelling and bleeding between rounds.',
+    difficulty: 'beginner',
+    readMinutes: 2,
+    sourceKeys: [{ key: 'wp-cutman' }],
+    explanation: `A **cutman** is a corner specialist trained to treat cuts, swelling and bleeding during the brief period between rounds, using techniques such as pressure, ice, and approved topical agents (an enswell and adrenaline-soaked swabs are common tools) to keep a fighter able to see clearly and continue safely.`,
+    howItWorks: `A cutman works within the same one-minute window as the rest of the corner, and their work is directly relevant to whether a fight continues: if an injury is judged serious enough by the referee or ringside physician (commonly if it threatens a fighter's vision), the fight can be stopped regardless of how effectively the cutman has worked.`,
+    example: `A fighter returns to the corner with swelling building rapidly around one eye; the cutman applies an enswell and pressure for the full minute to control it, buying the fighter a clearer field of vision for the next round.`,
+    whyItMatters: `A skilled cutman can be the difference between a fight continuing and a doctor stoppage, particularly in fights with significant cuts or swelling, making the role a specialised and valued part of a fighter's team.`,
+    misunderstandings: `A common one: assuming a cutman can treat any injury well enough to keep a fight going indefinitely. A ringside physician's judgment on safety overrides the cutman's work; some injuries cannot be managed enough to justify continuing regardless of cornerwork.`,
+    related: [
+      'fighter-corner-explained',
+      'what-happens-between-rounds',
+      'fighter-safety-officiating',
+    ],
+  }),
+
+  standard({
+    slug: 'what-happens-between-rounds',
+    title: 'What Happens Between Rounds?',
+    category: 'corners-and-coaching',
+    aliases: ['one minute rest mma', 'between rounds mma corner'],
+    summary:
+      'The one-minute window between rounds, and everything a corner tries to accomplish in it.',
+    difficulty: 'beginner',
+    readMinutes: 2,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `Between each round, a fighter returns to their corner for a one-minute rest period. In that window, the corner typically delivers tactical feedback on the round just finished, sets a specific focus for the round ahead, treats any cuts or swelling, and gives the fighter a brief physical rest before the next round begins.`,
+    howItWorks: `Coaches generally try to keep instruction short and specific, since a fighter has limited attention and breath to process detailed feedback in sixty seconds; a cutman may be working simultaneously if there is an injury to manage, and the whole sequence has to be finished before the bell for the next round.`,
+    example: `A corner might use the full minute to say only a few sentences: acknowledging what worked in the round just finished, giving one clear adjustment for the next round, and treating a cut, all while the fighter catches their breath on the stool.`,
+    whyItMatters: `A fight's shape can change noticeably round to round based on adjustments made in these brief windows, which is why broadcasts often show corner advice live and commentators discuss what a corner is likely telling their fighter.`,
+    misunderstandings: `A common one: assuming a full minute allows for detailed technical instruction. In practice, corners prioritise one or two clear, simple points, since a fighter has neither the time nor the mental bandwidth mid-fight to absorb more.`,
+    related: ['fighter-corner-explained', 'corner-advice', 'cutman-explained'],
+  }),
+
+  standard({
+    slug: 'corner-advice',
+    title: 'Corner Advice',
+    category: 'corners-and-coaching',
+    aliases: ['mma corner instructions', 'coaching during a fight'],
+    summary:
+      'The live instructions a corner calls out during a round itself, not just between rounds.',
+    difficulty: 'beginner',
+    readMinutes: 2,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `Beyond the one-minute break between rounds, a fighter's corner is permitted to call out instructions from outside the cage or ring while a round is actually underway, offering tactical cues, encouragement, or warnings about time remaining or the scorecard situation.`,
+    howItWorks: `A fighter hears this advice while actively fighting, so it tends to be short and immediate: a single word or short phrase ("elbow", "time", "you need this round") rather than a developed explanation, since a fighter has no capacity mid-exchange for anything longer.`,
+    example: `With ten seconds left in a close round, a corner might shout "you need this, push!", a piece of live advice intended to change a fighter's urgency for the remainder of the round rather than teach them anything technically new in the moment.`,
+    whyItMatters: `Live corner advice can meaningfully affect a close round, particularly advice about time remaining or the state of the scorecards, information a fighter focused entirely on the fight in front of them may not otherwise be tracking.`,
+    misunderstandings: `A common one: assuming corner advice during a round is the same in depth as between-round coaching. It is necessarily much shorter and simpler, given a fighter's divided attention while actively competing.`,
+    related: ['what-happens-between-rounds', 'fighter-corner-explained', 'game-planning'],
+  }),
+
+  standard({
+    slug: 'throwing-in-the-towel',
+    title: 'Throwing in the Towel',
+    category: 'corners-and-coaching',
+    alsoIn: ['ways-to-win'],
+    aliases: ['towel throw mma', 'corner throws in the towel'],
+    summary:
+      'A fighter’s own corner ending the fight on their behalf by signalling they do not want their fighter to continue.',
+    difficulty: 'beginner',
+    readMinutes: 2,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `**Throwing in the towel** is the corner's own decision to end a fight, typically by physically throwing a towel into the cage or ring, or by clearly signalling to the referee that they do not want their fighter to continue. It results in a corner stoppage, a specific kind of technical knockout, once the referee acts on it.`,
+    howItWorks: `A corner might make this call when their fighter is absorbing significant damage without a clear path to winning, is fighting through a serious injury, or is simply judged by their own team to be past the point where continuing serves any purpose, even if the fighter themselves wants to keep going.`,
+    example: `A fighter is being repeatedly hurt in a round with little response of their own; their corner, judging the risk no longer worth it regardless of the fighter's own wishes, throws a towel into the cage, and the referee stops the fight as a corner stoppage.`,
+    whyItMatters: `This is the one stoppage decision made entirely by people outside the fight itself, a deliberate design feature that gives a fighter's own team the power to protect them even against the fighter's own competitive instinct to continue.`,
+    misunderstandings: `A common one: assuming a fighter can simply refuse a towel throw and continue fighting. Once the corner's intent is clear and the referee acts on it, the fight is over regardless of the fighter's own preference in the moment.`,
+    related: ['corner-stoppage', 'fighter-corner-explained', 'fighter-safety-officiating'],
+  }),
+
+  standard({
+    slug: 'fight-camp-structure',
+    title: 'Fight Camp Structure',
+    category: 'corners-and-coaching',
+    aliases: ['mma fight camp schedule', 'how a fight camp is structured'],
+    summary: 'How the weeks of preparation before a fight are typically organised.',
+    difficulty: 'intermediate',
+    readMinutes: 3,
+    sourceKeys: [{ key: 'wp-fight-camp' }],
+    explanation: `A **fight camp** is the dedicated training period, commonly around six to eight weeks, leading up to a scheduled fight. It is typically structured in phases: an early period building general conditioning and addressing broad technical work, a middle period of opponent-specific game-planning and sparring, and a final taper in the days before the fight focused on recovery, weight management and sharpening rather than hard training.`,
+    howItWorks: `A head coach usually oversees the camp's overall structure and timing, coordinating specialist coaches so that striking, wrestling and BJJ work are all addressed without overtraining the fighter or leaving a glaring gap against the specific opponent. Weight cutting is planned to align with this schedule so a fighter is not simultaneously trying to peak physically and make a severe final cut.`,
+    example: `A fighter's camp might spend its first three weeks on general conditioning and addressing a technical weakness identified in their last fight, the following three weeks on sparring rounds built around their upcoming opponent's known tendencies, and the final week tapering training volume while managing the weight cut.`,
+    whyItMatters: `How well a camp is structured, not just how hard a fighter trains, is widely considered one of the most important factors in fight performance, since poor camp planning can leave a fighter either undertrained or badly worn down heading into fight night.`,
+    misunderstandings: `A common one: assuming more training is always better. Overtraining through camp, leaving a fighter fatigued or carrying minor injuries into fight night, is a well-recognised risk that camp structure and tapering exist specifically to manage.`,
+    related: ['what-is-a-fight-camp', 'sparring-explained', 'game-planning'],
+  }),
+
+  standard({
+    slug: 'sparring-explained',
+    title: 'Sparring Explained',
+    category: 'corners-and-coaching',
+    aliases: ['mma sparring', 'sparring rounds camp'],
+    summary:
+      'Live practice fighting at controlled intensity, used to prepare for an opponent and sharpen technique.',
+    difficulty: 'beginner',
+    readMinutes: 2,
+    sourceKeys: [{ key: 'wp-fight-camp' }],
+    explanation: `**Sparring** is live, semi-competitive practice fighting between training partners, conducted at a range of intensities from very light technical work up to closer-to-fight-pace rounds, used to test and sharpen technique, timing and conditioning ahead of a real fight.`,
+    howItWorks: `A coach typically controls sparring intensity carefully across a camp, since sparring too hard too often carries real injury risk that can derail preparation for the actual fight, while sparring too lightly can leave a fighter undertested against live resistance. Training partners are sometimes chosen specifically to mimic an upcoming opponent's size, stance or style.`,
+    example: `A fighter preparing for a tall, rangy opponent might bring in a training partner of similar height and reach specifically to spar against that style repeatedly through camp, rather than sparring only with their regular training partners.`,
+    whyItMatters: `Sparring is where technique learned in isolated drilling gets tested against a resisting opponent, and finding the right balance of intensity across a camp is one of the more difficult judgment calls a coaching team makes.`,
+    misunderstandings: `A common one: assuming harder sparring always means better preparation. Injuries picked up in overly hard sparring have derailed fight camps and even forced fighters out of scheduled bouts entirely, which is why intensity is usually managed deliberately rather than left unchecked.`,
+    related: ['fight-camp-structure', 'wrestling-coach', 'striking-coach'],
+  }),
+
+  standard({
+    slug: 'game-planning',
+    title: 'Game Planning',
+    category: 'corners-and-coaching',
+    alsoIn: ['fight-strategy'],
+    aliases: ['mma game plan', 'fight strategy preparation'],
+    summary:
+      'The specific strategy a fighter and their team build for a particular opponent, ahead of a fight.',
+    difficulty: 'intermediate',
+    readMinutes: 3,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `A **game plan** is the specific strategy a fighter's coaching team builds for a given opponent, based on film study of that opponent's tendencies, strengths and weaknesses, combined with an honest assessment of the fighter's own strengths. It shapes fight-camp training priorities and the tactical instructions delivered live and between rounds during the fight itself.`,
+    howItWorks: `Building a game plan typically starts with identifying where a fighter's own strengths overlap with gaps in the opponent's game, for example, targeting a takedown-heavy approach against an opponent with known takedown-defense issues, and then structuring fight-camp sparring and drilling specifically around executing that plan under pressure.`,
+    example: `A coaching team might build a game plan around pressuring a counter-striking opponent to prevent them fighting comfortably at their preferred range, rather than allowing the fight to be fought entirely on the counter-striker's terms.`,
+    whyItMatters: `A well-built game plan that a fighter can actually execute under pressure is often the difference between two closely matched fighters, and commentators regularly discuss whether a fighter appears to be "sticking to the game plan" as a fight unfolds.`,
+    misunderstandings: `A common one: assuming a game plan is a rigid script. A good game plan gives a fighter a clear starting strategy and priorities, but fighters and corners adjust it live in response to how the actual fight unfolds, which is exactly what live corner advice and between-round coaching are for.`,
+    related: ['corner-advice', 'fighter-corner-explained', 'fight-camp-structure'],
+  }),
+];
+
+// ─── Career Path ────────────────────────────────────────────────────────────
+
+const CAREER_PATH: ExplainerSeed[] = [
+  standard({
+    slug: 'how-fighters-become-professionals',
+    title: 'How Fighters Become Professionals',
+    category: 'career-path',
+    aliases: ['how to become a professional mma fighter', 'mma career path'],
+    summary:
+      'The typical, though far from uniform, path from first training to a professional debut.',
+    difficulty: 'beginner',
+    isFeatured: true,
+    readMinutes: 3,
+    sourceKeys: [{ key: 'wp-amateur-mma' }],
+    explanation: `Most professional MMA fighters follow a broadly similar path: training in one or more base disciplines (wrestling, BJJ, boxing, Muay Thai and so on), cross-training into MMA specifically, competing as an amateur to gain experience and results under closer-to-real conditions, and eventually turning professional once a coach and the relevant athletic commission consider the fighter ready.`,
+    howItWorks: `There is no single fixed timeline: some fighters come from a strong wrestling or BJJ competitive background and transition relatively quickly, while others spend years building fundamentals before their first amateur bout. Athletic commissions generally require a minimum number of amateur fights, or comparable documented experience, before licensing a fighter to compete professionally.`,
+    example: `A fighter with a collegiate wrestling background might need only a handful of amateur MMA fights to round out their striking and submission defence before turning professional, while a fighter starting MMA with no combat-sports background typically needs a longer amateur run to build basic competency across all phases of the sport.`,
+    whyItMatters: `Understanding this pathway explains why fighters' backgrounds vary so widely by the time they reach professional competition, and why a fighter's base discipline often remains visible in their style even after years of MMA-specific training.`,
+    misunderstandings: `A common one: assuming every professional fighter follows an identical, standardised route. The specific path (which disciplines came first, how long amateur competition lasted, when the professional debut happened) varies enormously from fighter to fighter.`,
+    related: ['amateur-mma', 'professional-debut', 'regional-circuit', 'fighter-development'],
+  }),
+
+  standard({
+    slug: 'amateur-mma',
+    title: 'Amateur MMA',
+    category: 'career-path',
+    aliases: ['amateur mixed martial arts', 'amateur mma rules'],
+    summary:
+      'Competition under modified, generally safer rules, used to build experience before turning professional.',
+    difficulty: 'beginner',
+    readMinutes: 3,
+    sourceKeys: [{ key: 'wp-amateur-mma' }],
+    explanation: `**Amateur MMA** is competition under a modified ruleset, typically restricting or banning some techniques permitted professionally (commonly limiting strikes to a grounded opponent, or requiring protective gear such as shin guards not used in professional competition), intended to let fighters gain real competitive experience with a somewhat reduced injury risk while they are still developing.`,
+    howItWorks: `Amateur results are recorded separately from a fighter's eventual professional record; an amateur record does not carry forward into or combine with a professional one, since the two are considered different competitive categories under most commissions' rules, similar in spirit to how amateur and professional boxing records are kept apart.`,
+    example: `A fighter might compile an amateur record over several fights, testing their striking, wrestling and grappling live under modified rules, before their coach and the athletic commission agree they are ready to debut as a professional under the full ruleset.`,
+    whyItMatters: `Amateur competition is the main structured pathway most fighters use to gain live competitive experience before taking on the increased risk and expectations of professional MMA.`,
+    misunderstandings: `A common one: assuming an amateur record is simply a smaller version of a professional one, or that the two combine into one overall record. They are tracked and considered separately, and a strong amateur run does not appear as part of a fighter's professional win-loss totals.`,
+    related: ['how-fighters-become-professionals', 'professional-debut', 'regional-circuit'],
+  }),
+
+  definition({
+    slug: 'professional-debut',
+    title: 'Professional Debut',
+    category: 'career-path',
+    aliases: ['mma pro debut', 'first professional fight'],
+    summary: 'A fighter’s first fight competing as a professional, after any amateur career.',
+    difficulty: 'beginner',
+    readMinutes: 2,
+    sourceKeys: [{ key: 'wp-amateur-mma' }],
+    explanation: `A fighter's **professional debut** is their first fight recorded on their professional record, marking the formal transition from amateur or pre-professional competition into the professional ranks under the relevant athletic commission's licensing.`,
+    example: `A fighter with a 4–1 amateur record who then wins their first professional bout begins their professional record at 1–0, with the amateur results tracked separately and not folded into that new total.`,
+    misunderstandings: `A common one: assuming a fighter's professional debut is necessarily their first competitive MMA fight of any kind. Many fighters have amateur records, sometimes lengthy ones, before their professional debut occurs.`,
+  }),
+
+  standard({
+    slug: 'regional-circuit',
+    title: 'Regional Circuit',
+    category: 'career-path',
+    aliases: ['mma regional promotions', 'regional mma scene'],
+    summary:
+      'The network of smaller, local and national promotions where most professional fighters compete before reaching a major organisation.',
+    difficulty: 'intermediate',
+    readMinutes: 3,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `The **regional circuit** refers to the many smaller professional MMA promotions, often organised locally, regionally or nationally rather than globally, where the large majority of professional fighters compete for some or all of their early careers, well below the visibility and pay of a major international promotion.`,
+    howItWorks: `Fighters typically build a professional record on the regional circuit, taking fights against a mix of opposition as they develop, with scouts and matchmakers from larger promotions sometimes tracking standout regional performances as a way of identifying fighters ready to be signed to a bigger stage.`,
+    example: `A fighter might spend the first several years of their professional career competing across a handful of different regional promotions in their area before building a record strong enough, and gaining enough attention, to be offered a contract with a major promotion.`,
+    whyItMatters: `Understanding the regional circuit's existence explains why many fighters who eventually become well known had already had a substantial professional career, often ten or more fights, before most fans ever saw them compete on a major card.`,
+    misunderstandings: `A common one: assuming a fighter's record only "really" starts once they reach a major promotion. Regional-circuit fights are fully part of a fighter's official professional record and are exactly the experience that made them ready for the bigger stage.`,
+    related: [
+      'how-fighters-become-professionals',
+      'building-a-fight-record',
+      'getting-signed-by-a-major-promotion',
+    ],
+  }),
+
+  standard({
+    slug: 'building-a-fight-record',
+    title: 'Building a Fight Record',
+    category: 'career-path',
+    aliases: ['building an mma record', 'how fighters build their record'],
+    summary:
+      'How a fighter’s early professional matchmaking shapes the record that later opportunities depend on.',
+    difficulty: 'intermediate',
+    readMinutes: 3,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `Early in a professional career, matchmakers and a fighter's own team generally look for opponents that let the fighter accumulate wins while continuing to develop, gradually increasing the difficulty of opposition as the fighter's record and experience grow, rather than immediately testing a new professional against the toughest available competition.`,
+    howItWorks: `This is a balancing act: too easy a schedule risks a fighter reaching a major promotion underprepared for genuinely elite competition, while too difficult a schedule too early risks a losing record that closes off future opportunities regardless of the fighter's underlying potential.`,
+    example: `A promising young fighter might be matched carefully through their first several professional fights, building both a winning record and genuine experience, before being tested against a clearly more dangerous opponent once their team judges them ready for that step up.`,
+    whyItMatters: `Understanding how records are actively built, not simply accumulated at random, is part of what "Opponent Quality" and "Strength of Schedule" in the Analytics category exist to help a reader evaluate properly.`,
+    misunderstandings: `A common one: assuming an undefeated early record by itself proves a fighter is exceptional. It can equally reflect careful matchmaking at an early career stage, which is not a criticism of the fighter, simply a normal part of how careers are built.`,
+    related: ['regional-circuit', 'opponent-quality', 'strength-of-schedule'],
+  }),
+
+  standard({
+    slug: 'getting-signed-by-a-major-promotion',
+    title: 'Getting Signed by a Major Promotion',
+    category: 'career-path',
+    aliases: ['signed by ufc', 'getting a contract with a major mma promotion'],
+    summary:
+      'The routes a regional-circuit fighter typically takes to earn a contract with a larger organisation.',
+    difficulty: 'intermediate',
+    readMinutes: 3,
+    sourceKeys: [{ key: 'wp-dana-white-contender' }],
+    explanation: `Fighters typically earn a contract with a major promotion through some combination of a strong regional record that draws scouting attention, a standout performance on a dedicated showcase card built specifically to find new signings, or, less commonly, being poached directly from another promotion after building a reputation there.`,
+    howItWorks: `Major promotions generally weigh a combination of win-loss record, quality of opposition faced, finishing ability, and how a fighter's style is expected to translate to a bigger stage, rather than relying on win-loss record alone, since regional competition quality varies enormously by region and promotion.`,
+    example: `A fighter who compiles a strong finishing record on the regional circuit might be invited to compete on a dedicated contract-earning showcase series; a standout performance there can lead directly to a contract offer from a major promotion afterward.`,
+    whyItMatters: `The path to a major contract shapes which fighters get the visibility major-promotion competition brings, and understanding it explains why some fighters with modest regional records still get opportunities (a particularly notable style or finish rate can outweigh raw win-loss numbers) while others with long unbeaten regional runs do not always get signed quickly.`,
+    misunderstandings: `A common one: assuming a perfect regional record guarantees a contract. Promotions weigh many factors beyond win-loss record, including opposition quality, and a fighter can be passed over despite a strong-looking record for reasons that are not always publicly explained.`,
+    related: ['regional-circuit', 'contender-series-as-a-pathway', 'becoming-ranked'],
+  }),
+
+  standard({
+    slug: 'contender-series-as-a-pathway',
+    title: 'Contender Series as a Career Pathway',
+    category: 'career-path',
+    alsoIn: ['ufc'],
+    aliases: ['contender series career path', 'earning a contract through contender series'],
+    summary:
+      'How a dedicated showcase series functions as a structured route from the regional circuit into a major promotion.',
+    difficulty: 'intermediate',
+    readMinutes: 3,
+    sourceKeys: [{ key: 'wp-dana-white-contender' }],
+    explanation: `A dedicated showcase series, built specifically to let regional-circuit fighters perform in front of a major promotion's decision-makers, functions as one of the more structured and visible pathways into that promotion, as distinct from the less predictable route of simply hoping a regional performance is noticed organically by a scout.`,
+    howItWorks: `From a career-path perspective, this route compresses what might otherwise take years of accumulating regional visibility into a single high-stakes appearance, judged specifically for that purpose, which changes how a fighter and their team might approach preparation and matchmaking leading into it compared with an ordinary regional bout.`,
+    example: `A fighter with a strong but not widely seen regional record might treat a showcase-series appearance as the single most important fight of their career to date, since a standout performance there can lead to a contract far faster than continuing to build a regional resume alone.`,
+    whyItMatters: `Understanding this pathway as a career strategy, not just an event format, helps explain why some fighters and coaches specifically target this route rather than waiting for organic scouting attention.`,
+    misunderstandings: `A common one: assuming this is the only route into a major promotion. It is one structured pathway among several, alongside a strong enough regional record alone or, less commonly, being signed directly from another promotion.`,
+    related: ['regional-circuit', 'getting-signed-by-a-major-promotion'],
+  }),
+
+  standard({
+    slug: 'fighter-development',
+    title: 'Fighter Development',
+    category: 'career-path',
+    aliases: ['mma fighter development', 'developing a young fighter'],
+    summary:
+      'The ongoing process of a fighter improving technically and tactically across a career, not just early on.',
+    difficulty: 'intermediate',
+    readMinutes: 3,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `**Fighter development** refers to the continued technical, tactical and physical growth a fighter undergoes across a career, not only in the early amateur and regional stages: adding new tools, correcting weaknesses exposed by tough opponents, and adapting a style as a fighter ages and their physical attributes change.`,
+    howItWorks: `Development can be visible through specific changes in a fighter's game over time: a fighter once known purely as a striker adding a credible takedown defense, or a wrestling-heavy fighter developing enough submission offence to threaten fights on the ground rather than only controlling position there.`,
+    example: `A fighter who loses an early professional fight after being taken down repeatedly might spend the following camp specifically developing takedown defense, and a later fight against a similar style opponent might show that development directly in how differently the fight plays out.`,
+    whyItMatters: `Recognising ongoing development explains why a fighter's later-career performances can look meaningfully different from their earlier ones, beyond simple experience: real technical growth continues well past a fighter's professional debut.`,
+    misunderstandings: `A common one: assuming a fighter's style and skill set are basically fixed once they reach the professional or major-promotion level. Fighters continue to add tools and correct weaknesses well into established careers.`,
+    related: ['how-fighters-become-professionals', 'fight-camp-structure', 'becoming-a-contender'],
+  }),
+
+  standard({
+    slug: 'becoming-ranked',
+    title: 'Becoming Ranked',
+    category: 'career-path',
+    alsoIn: ['rankings'],
+    aliases: ['getting ranked mma', 'how mma rankings work for fighters'],
+    summary:
+      'What it typically takes for a fighter to first appear in a promotion’s official divisional rankings.',
+    difficulty: 'intermediate',
+    readMinutes: 3,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `A fighter typically first appears in a promotion's divisional rankings after a run of impressive results against sufficiently ranked or notable opposition within that promotion, rather than through any fixed, mechanical formula; most rankings combine a media or panel vote with the promotion's own input, rather than being calculated automatically from results alone.`,
+    howItWorks: `A single win is rarely enough on its own; a fighter's overall body of work, recency of results, and the quality of opponents beaten all factor into whether voters and the promotion consider them ready to be ranked, and rankings can shift meaningfully after just one or two results depending on their significance.`,
+    example: `A fighter who has won several fights against unranked opposition may not yet appear in the rankings; the same fighter beating one or two already-ranked contenders can be enough to enter the rankings immediately, since that result speaks more directly to divisional standing.`,
+    whyItMatters: `Being ranked matters for a fighter's visibility, drawing power, and their standing in the conversation around future title opportunities, making it a meaningful early-career and mid-career milestone.`,
+    misunderstandings: `A common one: assuming rankings update automatically and immediately after every relevant result, the way an algorithmic sports ranking might. Most MMA rankings involve a degree of human judgment and are not purely mechanical.`,
+    related: ['getting-signed-by-a-major-promotion', 'becoming-a-contender', 'opponent-quality'],
+  }),
+
+  standard({
+    slug: 'becoming-a-contender',
+    title: 'Becoming a Contender',
+    category: 'career-path',
+    aliases: ['mma title contender', 'becoming a top contender'],
+    summary:
+      'The step beyond simply being ranked: being recognised as a genuine candidate for the next title opportunity.',
+    difficulty: 'intermediate',
+    readMinutes: 3,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `Being a **contender** generally means more than simply appearing somewhere in a division's rankings; it implies being recognised, by the promotion, media and fans, as a realistic candidate for the next title opportunity, usually built on a run of wins against other ranked opposition near the top of the division.`,
+    howItWorks: `Moving from "ranked" to genuinely "contending" typically requires beating other highly ranked fighters specifically, since wins lower in the rankings, while still valuable, generally do less to establish a fighter as next in line than wins over fighters already close to title contention themselves.`,
+    example: `A fighter ranked in the middle of a division who then beats two top-five opponents in a row is likely to be discussed as a genuine contender, even if a numeric ranking update has not yet caught up to reflect it.`,
+    whyItMatters: `Understanding the distinction between simply being ranked and being considered a contender explains why fight fans and matchmakers can disagree, sometimes intensely, about who "deserves" the next title shot even among fighters who are all technically ranked.`,
+    misunderstandings: `A common one: assuming any ranked fighter is automatically a contender. Contention is a somewhat more subjective, higher bar built specifically around plausibility as the next title challenger.`,
+    related: ['becoming-ranked', 'getting-a-title-shot', 'opponent-quality'],
+  }),
+
+  standard({
+    slug: 'getting-a-title-shot',
+    title: 'Getting a Title Shot',
+    category: 'career-path',
+    alsoIn: ['championships'],
+    aliases: ['earning a title shot mma', 'how fighters get title fights'],
+    summary:
+      'The typically informal, promotion-driven process of deciding who challenges next for a championship.',
+    difficulty: 'intermediate',
+    readMinutes: 3,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `Unlike some sports with a fixed, mechanical qualification process, most MMA promotions decide title challengers through a combination of divisional ranking, recent performance, existing rivalries or storylines, and, in some cases, marketability and scheduling considerations, rather than a strictly automatic system based purely on ranking position.`,
+    howItWorks: `Being the top-ranked contender improves a fighter's case for the next title shot but does not guarantee it; a promotion can and sometimes does select a different contender for reasons including recent form, an existing rivalry with the champion, or event scheduling, which is a recurring source of debate among fans and media.`,
+    example: `A fighter who has been the top-ranked contender for some time might see a differently ranked fighter given the next title opportunity instead, based on the promotion's own judgment about the most compelling or commercially sensible matchup, prompting public debate about fairness.`,
+    whyItMatters: `Understanding that title shots are not purely merit-ranked in a fixed queue explains a great deal of the sport's ongoing debate and controversy around matchmaking, and helps a reader follow those arguments with the right context.`,
+    misunderstandings: `A common one: assuming the single top-ranked contender is always next in line by rule. No major MMA promotion guarantees this mechanically; it is a strong factor in the decision, not an automatic entitlement.`,
+    related: ['becoming-a-contender', 'becoming-ranked', 'how-mma-championships-work'],
+  }),
+];
+
+// ─── Terminology (glossary top-up) ─────────────────────────────────────────
+
+const TERMINOLOGY: ExplainerSeed[] = [
+  definition({
+    slug: 'octagon-glossary',
+    title: 'Octagon',
+    category: 'terminology',
+    aliases: ['octagon definition mma', 'ufc octagon'],
+    summary: 'The eight-sided caged competition area most closely associated with the UFC.',
+    difficulty: 'beginner',
+    readMinutes: 1,
+    sourceKeys: [{ key: 'wp-octagon-2' }],
+    explanation: `The **Octagon** is the eight-sided caged competition area used by the UFC, and the term has become closely associated with that promotion specifically, even though other promotions use differently shaped or branded cages of their own.`,
+    example: `A commentator saying a fighter has "never lost inside the Octagon" is specifically referring to that fighter's record in UFC competition, as distinct from fights they may have had in other promotions using a different cage.`,
+    misunderstandings: `A common one: using "Octagon" as a generic term for any MMA cage. It specifically refers to the UFC's eight-sided design and branding; other promotions' cages are shaped or branded differently even though they serve the same competitive purpose.`,
+  }),
+
+  definition({
+    slug: 'buzzed',
+    title: 'Buzzed',
+    category: 'terminology',
+    aliases: ['buzzed mma term', 'fighter got buzzed'],
+    summary:
+      'Broadcast shorthand for a fighter visibly dazed by a strike, without necessarily being in serious danger.',
+    difficulty: 'beginner',
+    readMinutes: 1,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `A fighter described as **buzzed** has been visibly affected by a strike, showing brief unsteadiness, a delayed reaction, or a momentary lapse in defense, without necessarily being in the more serious danger implied by terms like "rocked" or "hurt".`,
+    example: `A fighter caught by a clean but not fully flush punch might be briefly buzzed, took an extra half-second to react, before recovering their composure and continuing to fight normally.`,
+    misunderstandings: `A common one: treating "buzzed" as interchangeable with "rocked" or a serious knockdown threat. It generally describes a milder, shorter-lived effect than those more serious terms.`,
+  }),
+
+  definition({
+    slug: 'rocked',
+    title: 'Rocked',
+    category: 'terminology',
+    aliases: ['rocked mma term', 'fighter got rocked'],
+    summary:
+      'Broadcast shorthand for a fighter seriously and visibly hurt by a strike, in real danger of being finished.',
+    difficulty: 'beginner',
+    readMinutes: 1,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `A fighter described as **rocked** has been hit hard enough to be seriously and visibly affected, typically showing unsteady legs, a delayed or absent defensive reaction, or clear disorientation, putting them in real danger of the fight being finished if their opponent follows up effectively.`,
+    example: `A fighter dropped momentarily by a clean shot, who wobbles but stays on their feet, is commonly described as rocked, and the following seconds, where their opponent tries to capitalise and they try to recover, are often the most closely watched moments of a fight.`,
+    misunderstandings: `A common one: assuming a rocked fighter is automatically about to be finished. Fighters recover from being rocked and go on to win fights regularly, though the moments immediately after are genuinely high-danger ones.`,
+  }),
+
+  definition({
+    slug: 'ground-game',
+    title: 'Ground Game',
+    category: 'terminology',
+    aliases: ['ground game mma definition', 'grappling ground game'],
+    summary:
+      'A general term for a fighter’s overall grappling ability and approach once a fight reaches the mat.',
+    difficulty: 'beginner',
+    readMinutes: 1,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `A fighter's **ground game** refers, broadly, to their overall skill set and tendencies once a fight reaches the mat: their positional control, submission offence and defence, and general comfort level fighting on the ground, as opposed to specific named positions or techniques individually.`,
+    example: `A fighter praised for a "well-rounded ground game" is being described as generally comfortable and effective across multiple ground positions and submission exchanges, not necessarily excelling at any one specific technique.`,
+    misunderstandings: `A common one: using "ground game" to mean only submissions. It covers positional control and ground-and-pound just as much as submission grappling.`,
+  }),
+
+  definition({
+    slug: 'stand-up',
+    title: 'Stand-Up (Striking)',
+    category: 'terminology',
+    aliases: ['stand up game mma', 'fighter stand-up striking'],
+    summary:
+      'A fighter’s overall striking ability while both fighters are on their feet, distinct from a referee standing fighters back up.',
+    difficulty: 'beginner',
+    readMinutes: 1,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `A fighter's **stand-up** refers to their overall striking skill and style while both fighters are on their feet at range: boxing, kickboxing and Muay Thai-derived skills fall under this term. This is distinct from the separate, unrelated use of "standing the fighters back up", which describes a referee's decision to restart a stalled ground exchange from the feet.`,
+    example: `A fighter praised for "crisp stand-up" is being complimented on their striking technique and skill while both fighters are upright and at range, unrelated to any decision a referee has made about restarting the fight.`,
+    misunderstandings: `A common one: confusing this sense of "stand-up" with a referee standing fighters back up from the ground. The two uses of similar language describe completely different things: one is a skill description, the other is a specific referee action.`,
+  }),
+
+  definition({
+    slug: 'wobbled',
+    title: 'Wobbled',
+    category: 'terminology',
+    aliases: ['wobbled mma term', 'fighter legs wobbled'],
+    summary:
+      'Broadcast shorthand describing a fighter’s legs briefly buckling or unsteady after a strike.',
+    difficulty: 'beginner',
+    readMinutes: 1,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `A fighter described as **wobbled** has had their legs visibly buckle or become unsteady after absorbing a strike, a specific physical sign commentators point to as evidence a shot has landed cleanly and affected balance and coordination.`,
+    example: `A fighter's legs might wobble noticeably after a leg kick or a head strike, prompting an opponent to press forward immediately to try to capitalise before the fighter recovers their footing.`,
+    misunderstandings: `A common one: assuming wobbled legs always mean a fighter is about to be finished. Fighters regularly recover balance within seconds and continue competing effectively.`,
+  }),
+
+  definition({
+    slug: 'gas-tank',
+    title: 'Gas Tank / Gassed',
+    category: 'terminology',
+    aliases: ['gas tank mma', 'gassed out mma', 'cardio gas tank'],
+    summary: 'A fighter’s stamina reserves, and the state of having depleted them.',
+    difficulty: 'beginner',
+    readMinutes: 1,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `A fighter's **gas tank** refers to their stamina reserves across a fight; a fighter described as **gassed** has depleted those reserves, typically showing heavy breathing, reduced output, and slower reactions and movement as a result.`,
+    example: `A fighter who pushes an extremely high pace in round one might find themselves visibly gassed by round three, with their striking volume and takedown defense both noticeably declining as a result of the earlier effort.`,
+    misunderstandings: `A common one: assuming being gassed is purely about physical fitness. Fight-specific factors, adrenaline dumps, absorbed body strikes, or fighting at an unfamiliar pace, can also affect how quickly a well-conditioned fighter gasses in a given fight.`,
+  }),
+
+  definition({
+    slug: 'cardio',
+    title: 'Cardio',
+    category: 'terminology',
+    aliases: ['mma cardio conditioning', 'fighter cardio'],
+    summary:
+      'A fighter’s cardiovascular conditioning and ability to sustain output across a full fight.',
+    difficulty: 'beginner',
+    readMinutes: 1,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `A fighter's **cardio** refers to their cardiovascular conditioning, specifically their capacity to sustain striking output, takedown attempts and overall pace across every round of a fight without their performance dropping off significantly.`,
+    example: `A fighter known for "elite cardio" might maintain a similar pace and output in the final round of a five-round fight as they showed in the first, a notable and often decisive advantage over an opponent whose output fades over time.`,
+    misunderstandings: `A common one: assuming cardio is purely a function of general fitness outside the sport. Fight-specific conditioning, training at the pace and intensity a real fight demands, matters as much as general aerobic fitness.`,
+  }),
+
+  definition({
+    slug: 'fight-iq',
+    title: 'Fight IQ',
+    category: 'terminology',
+    aliases: ['fight iq mma', 'fighter fight intelligence'],
+    summary:
+      'A fighter’s in-fight decision-making and tactical awareness, as distinct from raw physical skill.',
+    difficulty: 'beginner',
+    readMinutes: 1,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `A fighter's **fight IQ** describes their in-fight decision-making: reading an opponent's patterns, adjusting a losing gameplan mid-fight, managing energy and risk sensibly, and making sound tactical choices under pressure, as distinct from their raw physical tools or technical skill in isolation.`,
+    example: `A fighter with strong fight IQ might recognise midway through a round that their striking exchanges are going poorly and deliberately shift to pursuing takedowns instead, rather than continuing to trade unsuccessfully out of stubbornness or habit.`,
+    misunderstandings: `A common one: assuming fight IQ and technical skill are the same thing. A technically gifted fighter can still make poor tactical decisions in the moment, and a less flashy fighter with strong fight IQ can outperform expectations by consistently making the smarter choice.`,
+  }),
+
+  definition({
+    slug: 'killer-instinct',
+    title: 'Killer Instinct',
+    category: 'terminology',
+    aliases: ['killer instinct mma', 'closing out a fight killer instinct'],
+    summary:
+      'A fighter’s tendency to press an advantage decisively once an opponent is hurt, rather than easing off.',
+    difficulty: 'beginner',
+    readMinutes: 1,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `**Killer instinct** describes a fighter's tendency to press an advantage decisively and immediately the moment an opponent is visibly hurt, rather than hesitating, easing off, or allowing the hurt fighter time to recover.`,
+    example: `A fighter who immediately follows up with a fast combination the instant their opponent is wobbled, rather than pausing to assess, is commonly praised for showing killer instinct in that moment.`,
+    misunderstandings: `A common one: treating a lack of immediate follow-up as evidence a fighter lacks killer instinct outright. Sometimes a fighter holds back momentarily out of caution against a feigned injury or a dangerous counter, a different, more tactical decision than simply hesitating.`,
+  }),
+
+  definition({
+    slug: 'granite-chin',
+    title: 'Granite Chin / Iron Chin',
+    category: 'terminology',
+    aliases: ['granite chin mma', 'iron chin fighter', 'good chin mma'],
+    summary:
+      'Descriptive terms for a fighter’s apparent ability to absorb heavy strikes without being finished.',
+    difficulty: 'beginner',
+    readMinutes: 1,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `A fighter described as having a **granite chin** or **iron chin** has repeatedly demonstrated an ability to absorb hard strikes, particularly to the head, without being knocked out, based on their observed fight history rather than any measurable physical trait.`,
+    example: `A fighter who has taken clean, hard shots from multiple heavy-handed opponents across a career without ever being finished by strikes is commonly described as having a granite chin.`,
+    misunderstandings: `A common one: assuming a fighter's chin is a fixed, permanent trait. Durability can and does change over a career, and a fighter long regarded as having a granite chin can be finished by strikes later in their career after years of accumulated damage.`,
+  }),
+
+  definition({
+    slug: 'punchers-chance',
+    title: "Puncher's Chance",
+    category: 'terminology',
+    aliases: ['punchers chance mma', 'one punch chance'],
+    summary:
+      'The idea that a single powerful strike can end a fight regardless of how the rest of it is going.',
+    difficulty: 'beginner',
+    readMinutes: 1,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `A **puncher's chance** refers to the possibility that a fighter with significant knockout power can end a fight with a single clean strike, even while otherwise losing clearly on output, position, or the judges' scorecards up to that point.`,
+    example: `A fighter being out-struck and out-wrestled for most of a fight might still be described as having a puncher's chance, since a single clean shot landed at any point could change the outcome instantly, regardless of how the fight has gone so far.`,
+    misunderstandings: `A common one: treating a puncher's chance as a meaningful likelihood rather than a low-probability possibility. The phrase specifically acknowledges that the chance exists despite being unlikely, not that it should be expected.`,
+  }),
+
+  standard({
+    slug: 'home-octagon-advantage',
+    title: 'Home Octagon Advantage',
+    category: 'terminology',
+    aliases: ['home advantage mma', 'fighting in home country advantage'],
+    summary:
+      'A genuinely debated idea: whether fighting in front of a home crowd meaningfully helps a fighter the way home advantage does in team sports.',
+    difficulty: 'intermediate',
+    readMinutes: 2,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `**"Home Octagon advantage"** is a term sometimes used to describe the idea that a fighter competing in their home country or city, in front of a strongly supportive crowd, might perform better, or that judges might be influenced by crowd reaction. Unlike home advantage in many team sports, which is well documented statistically, whether this effect meaningfully exists in individual combat sports like MMA is genuinely disputed and unclear rather than an established fact.`,
+    howItWorks: `The proposed mechanisms are plausible in theory (crowd energy affecting a fighter's adrenaline and effort, or judges being subtly influenced by crowd reaction to a close round) but MMA does not have anywhere near the volume of controlled data that team sports have used to establish home advantage statistically, and individual fight outcomes are affected by so many other larger factors that isolating a home-crowd effect, if any exists, is difficult.`,
+    example: `A fighter competing in front of a passionately supportive home crowd might be widely discussed as benefiting from that atmosphere, but this remains an intuitive, commonly repeated claim rather than one backed by the kind of statistical evidence used to demonstrate home advantage in leagues with far larger sample sizes.`,
+    whyItMatters: `Being honest about this uncertainty matters because the term gets used casually and confidently in broadcasts and previews, when the underlying claim is genuinely unresolved rather than a settled fact the way home advantage is treated in some team sports.`,
+    misunderstandings: `A common one: assuming home advantage in MMA is as well established as it is in football or basketball. It is a plausible but disputed idea in individual combat sports, not a proven effect, and should be treated as speculative when it comes up in fight previews.`,
+    related: ['win-probability-concepts'],
+  }),
+
+  definition({
+    slug: 'ground-zero',
+    title: 'Ground Zero',
+    category: 'terminology',
+    aliases: ['ground zero mma slang', 'started from ground zero fighter'],
+    summary:
+      'Informal broadcast shorthand for a fighter starting from scratch, either in a career or after being hurt in a fight.',
+    difficulty: 'beginner',
+    readMinutes: 1,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `**"Ground zero"** is informal broadcast language, used in one common sense to describe a fighter effectively starting their recovery or composure from scratch after a bad moment in a fight (having just been badly hurt, say), and in another to describe a fighter or team beginning a rebuild essentially from nothing after a setback.`,
+    example: `A commentator might describe a fighter who has just weathered a difficult knockdown as needing to "reset from ground zero" for the remainder of the round, rebuilding their composure and rhythm from that low point.`,
+    misunderstandings: `A common one: treating this as a technical term with a precise definition. It is informal broadcast shorthand rather than an official rule or scoring term.`,
+  }),
+
+  definition({
+    slug: 'measuring-distance',
+    title: 'Measuring Distance / Range Finding',
+    category: 'terminology',
+    aliases: ['range finding mma', 'measuring distance striking'],
+    summary:
+      'Using probing strikes or footwork to judge exactly how far away an opponent is before committing to a bigger attack.',
+    difficulty: 'beginner',
+    readMinutes: 1,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `**Measuring distance**, or **range finding**, describes a fighter using light, probing strikes (often a jab or a light kick) or careful footwork to judge exactly how far away an opponent is, before committing to a more powerful or committed attack.`,
+    example: `A fighter might throw several light jabs early in an exchange specifically to gauge the exact distance to their opponent, before stepping in with a heavier combination once that distance is confirmed.`,
+    misunderstandings: `A common one: assuming every light strike thrown is intended to score or damage. Many are specifically about gathering information on range rather than being a genuine scoring attempt.`,
+  }),
+
+  definition({
+    slug: 'walk-off-knockout',
+    title: 'Walk-Off Knockout',
+    category: 'terminology',
+    aliases: ['walk off ko mma', 'walked away knockout'],
+    summary:
+      'A knockout so decisive the striking fighter turns and walks away, confident the fight is already over.',
+    difficulty: 'beginner',
+    readMinutes: 1,
+    sourceKeys: [{ key: 'wp-tko-2' }],
+    explanation: `A **walk-off knockout** describes a knockout so immediately and obviously decisive that the fighter who landed the finishing strike turns and begins walking away in celebration before the referee has formally stopped the fight, confident the outcome is already settled.`,
+    example: `A fighter who lands a clean, fully flush strike that instantly drops an opponent might begin celebrating and walking toward a corner of the cage even as the referee is still moving in to formally call the stoppage.`,
+    misunderstandings: `A common one: assuming a fighter walking away means the fight is automatically over. The referee still has to formally stop the fight and confirm the result; a walk-off is a strong visual signal of confidence, not itself the official end of the bout.`,
+  }),
+
+  definition({
+    slug: 'comeback-win',
+    title: 'Comeback Win',
+    category: 'terminology',
+    aliases: ['mma comeback victory', 'came back to win mma'],
+    summary:
+      'A win secured after appearing to be in serious trouble or clearly behind earlier in the fight.',
+    difficulty: 'beginner',
+    readMinutes: 1,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `A **comeback win** describes a victory secured after a fighter appeared to be in serious danger, or was clearly behind on output, position or the likely scorecards, earlier in the same fight, before turning the fight around to win.`,
+    example: `A fighter who is dropped and nearly finished in the first round, then recovers to win the fight by submission in the third, is described as having earned a comeback win, a result that often draws particular praise for the recovery shown.`,
+    misunderstandings: `A common one: assuming a comeback win requires having been knocked down specifically. Being clearly behind on output or position for a stretch of a fight, without necessarily being hurt, can also set up a comeback win once the fighter turns things around.`,
+  }),
+
+  definition({
+    slug: 'statement-win',
+    title: 'Statement Win',
+    category: 'terminology',
+    aliases: ['statement victory mma', 'statement performance mma'],
+    summary:
+      'A win so dominant or significant that it meaningfully changes how a fighter is perceived.',
+    difficulty: 'beginner',
+    readMinutes: 1,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `A **statement win** describes a victory, usually a particularly dominant performance or a win over a highly regarded opponent, significant enough to noticeably change how a fighter is perceived by fans, media and matchmakers going forward, beyond simply adding one more win to their record.`,
+    example: `A fighter who has struggled to be taken seriously as a contender might deliver a dominant, one-sided win over a well-established ranked opponent, widely discussed afterward as a statement win that changes the conversation around their career.`,
+    misunderstandings: `A common one: assuming any win against a ranked opponent automatically qualifies as a statement win. The term usually implies something more: a particularly dominant, surprising, or narrative-shifting performance, not simply a win recorded on the record.`,
+  }),
+
+  standard({
+    slug: 'gatekeeper',
+    title: 'Gatekeeper',
+    category: 'terminology',
+    aliases: ['mma gatekeeper fighter', 'gatekeeper of a division'],
+    summary:
+      'A respected term for a fighter who reliably tests other fighters at a certain level without quite reaching elite status themselves.',
+    difficulty: 'beginner',
+    readMinutes: 2,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `A **gatekeeper** is a fighter, typically experienced and skilled, who reliably beats fighters below a certain level of the division but consistently comes up short against the division's genuine elite, effectively marking the line between "not quite ready" and "ready for top competition". Despite sometimes being used dismissively, being a gatekeeper reflects a real and respected level of skill: it takes a genuinely strong fighter to be a reliable, difficult test.`,
+    howItWorks: `Matchmakers often use a gatekeeper deliberately, matching an unproven prospect against them specifically to find out whether that prospect is ready for the division's top tier: beating a well-established gatekeeper is a meaningful, informative result, in a way that beating a much weaker or less tested opponent is not.`,
+    example: `A fighter with a long career of competitive, closely fought losses to top-five opponents but consistent wins over the rest of the division might be described as a gatekeeper, a fighter whose fights are watched specifically to gauge how ready a rising prospect really is.`,
+    whyItMatters: `Understanding this term respectfully matters because it is easy to hear "gatekeeper" as an insult; in practice, it describes a genuinely skilled, durable fighter whose results carry real diagnostic value for the rest of the division.`,
+    misunderstandings: `A common one: treating "gatekeeper" as a synonym for a mediocre or weak fighter. A true gatekeeper is often a highly skilled, durable veteran; the term describes their typical results against elite competition specifically, not a broader judgment of their overall ability.`,
+    related: ['journeyman', 'veteran', 'prospect'],
+  }),
+
+  definition({
+    slug: 'journeyman',
+    title: 'Journeyman',
+    category: 'terminology',
+    aliases: ['journeyman fighter mma', 'journeyman mma definition'],
+    summary:
+      'An experienced fighter who competes widely and often, without necessarily reaching title contention.',
+    difficulty: 'beginner',
+    readMinutes: 1,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `A **journeyman** is an experienced, typically well-travelled fighter who competes regularly, often across multiple promotions over a long career, without necessarily reaching the rankings or title contention, but who is generally respected for durability, professionalism and a long, active competitive record.`,
+    example: `A fighter with 40 professional fights across a decade and a half, competing for a wide range of promotions along the way, might be described as a journeyman, a career built on longevity and steady work rather than title chasing specifically.`,
+    misunderstandings: `A common one: using "journeyman" as an insult. It is generally a respectful description of a long, active, professional career, not a judgment that the fighter lacks skill.`,
+  }),
+
+  definition({
+    slug: 'prospect',
+    title: 'Prospect',
+    category: 'terminology',
+    aliases: ['mma prospect definition', 'rising prospect fighter'],
+    summary:
+      'A young or early-career fighter regarded as having strong potential to reach the top of a division.',
+    difficulty: 'beginner',
+    readMinutes: 1,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `A **prospect** is a fighter, usually early in their professional or major-promotion career, regarded by fans, media or matchmakers as having strong potential to eventually reach the top of their division, based on their skill set, athleticism, or early results, even though that potential remains unproven at the highest level.`,
+    example: `A fighter who debuts in a major promotion with an eye-catching finish and an unusual combination of skills might quickly be labelled a prospect, generating attention and expectation well before they have faced genuinely elite competition.`,
+    misunderstandings: `A common one: treating "prospect" as a guarantee of future success. Being labelled a prospect reflects potential and expectation, not a certainty; plenty of highly touted prospects fail to develop into contenders once tested against tougher opposition.`,
+  }),
+
+  definition({
+    slug: 'veteran',
+    title: 'Veteran',
+    category: 'terminology',
+    aliases: ['mma veteran definition', 'veteran fighter'],
+    summary:
+      'A fighter with substantial career experience, generally implying composure and durability built over time.',
+    difficulty: 'beginner',
+    readMinutes: 1,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `A **veteran** is a fighter with a substantial amount of career experience, typically many professional fights across a number of years, a description that generally implies accumulated composure, fight-IQ and durability, whatever their current position in the division.`,
+    example: `A fighter competing in their fifteenth year as a professional, having fought under multiple rulesets and against several generations of opponents, is commonly described as a veteran, regardless of whether they are currently ranked or contending for a title.`,
+    misunderstandings: `A common one: assuming "veteran" implies a fighter is past their best. It describes accumulated experience, which can coexist with a fighter still performing at or near the top of a division.`,
+  }),
+];
+
+// ─── Advanced Concepts ──────────────────────────────────────────────────────
+
+const ADVANCED_CONCEPTS: ExplainerSeed[] = [
+  standard({
+    slug: 'positional-grappling',
+    title: 'Positional Grappling',
+    category: 'advanced-concepts',
+    aliases: ['positional grappling mma', 'position-based grappling strategy'],
+    summary: 'Prioritising control of position over immediately attacking a submission.',
+    difficulty: 'advanced',
+    readMinutes: 3,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `**Positional grappling** is an approach that prioritises establishing and maintaining a dominant body position, side control, mount, or back control, over immediately attempting a submission from a less secure position, on the reasoning that a securely held dominant position both scores well and creates safer, higher-percentage submission opportunities later.`,
+    howItWorks: `A positionally minded grappler will often pass through several improving positions in sequence, consolidating each one against the opponent's escape attempts, rather than lunging for the first submission opportunity that appears from a less advantageous spot, accepting a slower route to a finish in exchange for a much lower risk of losing the position entirely.`,
+    example: `Rather than attacking an arm the instant it becomes available from a loosely held side control, a positional grappler might first advance to mount, secure that position fully, and only then look for the submission, since the mount offers a far more secure platform to finish from.`,
+    whyItMatters: `This approach underlies a great deal of high-level MMA grappling and is a major reason some grapplers appear patient or conservative on the ground compared with a purely submission-hunting style, despite ultimately being just as dangerous once they do commit to a finish.`,
+    misunderstandings: `A common one: reading positional patience as a lack of aggression or finishing intent. A skilled positional grappler is often simply sequencing their attack for a higher-percentage finish rather than declining to attack at all.`,
+    related: ['submission-threats-as-position-control', 'scramble-advantage'],
+  }),
+
+  standard({
+    slug: 'scramble-advantage',
+    title: 'Scramble Advantage',
+    category: 'advanced-concepts',
+    aliases: ['scramble advantage mma', 'winning scrambles grappling'],
+    summary:
+      'The tactical edge gained by a fighter who consistently comes out ahead in fast, unsettled grappling exchanges.',
+    difficulty: 'advanced',
+    readMinutes: 3,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `A **scramble** is a fast, chaotic grappling exchange in which neither fighter has settled into a controlled position, both moving and reacting quickly as the position resolves. A **scramble advantage** describes a fighter's demonstrated tendency to consistently end up in the better position once a given scramble settles, a skill distinct from either fighter's ability in a static, already-established position.`,
+    howItWorks: `Winning scrambles typically comes down to superior scramble-specific instincts and conditioning: reading an opponent's weight and momentum a fraction of a second faster, and having the explosiveness and technical repertoire to capitalise on a fleeting opening before it closes.`,
+    example: `Two fighters attempting to escape and re-establish position from a failed takedown might scramble through several rapid position changes in a couple of seconds; a fighter with a strong scramble advantage tends to be the one who ends up on top or in the dominant spot once the exchange finally settles, fight after fight.`,
+    whyItMatters: `A fighter who consistently wins scrambles gains a persistent positional edge across a fight that a purely static positional comparison between the two fighters would not predict, making scramble ability a genuinely separate skill worth recognising on its own.`,
+    misunderstandings: `A common one: assuming scramble outcomes are essentially random or a matter of luck. Consistently winning scrambles is a real, trainable skill, and some fighters are demonstrably and repeatedly better at it than others.`,
+    related: ['positional-grappling', 'counter-wrestling'],
+  }),
+
+  standard({
+    slug: 'layered-takedown-entries',
+    title: 'Layered Takedown Entries',
+    category: 'advanced-concepts',
+    aliases: ['layered takedowns mma', 'combination takedown setups'],
+    summary:
+      'Chaining together multiple takedown attempts and setups so a defended first attempt flows into a second, different one.',
+    difficulty: 'advanced',
+    readMinutes: 3,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `**Layered takedown entries** describes a wrestler chaining multiple distinct takedown attempts together in quick succession, so that an opponent's successful defence against the first attempt leaves them poorly positioned to defend the second, different attempt that immediately follows, rather than relying on a single takedown shot in isolation.`,
+    howItWorks: `A wrestler might open with a single-leg attempt specifically to provoke a predictable defensive reaction (the opponent sprawling their hips back, say), then immediately transition to a different attack, a trip or a second takedown angle, that exploits exactly the position that defensive reaction leaves the opponent in.`,
+    example: `A fighter shoots for a single-leg takedown; the opponent sprawls to defend it, and the attacking fighter immediately transitions that same entry into a body lock and a trip, exploiting the opponent's now-extended, off-balanced posture from defending the first attempt.`,
+    whyItMatters: `Layering entries this way is a significant part of what separates elite wrestlers in MMA from merely competent ones: a single well-defended takedown attempt rarely troubles a good defensive wrestler, but a well-sequenced combination of attempts is much harder to defend cleanly all the way through.`,
+    misunderstandings: `A common one: assuming a stuffed first takedown attempt means the exchange is over. A layered attacker treats the first attempt's defence as information, and often as a direct setup for the technique that follows.`,
+    related: ['counter-wrestling', 'strike-to-takedown-entries'],
+  }),
+
+  standard({
+    slug: 'submission-threats-as-position-control',
+    title: 'Submission Threats as Position Control',
+    category: 'advanced-concepts',
+    aliases: ['submission threat control', 'using submissions to hold position'],
+    summary:
+      'Threatening a submission not necessarily to finish it, but to prevent an opponent from improving position or escaping.',
+    difficulty: 'advanced',
+    readMinutes: 3,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `A genuinely deep grappling concept: a fighter can hold or threaten a submission attempt not primarily to finish the fight with it, but to occupy an opponent's hands and attention defending it, which prevents that opponent from using those same hands and attention to escape or improve their own position. The submission threat functions as a control tool as much as, or instead of, a finishing tool.`,
+    howItWorks: `An opponent forced to keep both hands actively defending, say, a guillotine choke attempt cannot simultaneously use those hands to posture up, create framing space, or work toward an escape; the attacking fighter can exploit that constraint to advance position or simply run time, even if the submission itself is never actually close to finishing the fight.`,
+    example: `A fighter locks in a loose guillotine choke that has little realistic finishing chance from that particular position; rather than abandoning it, they maintain the threat specifically because their opponent has to keep both hands defending the choke, giving the attacking fighter a freer path to work toward a better position elsewhere.`,
+    whyItMatters: `Recognising this concept explains a great deal of ground grappling that can otherwise look passive or purposeless to an untrained eye, a fighter holding an unfinished submission for an extended period is very often doing real tactical work with it, not merely failing to finish.`,
+    misunderstandings: `A common one: assuming a submission attempt that does not result in a tap has failed or accomplished nothing. Many submission attempts are doing exactly what they are meant to do even without ever coming close to finishing the fight.`,
+    related: ['positional-grappling', 'wrestling-to-submission-chains'],
+  }),
+
+  standard({
+    slug: 'open-side-vs-closed-side-striking',
+    title: 'Open-Side vs Closed-Side Striking',
+    category: 'advanced-concepts',
+    aliases: ['open side closed side striking', 'lead leg matchup striking'],
+    summary:
+      'How the relationship between two fighters’ stances changes which strikes and angles are naturally available.',
+    difficulty: 'advanced',
+    readMinutes: 3,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `When two fighters share the same stance (both orthodox or both southpaw), their lead legs and lead hands are on the same side, described as fighting **closed side**, or "same stance"; when they fight in opposite stances (one orthodox, one southpaw), their lead legs and hands are on opposite sides, described as fighting **open side**, or "opposite stance". The relationship changes which strikes, angles and footwork naturally line up between the two fighters.`,
+    howItWorks: `In an open-side matchup, each fighter's lead hand and rear hand naturally point more directly at open areas of the other's centreline, and low kicks aimed at an opponent's lead leg travel to a different, often more exposed target than they do in a closed-side matchup, which is part of why open-stance fights are often discussed as playing out differently and requiring specific tactical adjustments most fighters have to train for deliberately.`,
+    example: `An orthodox fighter facing a southpaw (an open-side matchup) often has to adjust their footwork, commonly stepping to the outside of their opponent's lead foot, to find angles that are simply less available or riskier in a same-stance matchup, where that outside-angle footwork works differently.`,
+    whyItMatters: `Recognising which kind of matchup a fight is (open or closed side) helps explain footwork and striking choices that otherwise look unusual: a fighter's outside-foot positioning and target selection genuinely change based on their opponent's stance, not just their opponent's individual skill.`,
+    misunderstandings: `A common one: assuming stance matchups are a minor detail. Open-stance fights are widely considered to require a genuinely different tactical approach, and some fighters are demonstrably far more comfortable in one type of matchup than the other.`,
+    related: ['range-traps'],
+  }),
+
+  standard({
+    slug: 'range-traps',
+    title: 'Range Traps',
+    category: 'advanced-concepts',
+    aliases: ['range trap striking mma', 'baiting range mma'],
+    summary:
+      'Deliberately presenting a false sense of safe distance to draw an opponent into a strike or takedown.',
+    difficulty: 'advanced',
+    readMinutes: 3,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `A **range trap** is a deliberate tactic in which a fighter presents what looks, to their opponent, like a safe or favourable distance to attack from, only to have prepared a specific counter, a strike, a level change into a takedown, or a defensive reaction, ready for the exact moment the opponent commits to closing that distance.`,
+    howItWorks: `A fighter setting a range trap might subtly adjust their footwork or guard to look more exposed or hittable than they actually are, inviting a specific attack they have already planned a response for, exploiting the opponent's own aggression or opportunism against them.`,
+    example: `A fighter might deliberately drop their lead hand slightly, appearing to leave an opening for a straight punch; when the opponent commits to that exact strike, the trap-setting fighter is already prepared with a slip and a counter they had planned in advance.`,
+    whyItMatters: `Range traps represent a higher level of tactical sophistication than simply reacting to whatever an opponent does, actively shaping what an opponent is likely to attempt next and being ready for it before it happens.`,
+    misunderstandings: `A common one: assuming an apparent opening in a fighter's guard or footwork is always a genuine mistake. Some openings are deliberately presented bait, and reading the difference is part of what separates elite tacticians from less experienced fighters.`,
+    related: ['open-side-vs-closed-side-striking', 'transitional-striking'],
+  }),
+
+  standard({
+    slug: 'counter-wrestling',
+    title: 'Counter-Wrestling',
+    category: 'advanced-concepts',
+    aliases: ['counter wrestling mma', 'defensive wrestling counters'],
+    summary:
+      'Using an opponent’s own takedown attempt against them, rather than merely stopping it.',
+    difficulty: 'advanced',
+    readMinutes: 3,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `**Counter-wrestling** goes beyond simply defending a takedown attempt (sprawling and disengaging); it means actively using an opponent's own committed takedown attempt against them, turning their momentum and level change into an opportunity to score, whether by landing strikes on a now-exposed opponent, taking the opponent's own back, or reversing straight into top position.`,
+    howItWorks: `Because a takedown attempt commits the attacker's weight and posture in a specific, somewhat predictable direction, a skilled counter-wrestler can time a sprawl or a whizzer specifically to exploit that committed posture, rather than merely surviving the attempt and resetting to neutral.`,
+    example: `An opponent shoots for a single-leg takedown; rather than simply sprawling to stop it and disengaging, the defending fighter sprawls while simultaneously working an underhook and spinning behind, taking the attacker's back directly off their own failed attempt.`,
+    whyItMatters: `Counter-wrestling turns an opponent's aggression directly against them, and a fighter known for strong counter-wrestling can make attempting takedowns against them genuinely risky rather than merely unproductive.`,
+    misunderstandings: `A common one: treating good takedown defense and good counter-wrestling as the same skill. Stopping a takedown is defense; turning that same attempt into an active scoring opportunity is the additional, more advanced skill counter-wrestling describes.`,
+    related: ['scramble-advantage', 'layered-takedown-entries'],
+  }),
+
+  standard({
+    slug: 'transitional-striking',
+    title: 'Transitional Striking',
+    category: 'advanced-concepts',
+    aliases: ['transitional striking mma', 'striking during scrambles'],
+    summary:
+      'Landing meaningful strikes during a scramble or position change, when neither fighter has fully settled.',
+    difficulty: 'advanced',
+    readMinutes: 3,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `**Transitional striking** describes landing effective strikes during the brief, chaotic window of a scramble or position change, when neither fighter has yet settled into a controlled stance or grappling position, as distinct from striking from a stable, established position on the feet or on the ground.`,
+    howItWorks: `Because both fighters are moving and off-balance during a transition, transitional strikes are typically shorter, tighter and less powerful than strikes thrown from a stable base, but they carry real value precisely because an opponent mid-transition is less able to see them coming or defend cleanly.`,
+    example: `As a takedown attempt is being scrambled and neither fighter has settled into top or bottom position, one fighter lands a short, sharp elbow in the brief window before the position resolves, a strike that would have been far harder to land had both fighters already settled into a static position.`,
+    whyItMatters: `Recognising transitional striking as its own skill explains how some fighters manage to land damage even during scrambles that look, to an untrained eye, like pure grappling exchanges with no striking involved at all.`,
+    misunderstandings: `A common one: assuming all meaningful striking happens only from a stable, settled position. A significant amount of fight-changing damage in MMA is landed during exactly these unsettled transitional moments.`,
+    related: ['range-traps', 'scramble-advantage'],
+  }),
+
+  standard({
+    slug: 'wrestling-to-submission-chains',
+    title: 'Wrestling-to-Submission Chains',
+    category: 'advanced-concepts',
+    aliases: ['wrestling to submission mma', 'takedown into submission chain'],
+    summary:
+      'A fighter using a wrestling background specifically as a delivery system for submission attacks, rather than as an end in itself.',
+    difficulty: 'advanced',
+    readMinutes: 3,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `**Wrestling-to-submission chains** describes a fighter whose takedowns and top-position control are used specifically as the entry point for submission attacks, rather than as a standalone strategy focused only on control and ground-and-pound. The wrestling is the delivery mechanism; the submission is the intended destination.`,
+    howItWorks: `A fighter working this way typically has a clear mental sequence in mind before they ever shoot for the takedown: which position they intend to advance to from top control, and which specific submission they intend to threaten from there, treating the takedown itself as only the first step of a longer, planned sequence.`,
+    example: `A fighter might specifically target a takedown that lands them in a position they know transitions cleanly into an arm-triangle setup, rather than simply taking the fight down and figuring out what to do once they get there.`,
+    whyItMatters: `This distinguishes fighters whose wrestling is purely about control and scoring from those using it as a genuine finishing weapon, and it explains why some heavily wrestling-based fighters produce a surprising number of submission finishes rather than winning exclusively by decision.`,
+    misunderstandings: `A common one: assuming a fighter with a wrestling background is necessarily focused only on control rather than finishing. Many of the sport's most dangerous submission specialists set up their finishes specifically through wrestling entries.`,
+    related: ['submission-threats-as-position-control', 'positional-grappling'],
+  }),
+
+  standard({
+    slug: 'strike-to-takedown-entries',
+    title: 'Strike-to-Takedown Entries',
+    category: 'advanced-concepts',
+    aliases: ['strike to takedown mma', 'punch into takedown setup'],
+    summary: 'Using a striking combination specifically to set up and disguise a takedown attempt.',
+    difficulty: 'advanced',
+    readMinutes: 3,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `A **strike-to-takedown entry** uses a striking combination, most commonly a jab or a short combination, not purely to land or damage, but to draw a specific defensive reaction from an opponent (covering up, backing straight up, or bracing) that creates the exact opening a takedown attempt needs, disguising the level change until the last possible moment.`,
+    howItWorks: `Because a fighter defending strikes is generally focused on their opponent's hands and upper body, a level change that comes immediately after a striking combination, rather than as an isolated, telegraphed shot, is often harder to see coming and sprawl against in time.`,
+    example: `A fighter throws a jab-cross combination that causes their opponent to raise their guard and lean back slightly; in that exact instant, the attacking fighter changes levels and drives through for a double-leg takedown, using the strikes' defensive reaction as cover for the entry.`,
+    whyItMatters: `This is one of the most common ways elite mixed-discipline fighters actually land takedowns against opponents with otherwise strong takedown defense, since a takedown attempt disguised inside a striking sequence is measurably harder to see and stop than an isolated shot.`,
+    misunderstandings: `A common one: assuming striking and wrestling are used entirely separately within a single exchange. High-level fighters frequently blend the two specifically so one sets up the other.`,
+    related: ['layered-takedown-entries', 'takedown-to-striking-sequences'],
+  }),
+
+  standard({
+    slug: 'takedown-to-striking-sequences',
+    title: 'Takedown-to-Striking Sequences',
+    category: 'advanced-concepts',
+    aliases: ['takedown into striking mma', 'ground and pound sequence setup'],
+    summary:
+      'Using a takedown specifically to create a striking opportunity, rather than purely to control position.',
+    difficulty: 'advanced',
+    readMinutes: 3,
+    sourceKeys: [{ key: 'wp-mma-stats' }],
+    explanation: `A **takedown-to-striking sequence** is the reverse pairing of a strike-to-takedown entry: a fighter uses a takedown specifically to land in a position from which effective ground strikes are available, treating the takedown itself as a setup for striking damage rather than as an end in itself focused purely on control.`,
+    howItWorks: `A fighter working this way typically aims the takedown at landing in a specific top position, side control or a strong half guard top, known to offer good striking angles, rather than simply taking the fight down anywhere it happens to land, and follows the takedown immediately with strikes rather than pausing to consolidate position first.`,
+    example: `A fighter completes a takedown and, rather than settling to control position passively, immediately begins landing short elbows and punches from the top, having specifically aimed the takedown at a position that made that follow-up striking available.`,
+    whyItMatters: `Recognising this sequence explains why some heavily wrestling-based fighters produce a high number of ground-strike finishes rather than winning primarily by control-based decisions: the takedown is being used deliberately as a striking setup, not only as a positional or control-based tool.`,
+    misunderstandings: `A common one: assuming every takedown is aimed purely at control or a decision win. Many are specifically aimed at creating a striking opportunity, and reading a takedown's intent (control versus setup for strikes) helps predict what is likely to follow it.`,
+    related: ['strike-to-takedown-entries', 'wrestling-to-submission-chains'],
+  }),
+];
+
+export const MMA_RECORDS_OFFICIATING_GLOSSARY_EXPLAINERS: ExplainerSeed[] = [
+  ...FIGHTER_RECORDS,
+  ...MMA_ANALYTICS,
+  ...OFFICIATING,
+  ...FOULS,
+  ...CORNERS_AND_COACHING,
+  ...CAREER_PATH,
+  ...TERMINOLOGY,
+  ...ADVANCED_CONCEPTS,
+];

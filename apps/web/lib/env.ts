@@ -35,6 +35,16 @@ const clientSchema = z.object({
    * absolute URL the site emits is wrong.
    */
   NEXT_PUBLIC_SITE_URL: z.string().url().default('http://localhost:3000'),
+
+  /**
+   * Social links, centralised here rather than hard-coded in a component.
+   * Empty string means "account doesn't exist yet" — components render a
+   * "coming soon" state for an empty value instead of a dead link.
+   */
+  NEXT_PUBLIC_SOCIAL_INSTAGRAM: z.string().default(''),
+  NEXT_PUBLIC_SOCIAL_X: z.string().default(''),
+  NEXT_PUBLIC_SOCIAL_YOUTUBE: z.string().default(''),
+  NEXT_PUBLIC_SOCIAL_REDDIT: z.string().default(''),
 });
 
 function parse<T extends z.ZodTypeAny>(schema: T, input: unknown, label: string): z.infer<T> {
@@ -53,7 +63,13 @@ function parse<T extends z.ZodTypeAny>(schema: T, input: unknown, label: string)
 // Literal accesses, so Next.js can statically replace them at build time.
 export const clientEnv = parse(
   clientSchema,
-  { NEXT_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_SITE_URL },
+  {
+    NEXT_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_SITE_URL,
+    NEXT_PUBLIC_SOCIAL_INSTAGRAM: process.env.NEXT_PUBLIC_SOCIAL_INSTAGRAM,
+    NEXT_PUBLIC_SOCIAL_X: process.env.NEXT_PUBLIC_SOCIAL_X,
+    NEXT_PUBLIC_SOCIAL_YOUTUBE: process.env.NEXT_PUBLIC_SOCIAL_YOUTUBE,
+    NEXT_PUBLIC_SOCIAL_REDDIT: process.env.NEXT_PUBLIC_SOCIAL_REDDIT,
+  },
   'client',
 );
 

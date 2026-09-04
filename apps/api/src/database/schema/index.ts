@@ -20,6 +20,7 @@
  *   6. `provider`       provider identifiers and ingestion bookkeeping
  *   7. `content`        the editorial layer we own outright
  *   8. `explainer`      the concept library, and the graph joining it up
+ *   9. `news`           the News Engine's canonical article model, provider-independent
  *
  * To add a table: create the file, re-export it here, run `pnpm db:generate`,
  * read the generated SQL by hand, then `pnpm db:migrate`.
@@ -35,3 +36,5 @@ export * from './overview.schema';
 export * from './explainer.schema';
 export * from './provider.schema';
 export * from './content.schema';
+export * from './news.schema';
+export * from './contact.schema';

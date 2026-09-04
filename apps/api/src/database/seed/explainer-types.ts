@@ -37,7 +37,19 @@ export type ExplainerType =
   | 'strategy_concept'
   | 'circuit'
   | 'penalty'
-  | 'flag';
+  | 'flag'
+  // Golf.
+  | 'club'
+  | 'hole'
+  | 'swing_element'
+  | 'handicap_concept'
+  | 'scoring_term'
+  // MMA.
+  | 'technique'
+  | 'position'
+  | 'ruleset_concept'
+  | 'promotion'
+  | 'fight_result';
 
 export type ExplainerDifficulty = 'beginner' | 'intermediate' | 'advanced';
 
@@ -110,7 +122,16 @@ export type ExplainerSectionType =
   | 'on_the_car'
   | 'strategic_implications'
   | 'driver_technique'
-  | 'regulation_era';
+  | 'regulation_era'
+  // Golf.
+  | 'the_swing'
+  | 'on_the_course'
+  | 'club_selection'
+  | 'penalty_and_relief'
+  // MMA.
+  | 'the_technique'
+  | 'recognition'
+  | 'danger_and_stoppage';
 
 export type ExplainerRelationType =
   | 'related_to'
@@ -599,5 +620,258 @@ export interface StrategyChartShape {
   strategy: 'stints';
   totalLaps: number;
   plans: StintPlan[];
+  caption?: string;
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Golf
+ * ────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * A golf hole, drawn from the tee looking down the hole.
+ *
+ * Structured rather than an image for the three reasons every other sport's
+ * diagram is: one payload drives a thumbnail and a full-width figure, it stays
+ * legible in both themes, and it can describe itself to a reader who cannot see
+ * it. The last matters here more than it looks: half of golf's beginner
+ * vocabulary is the names of parts of the ground, and a picture with the words
+ * baked into it teaches nothing to a screen reader.
+ *
+ * Coordinates are percentages of a portrait viewport: `x` runs 0 (left edge of
+ * the corridor) to 100 (right), `y` runs 0 (the tee, at the bottom of the
+ * drawing) to 100 (the green, at the top). A hole is therefore written the way
+ * it is played, from the tee forward, which is also the order the reader's eye
+ * travels.
+ *
+ * `hole` is the discriminator. No other sport's payload carries it, so the
+ * renderer picks a diagram by payload shape rather than by sport, exactly as it
+ * does for a circuit and a court.
+ */
+export interface HoleFeature {
+  /**
+   * What this patch of ground is.
+   *
+   * The renderer colours by kind rather than by an author-supplied colour, so
+   * a bunker is the same shade in every explainer and the legend is generated
+   * rather than written eighteen times.
+   */
+  kind:
+    | 'fairway'
+    | 'rough'
+    | 'green'
+    | 'fringe'
+    | 'bunker'
+    | 'water'
+    | 'penalty-red'
+    | 'penalty-yellow'
+    | 'trees'
+    | 'out-of-bounds'
+    | 'tee';
+  /**
+   * The outline, as points in the 0-100 box.
+   *
+   * A polygon rather than a rectangle because a fairway that bends is the
+   * entire subject of the dogleg explainer, and a shape language that cannot
+   * express one would force those pages back to prose.
+   */
+  points: { x: number; y: number }[];
+  label?: string;
+}
+
+/** A shot, a target or a carry line. Rendered as an arrow of its kind. */
+export interface HoleShot {
+  kind: 'drive' | 'approach' | 'layup' | 'putt' | 'recovery' | 'carry';
+  fromX: number;
+  fromY: number;
+  toX: number;
+  toY: number;
+  label?: string;
+  /**
+   * Dashed and faint: the line the explainer is arguing against.
+   *
+   * Every course-management page is a comparison between the shot a beginner
+   * plays and the shot a professional plays, and drawing both is the only way
+   * to make that argument visible.
+   */
+  ghost?: boolean;
+  /** Curves the arrow: a draw bends left, a fade right, from the player's view. */
+  curve?: 'draw' | 'fade' | 'straight';
+}
+
+/** A point of interest: the pin, a landing area, a yardage marker, a hazard carry. */
+export interface HoleMarker {
+  x: number;
+  y: number;
+  label: string;
+  kind?: 'pin' | 'tee' | 'ball' | 'target' | 'yardage' | 'trouble';
+}
+
+export interface HoleStep {
+  /** "The tee shot lays up short of the water, leaving 150 yards in." */
+  caption: string;
+  shots?: HoleShot[];
+  markers?: HoleMarker[];
+  /** Shown beside the diagram: "Par 4, 430 yards". */
+  note?: string;
+}
+
+export interface HoleShape {
+  /** The discriminator. */
+  hole: 'plan';
+  /** 3, 4 or 5. Omitted where the drawing illustrates a concept, not a hole. */
+  par?: 3 | 4 | 5;
+  /** "430 yards", "165 metres". A string, because the unit is part of the fact. */
+  length?: string;
+  /** The ground, drawn in array order, so later features sit on earlier ones. */
+  features: HoleFeature[];
+  /** A single static drawing is one step. Several make it a sequence. */
+  steps?: HoleStep[];
+  caption?: string;
+}
+
+/**
+ * A golf scorecard, with the arithmetic shown.
+ *
+ * Cricket's `ScoreBreakdown` labels the parts of one string and tennis's
+ * `TennisScoreboardShape` draws a grid of sets. A golf card is a third shape
+ * again: eighteen columns of par against strokes, with a running total relative
+ * to par, and the relative total is precisely the thing a beginner cannot
+ * derive. It is also where the handicap categories do their worked examples,
+ * since a net score is a card with strokes deducted on named holes.
+ *
+ * `holes` is the discriminator.
+ */
+export interface ScorecardHole {
+  /** 1-18. */
+  number: number;
+  par: number;
+  /**
+   * Difficulty ranking, 1-18.
+   *
+   * Where handicap strokes fall, and the column every club golfer reads and no
+   * beginner has had explained. Optional, because a gross-scoring example does
+   * not need it and showing an unexplained column is worse than omitting it.
+   */
+  strokeIndex?: number;
+  yards?: number;
+}
+
+export interface ScorecardRow {
+  name: string;
+  /** Strokes taken, by hole, in the order of `holes`. */
+  strokes: number[];
+  /**
+   * Handicap strokes received, by hole.
+   *
+   * Given per hole rather than as a single course handicap so the diagram can
+   * show *where* the strokes fall, which is the half of net scoring that
+   * arithmetic alone does not teach.
+   */
+  strokesReceived?: number[];
+  /** "Playing handicap 14". Shown beside the name. */
+  note?: string;
+  highlight?: boolean;
+}
+
+export interface ScorecardShape {
+  /** The discriminator. */
+  holes: ScorecardHole[];
+  rows: ScorecardRow[];
+  caption?: string;
+  /** Pointed-at explanations rendered beneath the card. */
+  notes?: { label: string; explanation: string }[];
+}
+
+/**
+ * A strokes-gained table.
+ *
+ * The brief asks for strokes gained by name, twice, and asks for worked
+ * examples. The metric is a subtraction against a baseline, and every attempt
+ * to explain it in prose alone founders on the same point: the reader cannot
+ * see that a 25-foot putt holed is worth more than a 3-foot putt holed until
+ * the two baselines are next to each other. So the baseline, the strokes
+ * actually taken and the difference are three columns, and the sign convention
+ * is rendered rather than described.
+ *
+ * `strokesGained` is the discriminator.
+ */
+export interface StrokesGainedRow {
+  /** "Tee shot, 430-yard par 4", "Putt from 25 feet". */
+  shot: string;
+  /** "430 yards, tee", "25 feet, green". Where the shot started. */
+  from?: string;
+  /** Expected strokes to hole out from the starting position. */
+  baselineBefore: number;
+  /** Expected strokes to hole out from where the ball finished. 0 if holed. */
+  baselineAfter: number;
+  /** Strokes taken by this shot. Almost always 1; a penalty makes it 2. */
+  strokesTaken?: number;
+  /** Held rather than computed, so a worked example can show a wrong sum. */
+  gained: number;
+  category?: 'off-the-tee' | 'approach' | 'around-the-green' | 'putting';
+}
+
+export interface StrokesGainedShape {
+  /** The discriminator. */
+  strokesGained: 'shots' | 'summary';
+  rows: StrokesGainedRow[];
+  /** "Total: +1.4 strokes gained on the field". */
+  total?: string;
+  caption?: string;
+}
+
+/**
+ * A ground or clinch position, drawn as two labelled bodies rather than a
+ * pitch or a course.
+ *
+ * MMA has no equivalent of a formation's coordinates on a pitch or a hole's
+ * plan of the ground: the geometry that matters is one fighter relative to
+ * the other, not either relative to a fixed playing area. `MatShape` models
+ * that directly, as a small sequence of steps (guard to mount, say), each a
+ * set of labelled positions and, optionally, the limbs being controlled
+ * between them. `mat` is the discriminator, checked first in the client's
+ * dispatch chain since it is unambiguous against every other sport's shape
+ * key (`hole`, `track`, `holes`, `strokesGained`).
+ */
+export interface MatPosition {
+  id: string;
+  /** "Top", "Bottom", "Attacker", "Defender". */
+  label: string;
+  role: 'top' | 'bottom';
+  /** 0-100, normalised to the diagram's own coordinate space. */
+  x: number;
+  y: number;
+  highlight?: boolean;
+}
+
+/**
+ * A controlled limb, drawn as a line between two positions.
+ *
+ * Optional on every step: a step showing only body position (mount, back
+ * control) does not need one, and a step illustrating a specific control
+ * detail (an underhook, a trapped leg) uses it to show what is actually held.
+ */
+export interface MatLimb {
+  kind: 'arm' | 'leg' | 'head' | 'hip';
+  fromX: number;
+  fromY: number;
+  toX: number;
+  toY: number;
+  controlledBy?: 'top' | 'bottom';
+}
+
+export interface MatStep {
+  /** "Fighter in bottom's closed guard", shown above the diagram. */
+  caption: string;
+  positions: MatPosition[];
+  limbs?: MatLimb[];
+  /** A short note pointing at what the step is meant to teach. */
+  note?: string;
+}
+
+export interface MatShape {
+  /** The discriminator. */
+  mat: 'position';
+  steps: MatStep[];
   caption?: string;
 }

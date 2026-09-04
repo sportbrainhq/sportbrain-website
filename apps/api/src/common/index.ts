@@ -10,3 +10,8 @@ export { AllExceptionsFilter } from './filters/all-exceptions.filter';
 export { LoggingInterceptor } from './interceptors/logging.interceptor';
 export { RequestIdMiddleware, REQUEST_ID_HEADER } from './middleware/request-id.middleware';
 export { ZodValidationPipe, zodPipe } from './pipes/zod-validation.pipe';
+export {
+  guardOutboundUrl,
+  type UrlGuardResult,
+  type UrlGuardFailureReason,
+} from './security/url-guard';

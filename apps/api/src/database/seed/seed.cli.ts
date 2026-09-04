@@ -82,6 +82,46 @@ import {
   TENNIS_TIMELINE,
 } from './tennis-overview';
 import {
+  GOLF_CONCEPTS,
+  GOLF_FACTS,
+  GOLF_FEATURED,
+  GOLF_FORMATS,
+  GOLF_GOVERNANCE,
+  GOLF_SECTIONS,
+  GOLF_SOURCES,
+  GOLF_TIMELINE,
+} from './golf-overview';
+import {
+  AMERICAN_FOOTBALL_CONCEPTS,
+  AMERICAN_FOOTBALL_FACTS,
+  AMERICAN_FOOTBALL_FEATURED,
+  AMERICAN_FOOTBALL_FORMATS,
+  AMERICAN_FOOTBALL_GOVERNANCE,
+  AMERICAN_FOOTBALL_SECTIONS,
+  AMERICAN_FOOTBALL_SOURCES,
+  AMERICAN_FOOTBALL_TIMELINE,
+} from './american-football-overview';
+import {
+  MMA_CONCEPTS,
+  MMA_FACTS,
+  MMA_FEATURED,
+  MMA_FORMATS,
+  MMA_GOVERNANCE,
+  MMA_SECTIONS,
+  MMA_SOURCES,
+  MMA_TIMELINE,
+} from './mma-overview';
+import {
+  BOXING_CONCEPTS,
+  BOXING_FACTS,
+  BOXING_FEATURED,
+  BOXING_FORMATS,
+  BOXING_GOVERNANCE,
+  BOXING_SECTIONS,
+  BOXING_SOURCES,
+  BOXING_TIMELINE,
+} from './boxing-overview';
+import {
   FORMULA_ONE_CONCEPTS,
   FORMULA_ONE_FACTS,
   FORMULA_ONE_FEATURED,
@@ -100,12 +140,20 @@ import { FOOTBALL_SEEDED_AWARDS } from './football-competition-awards';
 import { WikipediaClient } from '../../integrations/providers/wikipedia/wikipedia.client';
 import { CRICKET_COMPETITION_RANKING_SEEDS } from './cricket-competition-rankings';
 import { TENNIS_COMPETITION_RANKING_SEEDS } from './tennis-competition-rankings';
+import { GOLF_COMPETITION_RANKINGS } from './golf-competition-rankings';
+import { AMERICAN_FOOTBALL_COMPETITION_RANKINGS } from './american-football-competition-rankings';
 import {
   BASKETBALL_CURATED_COMPETITIONS,
   BASKETBALL_CURATED_SLUGS,
 } from './basketball-competitions';
 import { TENNIS_CURATED_COMPETITIONS, TENNIS_CURATED_SLUGS } from './tennis-competitions';
 import { BOXING_CURATED_COMPETITIONS, BOXING_CURATED_SLUGS } from './boxing-competitions';
+import { GOLF_CURATED_COMPETITIONS, GOLF_CURATED_SLUGS } from './golf-competitions';
+import {
+  AMERICAN_FOOTBALL_CURATED_COMPETITIONS,
+  AMERICAN_FOOTBALL_CURATED_SLUGS,
+} from './american-football-competitions';
+import { MMA_CURATED_COMPETITIONS, MMA_CURATED_SLUGS } from './mma-competitions';
 import { CRICKET_CURATED_COMPETITIONS, CRICKET_CURATED_SLUGS } from './cricket-competitions';
 import {
   FOOTBALL_CURATED_COMPETITIONS,
@@ -135,6 +183,47 @@ import {
   FORMULA1_EXPLAINER_TOPICS,
 } from './formula1-explainer-taxonomy';
 import { FORMULA1_EXPLAINERS, FORMULA1_EXPLAINER_SOURCES } from './formula1-explainers';
+import { GOLF_EXPLAINER_CATEGORIES, GOLF_EXPLAINER_TOPICS } from './golf-explainer-taxonomy';
+import { GOLF_EXPLAINERS, GOLF_EXPLAINER_SOURCES } from './golf-explainers';
+import {
+  AMERICAN_FOOTBALL_EXPLAINER_CATEGORIES,
+  AMERICAN_FOOTBALL_EXPLAINER_TOPICS,
+} from './american-football-explainer-taxonomy';
+import {
+  AMERICAN_FOOTBALL_EXPLAINERS,
+  AMERICAN_FOOTBALL_EXPLAINER_SOURCES,
+} from './american-football-explainers';
+import { BOXING_EXPLAINER_CATEGORIES, BOXING_EXPLAINER_TOPICS } from './boxing-explainer-taxonomy';
+import { BOXING_EXPLAINERS, BOXING_EXPLAINER_SOURCES } from './boxing-explainers';
+import { MMA_EXPLAINER_CATEGORIES, MMA_EXPLAINER_TOPICS } from './mma-explainer-taxonomy';
+import { MMA_EXPLAINERS, MMA_EXPLAINER_SOURCES } from './mma-explainers';
+import { MMA_STRIKING_EXPLAINERS, MMA_STRIKING_SOURCES } from './mma-explainers-striking';
+import {
+  MMA_WRESTLING_CLINCH_EXPLAINERS,
+  MMA_WRESTLING_CLINCH_SOURCES,
+} from './mma-explainers-wrestling-clinch';
+import { MMA_GROUND_EXPLAINERS, MMA_GROUND_SOURCES } from './mma-explainers-ground';
+import {
+  MMA_BJJ_GNP_CAGE_DEFENSE_EXPLAINERS,
+  MMA_BJJ_GNP_CAGE_DEFENSE_SOURCES,
+} from './mma-explainers-bjj-gnp-cage-defense';
+import {
+  MMA_STRATEGY_WEIGHT_EXPLAINERS,
+  MMA_STRATEGY_WEIGHT_SOURCES,
+} from './mma-explainers-strategy-weight';
+import {
+  MMA_PROMOTIONS_EVENTS_EXPLAINERS,
+  MMA_PROMOTIONS_EVENTS_SOURCES,
+} from './mma-explainers-promotions-events';
+import {
+  MMA_RECORDS_OFFICIATING_GLOSSARY_EXPLAINERS,
+  MMA_RECORDS_OFFICIATING_GLOSSARY_SOURCES,
+} from './mma-explainers-records-officiating-glossary';
+import { GOLF_SCORING_AND_COURSE } from './golf-scoring-and-course';
+import { GOLF_CLUBS_AND_SHOTS } from './golf-clubs-and-shots';
+import { GOLF_HANDICAPS_AND_FORMATS } from './golf-handicaps-and-formats';
+import { GOLF_RULES_AND_RELIEF } from './golf-rules-and-relief';
+import { GOLF_STRATEGY_AND_STATS } from './golf-strategy-and-stats';
 import { FORMULA1_WEEKEND } from './formula1-weekend';
 import { FORMULA1_TYRES } from './formula1-tyres';
 import { FORMULA1_STRATEGY } from './formula1-strategy';
@@ -164,6 +253,9 @@ import { honourTier } from './football-honour-tiers';
 import { STATISTIC_REGISTRY } from './statistic-registry';
 import { TEAM_RANKING_SEEDS } from './team-rankings';
 import { COMPETITION_RANKING_SEEDS, type CompetitionRankingSeed } from './competition-rankings';
+import { NEWS_SOURCE_SEEDS } from './news-sources';
+import { cleanUpBoxingPersons } from './boxing-cleanup';
+import { BOXING_COMPETITION_ABOUT, BOXING_COMPETITION_RANKINGS } from './boxing-competition-detail';
 
 for (const candidate of [resolve(process.cwd(), '../../.env'), resolve(process.cwd(), '.env')]) {
   if (existsSync(candidate)) loadDotenv({ path: candidate });
@@ -180,12 +272,20 @@ async function main(): Promise<void> {
       ['cricket', CRICKET_CURATED_COMPETITIONS, CRICKET_CURATED_SLUGS],
       ['basketball', BASKETBALL_CURATED_COMPETITIONS, BASKETBALL_CURATED_SLUGS],
       ['tennis', TENNIS_CURATED_COMPETITIONS, TENNIS_CURATED_SLUGS],
-      // Boxing alone of the four sports added with it, because it is the only
-      // one Wikidata cannot supply competitions for. Golf, American football
-      // and MMA all ingest a real catalogue, and this pass deletes everything
-      // not named in the list it is given, so curating them here would empty
-      // three working tabs to seed one.
+      ['golf', GOLF_CURATED_COMPETITIONS, GOLF_CURATED_SLUGS],
+      // American football is curated for the same reason golf is: ingestion's
+      // catalogue held no Super Bowl and no conference championship games,
+      // only the league, its two conferences and a hundred and sixty-odd
+      // defunct or foreign leagues nobody was looking up.
+      [
+        'american-football',
+        AMERICAN_FOOTBALL_CURATED_COMPETITIONS,
+        AMERICAN_FOOTBALL_CURATED_SLUGS,
+      ],
       ['boxing', BOXING_CURATED_COMPETITIONS, BOXING_CURATED_SLUGS],
+      // MMA is curated for the same reason: ingestion's catalogue held eight
+      // regional and defunct promotions and not the UFC.
+      ['mma', MMA_CURATED_COMPETITIONS, MMA_CURATED_SLUGS],
     ] as const) {
       const competitions = await seedCuratedCompetitions(db, slug, [...curated], slugs);
       process.stdout.write(
@@ -240,6 +340,12 @@ async function main(): Promise<void> {
     const tiered = await deriveHonourPrestige(db);
     process.stdout.write(`Derived:  ${tiered} honours tiered\n`);
 
+    // Before `derivePersonPriority`, which reads `entity_ranking` for its
+    // `ranked` evidence: a leaderboard written after priority was derived
+    // from it would not take effect until the next full run.
+    const passingLeaders = await deriveGridironPassingLeaders(db);
+    process.stdout.write(`Derived:  ${passingLeaders} NFL team passing-yards leaderboards\n`);
+
     const ranked = await derivePersonPriority(db);
     process.stdout.write(`Derived:  ${ranked} people re-prioritised\n`);
 
@@ -270,6 +376,26 @@ async function main(): Promise<void> {
         `${competitionRankings.removed} superseded tables removed, ` +
         `${competitionRankings.skipped} competitions not in the database\n`,
     );
+
+    const boxingAbout = await seedBoxingCompetitionAbout(db);
+    process.stdout.write(
+      `Content:  ${boxingAbout.written} boxing competition histories written, ` +
+        `${boxingAbout.skipped} not in the database\n`,
+    );
+
+    const boxingCleanup = await cleanUpBoxingPersons(db);
+    process.stdout.write(
+      `Curated:  boxing — ${boxingCleanup.misclassifiedDeleted} misclassified people removed, ` +
+        `${boxingCleanup.fillerDeleted} notability-floor filler rows removed, ` +
+        `${boxingCleanup.boxersAdded} major boxers added, ` +
+        `${boxingCleanup.titlesWritten} title reigns seeded\n`,
+    );
+
+    const golfRecords = await deriveGolfCompetitionRecords(db);
+    process.stdout.write(`Derived:  ${golfRecords} golf competition records\n`);
+
+    const mmaTables = await deriveMmaUfcTables(db);
+    process.stdout.write(`Derived:  ${mmaTables} UFC leaderboards\n`);
 
     // Football, cricket, basketball, tennis, then Formula 1. Order is irrelevant to
     // correctness: the source prune is scoped by URL and every other prune by
@@ -331,6 +457,102 @@ async function main(): Promise<void> {
           concepts: TENNIS_CONCEPTS,
           facts: TENNIS_FACTS,
           featured: TENNIS_FEATURED,
+        },
+      ],
+      /*
+       * Golf, the third individual sport and the first with two peer governing
+       * bodies rather than one.
+       *
+       * No `membership`: neither The R&A nor the USGA publishes a member count
+       * that means the same thing as a federation's, and the two bodies' remits
+       * are territorial rather than numerical.
+       *
+       * `featured` carries no `teams`. Golf is seeded with `hasTeams: false`,
+       * and the Ryder Cup sides are not teams in the sense this schema means;
+       * they are covered as prose and as competition cards instead.
+       */
+      [
+        'golf',
+        {
+          sources: GOLF_SOURCES,
+          timeline: GOLF_TIMELINE,
+          governance: GOLF_GOVERNANCE,
+          sections: GOLF_SECTIONS,
+          formats: GOLF_FORMATS,
+          concepts: GOLF_CONCEPTS,
+          facts: GOLF_FACTS,
+          featured: GOLF_FEATURED,
+        },
+      ],
+      /*
+       * American football, the fourth team sport. `formats` is a shallow
+       * pathway of playing levels (high school, college, professional) rather
+       * than cricket's or basketball's deep taxonomy of named match formats,
+       * since the sport has no equivalent split. No `membership`: the NFL
+       * does not publish a member count that means the same thing as a
+       * federation's. `governance` stretches the schema's world/continental
+       * vocabulary to describe the NFL and its two conferences, explained in
+       * the seed file's own doc comment, since the sport has no governing
+       * hierarchy in the FIFA or FIBA sense to root the tree at instead.
+       */
+      [
+        'american-football',
+        {
+          sources: AMERICAN_FOOTBALL_SOURCES,
+          timeline: AMERICAN_FOOTBALL_TIMELINE,
+          governance: AMERICAN_FOOTBALL_GOVERNANCE,
+          sections: AMERICAN_FOOTBALL_SECTIONS,
+          formats: AMERICAN_FOOTBALL_FORMATS,
+          concepts: AMERICAN_FOOTBALL_CONCEPTS,
+          facts: AMERICAN_FOOTBALL_FACTS,
+          featured: AMERICAN_FOOTBALL_FEATURED,
+        },
+      ],
+      /*
+       * MMA, the first combat sport. `governance` carries only IMMAF, the one
+       * body that fits the schema's world/continental shape; the promotions,
+       * UFC included, are not governing bodies and are covered as prose and
+       * as `featured` competitions instead, explained in the seed file's own
+       * doc comment. No `membership`: no promotion grades its roster into
+       * membership tiers the way a federation grades member associations.
+       */
+      [
+        'mma',
+        {
+          sources: MMA_SOURCES,
+          timeline: MMA_TIMELINE,
+          governance: MMA_GOVERNANCE,
+          sections: MMA_SECTIONS,
+          formats: MMA_FORMATS,
+          concepts: MMA_CONCEPTS,
+          facts: MMA_FACTS,
+          featured: MMA_FEATURED,
+        },
+      ],
+      /*
+       * Boxing, the ninth sport through this function and the second combat
+       * sport, inserted here right after MMA as its closest thematic
+       * neighbour. `governance` is empty: the WBA, WBC, IBF and WBO are
+       * sanctioning bodies rather than governing bodies, modelled instead as
+       * `featured` competitions consistent with `boxing-competitions.ts`, and
+       * Olympic/amateur boxing's governing arrangements have been genuinely
+       * unsettled since AIBA/IBA lost IOC recognition, so no current
+       * federation is asserted here either. See the seed file's own doc
+       * comment for the full reasoning. No `membership`, for the same reason
+       * as MMA's: no sanctioning body or promoter grades a roster of member
+       * federations the way a sport's governing body does.
+       */
+      [
+        'boxing',
+        {
+          sources: BOXING_SOURCES,
+          timeline: BOXING_TIMELINE,
+          governance: BOXING_GOVERNANCE,
+          sections: BOXING_SECTIONS,
+          formats: BOXING_FORMATS,
+          concepts: BOXING_CONCEPTS,
+          facts: BOXING_FACTS,
+          featured: BOXING_FEATURED,
         },
       ],
       /*
@@ -472,6 +694,128 @@ async function main(): Promise<void> {
         `${formula1Library.sections} sections, ${formula1Library.aliases} aliases, ` +
         `${formula1Library.relations} relations\n`,
     );
+    // Golf, through the same function a sixth time. Golf's divergence is across
+    // formats rather than competitions or eras: stroke play and match play do
+    // not merely score differently, they make different shots correct, which is
+    // what `format_differences` carries here. The seeding path is unchanged.
+    const golfLibrary = await seedExplainerLibrary(
+      db,
+      'golf',
+      GOLF_EXPLAINER_CATEGORIES,
+      GOLF_EXPLAINER_TOPICS,
+      [
+        ...GOLF_EXPLAINERS,
+        ...GOLF_SCORING_AND_COURSE,
+        ...GOLF_CLUBS_AND_SHOTS,
+        ...GOLF_HANDICAPS_AND_FORMATS,
+        ...GOLF_RULES_AND_RELIEF,
+        ...GOLF_STRATEGY_AND_STATS,
+      ],
+      GOLF_EXPLAINER_SOURCES,
+    );
+    process.stdout.write(
+      `Explainers: ${golfLibrary.categories} golf categories, ` +
+        `${golfLibrary.explainers} concepts (${golfLibrary.published} published), ` +
+        `${golfLibrary.sections} sections, ${golfLibrary.aliases} aliases, ` +
+        `${golfLibrary.relations} relations\n`,
+    );
+    // American football, through the same function a seventh time. Only the
+    // Start Here spine, Downs & Yards in full, the core of Scoring, and one
+    // curated concept each from six further categories are written; the rest
+    // of the taxonomy is seeded as draft placeholders, exactly as golf's
+    // below-the-fold categories are. The seeding path is unchanged.
+    const americanFootballLibrary = await seedExplainerLibrary(
+      db,
+      'american-football',
+      AMERICAN_FOOTBALL_EXPLAINER_CATEGORIES,
+      AMERICAN_FOOTBALL_EXPLAINER_TOPICS,
+      AMERICAN_FOOTBALL_EXPLAINERS,
+      AMERICAN_FOOTBALL_EXPLAINER_SOURCES,
+    );
+    process.stdout.write(
+      `Explainers: ${americanFootballLibrary.categories} American football categories, ` +
+        `${americanFootballLibrary.explainers} concepts (${americanFootballLibrary.published} published), ` +
+        `${americanFootballLibrary.sections} sections, ${americanFootballLibrary.aliases} aliases, ` +
+        `${americanFootballLibrary.relations} relations\n`,
+    );
+
+    // MMA, the first combat sport. All 31 categories from the brief are
+    // seeded with full content, split across eight content files for
+    // manageability: Phase 1 (Start Here, Ways to Win, Scoring) in
+    // `mma-explainers.ts`, and the remaining 28 categories split by subject
+    // across `mma-explainers-striking.ts` (striking basics and concepts),
+    // `mma-explainers-wrestling-clinch.ts` (wrestling and clinch),
+    // `mma-explainers-ground.ts` (ground positions and submissions, the
+    // brief's "extremely visual" section, carrying `MatShape` diagrams),
+    // `mma-explainers-bjj-gnp-cage-defense.ts` (BJJ in MMA, ground-and-pound,
+    // cage wrestling, defense), `mma-explainers-strategy-weight.ts` (fight
+    // strategy, style matchups, weight classes, weight cutting),
+    // `mma-explainers-promotions-events.ts` (championships, rankings,
+    // matchmaking, events, UFC, other promotions), and
+    // `mma-explainers-records-officiating-glossary.ts` (fighter records,
+    // analytics, officiating, fouls, corners, career path, terminology,
+    // advanced concepts). `seedExplainerLibrary` merges taxonomy topics with
+    // written content by slug, so passing only the written arrays (no
+    // separate topic stubs) is sufficient once a category is fully written.
+    const mmaLibrary = await seedExplainerLibrary(
+      db,
+      'mma',
+      MMA_EXPLAINER_CATEGORIES,
+      MMA_EXPLAINER_TOPICS,
+      [
+        ...MMA_EXPLAINERS,
+        ...MMA_STRIKING_EXPLAINERS,
+        ...MMA_WRESTLING_CLINCH_EXPLAINERS,
+        ...MMA_GROUND_EXPLAINERS,
+        ...MMA_BJJ_GNP_CAGE_DEFENSE_EXPLAINERS,
+        ...MMA_STRATEGY_WEIGHT_EXPLAINERS,
+        ...MMA_PROMOTIONS_EVENTS_EXPLAINERS,
+        ...MMA_RECORDS_OFFICIATING_GLOSSARY_EXPLAINERS,
+      ],
+      [
+        ...MMA_EXPLAINER_SOURCES,
+        ...MMA_STRIKING_SOURCES,
+        ...MMA_WRESTLING_CLINCH_SOURCES,
+        ...MMA_GROUND_SOURCES,
+        ...MMA_BJJ_GNP_CAGE_DEFENSE_SOURCES,
+        ...MMA_STRATEGY_WEIGHT_SOURCES,
+        ...MMA_PROMOTIONS_EVENTS_SOURCES,
+        ...MMA_RECORDS_OFFICIATING_GLOSSARY_SOURCES,
+      ],
+    );
+    process.stdout.write(
+      `Explainers: ${mmaLibrary.categories} mma categories, ` +
+        `${mmaLibrary.explainers} concepts (${mmaLibrary.published} published), ` +
+        `${mmaLibrary.sections} sections, ${mmaLibrary.aliases} aliases, ` +
+        `${mmaLibrary.relations} relations\n`,
+    );
+
+    // Boxing, the second combat sport, following MMA's own pattern. Phase 1
+    // writes Category 1 (Start Here) and Category 34 (Terminology) in full;
+    // every other category is a draft placeholder, exactly as golf's and
+    // American football's below-the-fold categories were before their own
+    // later phases. The seeding path is unchanged.
+    const boxingLibrary = await seedExplainerLibrary(
+      db,
+      'boxing',
+      BOXING_EXPLAINER_CATEGORIES,
+      BOXING_EXPLAINER_TOPICS,
+      BOXING_EXPLAINERS,
+      BOXING_EXPLAINER_SOURCES,
+    );
+    process.stdout.write(
+      `Explainers: ${boxingLibrary.categories} boxing categories, ` +
+        `${boxingLibrary.explainers} concepts (${boxingLibrary.published} published), ` +
+        `${boxingLibrary.sections} sections, ${boxingLibrary.aliases} aliases, ` +
+        `${boxingLibrary.relations} relations\n`,
+    );
+
+    const newsSources = await seedNewsSources(db);
+    process.stdout.write(
+      `News:     ${newsSources.created} sources created, ${newsSources.updated} updated ` +
+        '(all seeded inactive with placeholder feed URLs; see news-sources.ts)\n',
+    );
+
     await revalidateCaches();
   } catch (error) {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
@@ -1148,6 +1492,377 @@ async function derivePersonStatus(db: Db): Promise<number> {
   return rows.length;
 }
 
+/**
+ * The most-titles record for each golf major, from its own roll of honour.
+ *
+ * Golf's competition pages had no records at all, and the sport's obvious one
+ * is "who has won this the most times": six Masters for Jack Nicklaus, five
+ * PGA Championships for Walter Hagen. That is a real record a reader arrives
+ * looking for, and it is the one the majors are actually discussed in terms of.
+ *
+ * Derived from the champion tables rather than entered by hand, which is the
+ * point. The same rows drive the roll of honour on the page, so the record and
+ * the list it summarises cannot disagree: adding next year's champion updates
+ * both. A hand-entered figure would be a second copy of the same fact, free to
+ * drift.
+ *
+ * Ties are real and are kept. Five golfers have won The Open five times, and a
+ * record naming one of them would be wrong about the other four, so the holder
+ * is left unset where the top figure is shared and the note carries the names.
+ * `record_person_id` is set only when exactly one player holds it.
+ */
+async function deriveGolfCompetitionRecords(db: Db): Promise<number> {
+  // Cleared first rather than upserted.
+  //
+  // `competition_statistic_unique_idx` covers the nullable `season_id` and
+  // `discipline_id` columns directly, and in Postgres two NULLs are not equal,
+  // so an all-time record with both null never conflicts with itself: the
+  // ON CONFLICT clause matched nothing and every run inserted a second row.
+  // The Open Championship ended up holding both a stale "5 titles" and a
+  // corrected "6 titles" record at once, which is worse than either alone.
+  await db.execute(sql`
+    DELETE FROM competition_statistic cs
+    USING competition c, sport s
+    WHERE cs.competition_id = c.id
+      AND c.sport_id = s.id
+      AND s.slug = 'golf'
+      AND cs.stat_key = 'most_titles'
+      AND cs.scope = 'all_time'
+  `);
+
+  const rows = await db.execute<{ count: string }>(sql`
+    WITH champions AS (
+      SELECT
+        c.id AS competition_id,
+        c.sport_id,
+        entry->>'name' AS name,
+        count(*) AS titles
+      FROM entity_ranking r
+      JOIN competition c ON c.id = r.entity_id
+      JOIN sport s ON s.id = c.sport_id
+      CROSS JOIN LATERAL jsonb_array_elements(r.entries) AS entry
+      WHERE r.entity_type = 'competition'
+        AND r.kind = 'champions_golf'
+        AND s.slug = 'golf'
+      GROUP BY c.id, c.sport_id, entry->>'name'
+    ),
+    best AS (
+      SELECT competition_id, sport_id, max(titles) AS titles
+      FROM champions
+      GROUP BY competition_id, sport_id
+    ),
+    holders AS (
+      SELECT
+        b.competition_id,
+        b.sport_id,
+        b.titles,
+        array_agg(ch.name ORDER BY ch.name) AS names
+      FROM best b
+      JOIN champions ch
+        ON ch.competition_id = b.competition_id AND ch.titles = b.titles
+      GROUP BY b.competition_id, b.sport_id, b.titles
+    )
+    INSERT INTO competition_statistic (
+      competition_id, sport_id, scope, stat_key, value,
+      record_person_id, note, context, computed_at
+    )
+    SELECT
+      h.competition_id,
+      h.sport_id,
+      'all_time',
+      'most_titles',
+      h.titles,
+      -- Only where one player holds it outright. A shared record with a single
+      -- name attached would be wrong about everybody else who holds it.
+      CASE WHEN array_length(h.names, 1) = 1 THEN (
+        SELECT p.id FROM person p
+        WHERE p.full_name = h.names[1] AND p.primary_sport_id = h.sport_id
+        LIMIT 1
+      ) END,
+      array_to_string(h.names, ', '),
+      '{}'::jsonb,
+      now()
+    FROM holders h
+    RETURNING 1 AS count
+  `);
+
+  return rows.length;
+}
+
+/**
+ * Each NFL team's career passing-yards leaderboard, from the quarterback
+ * career totals `wiki qb-passing` already wrote to `person_statistic`.
+ *
+ * Replaces the three `most_appearances` team rankings a stale partial run of
+ * the generic football rankings command had left behind. Those were wrong on
+ * two counts at once: the `kind` claimed "most appearances" while the actual
+ * values were passing yardage (Minnesota's table topped with Fran Tarkenton
+ * at "33,098 appearances"), and only 3 of the sport's 32 teams had a table at
+ * all, because the command that wrote them reads a records article shaped
+ * for football (soccer) rather than gridiron. `derivePersonPriority`'s
+ * `ranked` bonus reads any row in `entity_ranking`, so those three sparse,
+ * mislabelled tables were deciding a large chunk of the Players tab's order
+ * on essentially arbitrary grounds: Brett Favre, Kurt Warner and Sam Bradford
+ * scored a flat +900 for happening to appear in one of the three, and Tom
+ * Brady, with far more real career yardage and fame, scored nothing.
+ *
+ * `person_team` supplies which team each quarterback's spell belongs to,
+ * so a QB who played for several franchises appears on each one's table
+ * with the one career total, not a fabricated per-team split the source
+ * data does not carry.
+ */
+async function deriveGridironPassingLeaders(db: Db): Promise<number> {
+  await db.execute(sql`
+    DELETE FROM entity_ranking r
+    USING team t, sport s
+    WHERE r.entity_id = t.id
+      AND r.entity_type = 'team'
+      AND t.sport_id = s.id
+      AND s.slug = 'american-football'
+      AND r.kind IN ('most_appearances', 'most_passing_yards')
+  `);
+
+  const rows = await db.execute<{ count: string }>(sql`
+    WITH leaders AS (
+      SELECT
+        pt.team_id,
+        p.id AS person_id,
+        p.full_name,
+        em.external_id AS wikipedia_title,
+        (ps.stats->>'passing_yards')::numeric AS yards,
+        row_number() OVER (
+          PARTITION BY pt.team_id ORDER BY (ps.stats->>'passing_yards')::numeric DESC
+        ) AS rank
+      FROM person_team pt
+      JOIN person p ON p.id = pt.person_id
+      JOIN person_statistic ps ON ps.person_id = p.id AND ps.scope = 'career'
+      JOIN external_mapping em
+        ON em.entity_id = p.id AND em.entity_type = 'person' AND em.provider = 'wikipedia'
+      JOIN team t ON t.id = pt.team_id
+      JOIN sport s ON s.id = t.sport_id AND s.slug = 'american-football'
+      WHERE ps.stats ? 'passing_yards'
+      GROUP BY pt.team_id, p.id, p.full_name, em.external_id, ps.stats
+    ),
+    top_ten AS (
+      SELECT team_id, jsonb_agg(
+        jsonb_build_object(
+          'rank', rank, 'name', full_name, 'link', wikipedia_title,
+          'value', yards, 'detail', NULL
+        ) ORDER BY rank
+      ) AS entries
+      FROM leaders
+      WHERE rank <= 10
+      GROUP BY team_id
+    )
+    INSERT INTO entity_ranking (
+      entity_type, entity_id, kind, label, entries, confidence, note, source_title
+    )
+    SELECT
+      'team', team_id, 'most_passing_yards', 'Most career passing yards',
+      entries, 'high',
+      'Career regular-season passing yards while with this team is not separated from a player''s career total elsewhere, so this ranks whole careers, not single-team spans.',
+      'Wikipedia player career statistics'
+    FROM top_ten
+    RETURNING 1 AS count
+  `);
+
+  return rows.length;
+}
+
+/**
+ * The UFC's own leaderboards: most bouts, most title bouts, most wins and
+ * most title wins, each a top-15 table on the competition page.
+ *
+ * Unlike `deriveGolfCompetitionRecords`, which writes a single record holder
+ * per stat to `competition_statistic`, these are genuine ranked tables and go
+ * to `entity_ranking` instead, the same mechanism `deriveGridironPassingLeaders`
+ * uses for a team's career leaders. `ProfileAssembler.forEntity` already reads
+ * `entity_ranking` for `entityType: 'competition'` and the competition page
+ * already renders whatever it returns through `RankingPanel`, so this needed
+ * no new API or frontend work, only the rows themselves.
+ *
+ * Fight totals (`most_bouts`, `most_wins`) are read from a fighter's
+ * career-level `person_statistic` row, written by `wiki mma-records`. This is
+ * a career total across every promotion a fighter has fought in, not a
+ * UFC-only figure, and is accepted as a reasonable proxy rather than exact
+ * because this sport's curated competition list is UFC-only: there is no
+ * competitor promotion in the database for a UFC fighter's other bouts to be
+ * confused with, and for the fighters who actually lead these tables the
+ * confusion this could cause (fighting in another promotion before or after
+ * a UFC run) undercounts their true UFC total rather than overstating it.
+ *
+ * Title figures (`most_title_bouts`, `most_title_wins`) are exact: they come
+ * from `person_statistic` rows `wiki mma-title-bouts` writes scoped to the
+ * UFC specifically (`competition_id` set, `scope='competition'`), and from
+ * `honour` rows `wiki mma-titles` writes with `competition_id` resolved to
+ * the UFC, so nothing outside the promotion can appear in either table.
+ */
+async function deriveMmaUfcTables(db: Db): Promise<number> {
+  const [sportRow] = await db.execute<{ id: string }>(
+    sql`SELECT id FROM sport WHERE slug = 'mma' LIMIT 1`,
+  );
+  if (!sportRow) return 0;
+
+  const [ufc] = await db.execute<{ id: string }>(sql`
+    SELECT id FROM competition
+    WHERE sport_id = ${sportRow.id} AND slug = 'ultimate-fighting-championship'
+    LIMIT 1
+  `);
+  if (!ufc) return 0;
+
+  await db.execute(sql`
+    DELETE FROM entity_ranking
+    WHERE entity_type = 'competition'
+      AND entity_id = ${ufc.id}
+      AND kind IN ('most_bouts', 'most_title_bouts', 'most_wins', 'most_title_wins')
+  `);
+
+  let written = 0;
+
+  const bouts = await db.execute<{ count: string }>(sql`
+    WITH totals AS (
+      SELECT
+        p.full_name,
+        em.external_id AS wikipedia_title,
+        (coalesce(ps.wins, 0) + coalesce(ps.losses, 0) + coalesce(ps.draws, 0)
+          + coalesce((ps.stats->>'no_contests')::int, 0)) AS bouts
+      FROM person_statistic ps
+      JOIN person p ON p.id = ps.person_id
+      JOIN external_mapping em
+        ON em.entity_id = p.id AND em.entity_type = 'person' AND em.provider = 'wikipedia'
+      WHERE ps.sport_id = ${sportRow.id} AND ps.scope = 'career'
+    ),
+    ranked AS (
+      SELECT *, row_number() OVER (ORDER BY bouts DESC) AS rank
+      FROM totals
+      WHERE bouts > 0
+    )
+    SELECT jsonb_agg(
+      jsonb_build_object('rank', rank, 'name', full_name, 'link', wikipedia_title, 'value', bouts, 'detail', NULL)
+      ORDER BY rank
+    ) AS entries
+    FROM ranked
+    WHERE rank <= 15
+  `);
+
+  const wins = await db.execute<{ count: string }>(sql`
+    WITH totals AS (
+      SELECT p.full_name, em.external_id AS wikipedia_title, coalesce(ps.wins, 0) AS wins
+      FROM person_statistic ps
+      JOIN person p ON p.id = ps.person_id
+      JOIN external_mapping em
+        ON em.entity_id = p.id AND em.entity_type = 'person' AND em.provider = 'wikipedia'
+      WHERE ps.sport_id = ${sportRow.id} AND ps.scope = 'career'
+    ),
+    ranked AS (
+      SELECT *, row_number() OVER (ORDER BY wins DESC) AS rank
+      FROM totals
+      WHERE wins > 0
+    )
+    SELECT jsonb_agg(
+      jsonb_build_object('rank', rank, 'name', full_name, 'link', wikipedia_title, 'value', wins, 'detail', NULL)
+      ORDER BY rank
+    ) AS entries
+    FROM ranked
+    WHERE rank <= 15
+  `);
+
+  const titleBouts = await db.execute<{ count: string }>(sql`
+    WITH totals AS (
+      SELECT
+        p.full_name,
+        em.external_id AS wikipedia_title,
+        (coalesce(ps.wins, 0) + coalesce(ps.losses, 0)) AS title_bouts
+      FROM person_statistic ps
+      JOIN person p ON p.id = ps.person_id
+      JOIN external_mapping em
+        ON em.entity_id = p.id AND em.entity_type = 'person' AND em.provider = 'wikipedia'
+      WHERE ps.sport_id = ${sportRow.id} AND ps.scope = 'competition' AND ps.competition_id = ${ufc.id}
+    ),
+    ranked AS (
+      SELECT *, row_number() OVER (ORDER BY title_bouts DESC) AS rank
+      FROM totals
+      WHERE title_bouts > 0
+    )
+    SELECT jsonb_agg(
+      jsonb_build_object('rank', rank, 'name', full_name, 'link', wikipedia_title, 'value', title_bouts, 'detail', NULL)
+      ORDER BY rank
+    ) AS entries
+    FROM ranked
+    WHERE rank <= 15
+  `);
+
+  const titleWins = await db.execute<{ count: string }>(sql`
+    WITH totals AS (
+      SELECT p.full_name, em.external_id AS wikipedia_title, count(*) AS title_wins
+      FROM honour h
+      JOIN person p ON p.id = h.person_id
+      JOIN external_mapping em
+        ON em.entity_id = p.id AND em.entity_type = 'person' AND em.provider = 'wikipedia'
+      WHERE h.sport_id = ${sportRow.id} AND h.competition_id = ${ufc.id} AND h.kind = 'title'
+      GROUP BY p.full_name, em.external_id
+    ),
+    ranked AS (
+      SELECT *, row_number() OVER (ORDER BY title_wins DESC) AS rank
+      FROM totals
+    )
+    SELECT jsonb_agg(
+      jsonb_build_object('rank', rank, 'name', full_name, 'link', wikipedia_title, 'value', title_wins, 'detail', NULL)
+      ORDER BY rank
+    ) AS entries
+    FROM ranked
+    WHERE rank <= 15
+  `);
+
+  const tables: {
+    kind: string;
+    label: string;
+    note: string;
+    entries: unknown;
+  }[] = [
+    {
+      kind: 'most_bouts',
+      label: 'Most career bouts',
+      note: 'Career total across every promotion a fighter has fought in, not UFC bouts alone.',
+      entries: (bouts[0] as unknown as { entries: unknown } | undefined)?.entries,
+    },
+    {
+      kind: 'most_wins',
+      label: 'Most career wins',
+      note: 'Career total across every promotion a fighter has fought in, not UFC wins alone.',
+      entries: (wins[0] as unknown as { entries: unknown } | undefined)?.entries,
+    },
+    {
+      kind: 'most_title_bouts',
+      label: 'Most UFC title bouts',
+      note: 'Bouts fought with a UFC title on the line, won or lost.',
+      entries: (titleBouts[0] as unknown as { entries: unknown } | undefined)?.entries,
+    },
+    {
+      kind: 'most_title_wins',
+      label: 'Most UFC title wins',
+      note: 'Title reigns won, from each fighter’s stated championship history.',
+      entries: (titleWins[0] as unknown as { entries: unknown } | undefined)?.entries,
+    },
+  ];
+
+  for (const table of tables) {
+    if (!table.entries) continue;
+    await db.execute(sql`
+      INSERT INTO entity_ranking (
+        entity_type, entity_id, kind, label, entries, confidence, note, source_title
+      ) VALUES (
+        'competition', ${ufc.id}, ${table.kind}, ${table.label},
+        ${JSON.stringify(table.entries)}::jsonb, 'high', ${table.note},
+        'Wikipedia fighter records and championship histories'
+      )
+    `);
+    written += 1;
+  }
+
+  return written;
+}
+
 /** Renders a uuid list as a Postgres array literal. Values are ids we read. */
 function pgUuidArray(ids: string[]): string {
   return `ARRAY[${ids.map((id) => `'${id}'`).join(', ')}]::uuid[]`;
@@ -1662,6 +2377,9 @@ async function seedCompetitionRankings(db: Db): Promise<{
     ['football', COMPETITION_RANKING_SEEDS],
     ['cricket', CRICKET_COMPETITION_RANKING_SEEDS],
     ['tennis', TENNIS_COMPETITION_RANKING_SEEDS],
+    ['golf', GOLF_COMPETITION_RANKINGS],
+    ['american-football', AMERICAN_FOOTBALL_COMPETITION_RANKINGS],
+    ['boxing', BOXING_COMPETITION_RANKINGS],
   ];
 
   for (const [sportSlug, seeds] of bySport) {
@@ -1732,6 +2450,42 @@ async function seedCompetitionRankings(db: Db): Promise<{
   }
 
   return { written, removed, skipped };
+}
+
+/**
+ * Writes the `about` prose for the six curated boxing competitions.
+ *
+ * A plain column update rather than an upsert into a content table: `about`
+ * is a single free-text column on `competition` itself (see
+ * `entity.schema.ts`), not a row in `entity_section`, so there is no natural
+ * key to conflict on. Idempotent by construction: writing the same string
+ * twice changes nothing.
+ */
+async function seedBoxingCompetitionAbout(db: Db): Promise<{ written: number; skipped: number }> {
+  let written = 0;
+  let skipped = 0;
+
+  for (const [slug, about] of Object.entries(BOXING_COMPETITION_ABOUT)) {
+    const [competition] = await db.execute<{ id: string }>(sql`
+      SELECT competition.id
+      FROM competition
+      INNER JOIN sport ON sport.id = competition.sport_id
+      WHERE competition.slug = ${slug} AND sport.slug = 'boxing'
+      LIMIT 1
+    `);
+    if (!competition) {
+      process.stdout.write(`  skipped boxing competition "${slug}": not in the database\n`);
+      skipped += 1;
+      continue;
+    }
+
+    await db.execute(sql`
+      UPDATE competition SET about = ${about}, updated_at = now() WHERE id = ${competition.id}
+    `);
+    written += 1;
+  }
+
+  return { written, skipped };
 }
 
 /**
@@ -2491,4 +3245,63 @@ async function seedCompetitionAwards(db: Db): Promise<{ written: number; skipped
   }
 
   return { written, skipped };
+}
+
+/**
+ * Upserts the News Engine's source catalogue from `news-sources.ts`.
+ *
+ * Upserted on `slug` so re-running after editing a row's trust score or fetch
+ * interval updates it in place rather than creating a duplicate. Every seeded
+ * row is inactive with a placeholder feed URL; see the warning at the top of
+ * `news-sources.ts` for what must happen before one is switched on.
+ */
+async function seedNewsSources(db: Db): Promise<{ created: number; updated: number }> {
+  let created = 0;
+  let updated = 0;
+
+  for (const source of NEWS_SOURCE_SEEDS) {
+    const [sportRow] = source.defaultSportSlug
+      ? await db.execute<{ id: string }>(
+          sql`SELECT id FROM sport WHERE slug = ${source.defaultSportSlug} LIMIT 1`,
+        )
+      : [];
+
+    const [existing] = await db.execute<{ id: string }>(
+      sql`SELECT id FROM news_sources WHERE slug = ${source.slug} LIMIT 1`,
+    );
+
+    await db.execute(
+      sql`INSERT INTO news_sources (
+            name, slug, type, feed_url, website_url, default_sport_id, priority,
+            trust_score, fetch_interval_seconds, is_active, display_headline_allowed,
+            display_summary_allowed, display_image_allowed, commercial_usage_status,
+            terms_url, health_status
+          )
+          VALUES (
+            ${source.name}, ${source.slug}, ${source.type}, ${source.feedUrl},
+            ${source.websiteUrl}, ${sportRow?.id ?? null}, ${source.priority},
+            ${source.trustScore}, ${source.fetchIntervalSeconds}, ${source.isActive},
+            ${source.displayHeadlineAllowed}, ${source.displaySummaryAllowed},
+            ${source.displayImageAllowed}, ${source.commercialUsageStatus},
+            ${source.termsUrl}, ${source.healthStatus}
+          )
+          ON CONFLICT (slug) DO UPDATE SET
+            name = EXCLUDED.name,
+            type = EXCLUDED.type,
+            feed_url = EXCLUDED.feed_url,
+            website_url = EXCLUDED.website_url,
+            default_sport_id = EXCLUDED.default_sport_id,
+            priority = EXCLUDED.priority,
+            trust_score = EXCLUDED.trust_score,
+            fetch_interval_seconds = EXCLUDED.fetch_interval_seconds,
+            commercial_usage_status = EXCLUDED.commercial_usage_status,
+            terms_url = EXCLUDED.terms_url,
+            updated_at = now()`,
+    );
+
+    if (existing) updated += 1;
+    else created += 1;
+  }
+
+  return { created, updated };
 }

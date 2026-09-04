@@ -1,10 +1,48 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
 import { unstable_noStore as noStore } from 'next/cache';
+import type { NewsArticleSummary } from '@sportbrain/contracts';
 import { Container } from '@/components/layout/container';
-import { HighlightRail } from '@/components/sports/highlight-rail';
-import { fetchHighlights, fetchSports } from '@/lib/api';
+import { NewsRail } from '@/components/news/news-rail';
+import { fetchNews, fetchSports } from '@/lib/api';
 import { SITE_NAME, SITE_TAGLINE, buildMetadata } from '@/lib/seo';
+
+/**
+ * Interleaves articles round-robin by sport, then truncates to `limit`.
+ *
+ * `fetchNews` sorts purely by `publishedAt`, which is correct for a
+ * sport-scoped page but produces a homepage rail dominated by whichever
+ * sport's publisher happened to post the most in the last hour - not a bug
+ * in the data, just not what a cross-sport "latest news" rail should show.
+ * This keeps each sport's articles in their own recency order while
+ * guaranteeing the rail doesn't read as single-sport whenever one source is
+ * unusually active. Articles without a resolved sport go in their own
+ * "bucket" so they still get a turn rather than being silently dropped.
+ */
+function interleaveBySport(articles: NewsArticleSummary[], limit: number): NewsArticleSummary[] {
+  const bySport = new Map<string, NewsArticleSummary[]>();
+  for (const article of articles) {
+    const key = article.sport ?? '__unsported__';
+    const bucket = bySport.get(key);
+    if (bucket) bucket.push(article);
+    else bySport.set(key, [article]);
+  }
+
+  const buckets = [...bySport.values()];
+  const result: NewsArticleSummary[] = [];
+  for (let round = 0; result.length < limit; round++) {
+    let tookAny = false;
+    for (const bucket of buckets) {
+      const article = bucket[round];
+      if (!article) continue;
+      result.push(article);
+      tookAny = true;
+      if (result.length >= limit) break;
+    }
+    if (!tookAny) break;
+  }
+  return result;
+}
 
 export const metadata: Metadata = buildMetadata({
   title: `${SITE_NAME} — ${SITE_TAGLINE}`,
@@ -23,19 +61,23 @@ export default async function HomePage() {
   // that runs without a reachable API bakes the fallback into the HTML and
   // serves it until the next revalidation. `noStore` on the failure path forces
   // that render to be dynamic, so a failed fetch is never what gets cached.
-  const [sports, highlights] = await Promise.all([
+  const [sports, news] = await Promise.all([
     fetchSports()
       .then((result) => result.data)
       .catch(() => {
         noStore();
         return [];
       }),
-    fetchHighlights()
+    // Fetched wider than the rail's display size (8) so interleaveBySport has
+    // enough per-sport depth to draw from; see its doc comment for why a
+    // plain limit:8 isn't enough on its own.
+    fetchNews({ limit: 40 })
       .then((result) => result.data)
       .catch(() => []),
   ]);
 
   const launched = sports.filter((sport) => sport.traits.hasTeams !== undefined || true);
+  const rail = interleaveBySport(news, 8);
 
   return (
     <Container className="py-12 sm:py-16">
@@ -78,7 +120,7 @@ export default async function HomePage() {
           )}
         </div>
 
-        <HighlightRail highlights={highlights} />
+        <NewsRail articles={rail} />
       </div>
     </Container>
   );

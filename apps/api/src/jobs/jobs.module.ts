@@ -1,6 +1,7 @@
 import { Logger, Module, type DynamicModule } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
 import { loadConfiguration } from '../config/configuration';
+import { NewsSchedulerJob } from './news-scheduler.job';
 
 /**
  * Scheduled and background work.
@@ -66,6 +67,11 @@ export class JobsModule {
       imports: enabled ? [ScheduleModule.forRoot()] : [],
       providers: [
         // Job providers go here. See the class comment.
+        //
+        // NewsSchedulerJob depends on NewsWorkerRepository and QueueService,
+        // both exported by the @Global QueueModule, so no import is needed
+        // here beyond ScheduleModule for @Cron to work.
+        ...(enabled ? [NewsSchedulerJob] : []),
       ],
     };
   }

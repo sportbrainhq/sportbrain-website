@@ -11,6 +11,7 @@ import {
 } from '../../database/schema';
 import {
   WikipediaProvider,
+  type GridironTeamSpell,
   type WikiFact,
   type WikiRanking,
 } from '../providers/wikipedia/wikipedia.provider';
@@ -747,6 +748,1188 @@ export class WikipediaIngestionService {
     }
 
     return { players, titles, retired, active };
+  }
+
+  /**
+   * Ingests golfers' careers: their majors, their record and their status.
+   *
+   * The golf equivalent of `ingestTennisCareers`, and it exists because golf
+   * has the same shape as tennis and therefore the same gaps: **golf has no
+   * clubs**. The catalogue holds zero golf teams, so:
+   *
+   *   - `derivePersonStatus` finds no spells and leaves 560 of 748 golfers with
+   *     a null `career_status`, which renders no badge at all.
+   *   - `derivePersonPriority` awards its two large bonuses for team evidence,
+   *     so no golfer can earn either, and its `major_titles` term reads tier-1
+   *     competitions of which golf had none. Every golfer scored on capped
+   *     sitelinks alone, and the Players tab opened with Arnold Palmer, then
+   *     **Heinrich Harrer** (an Austrian mountaineer), Jack Nicklaus and
+   *     Annika Sörenstam in a row: fame order, not golf order.
+   *   - The honour table held 196 golf rows, every one an award. Not a single
+   *     major was recorded: Tiger Woods's fifteen were represented by nothing,
+   *     and he was not in the catalogue at all.
+   *
+   * A major championship is the evidence golf has that somebody had a real
+   * career in it, and `Infobox golfer` states every one with its year.
+   *
+   * ## What it writes
+   *
+   *   - **Honour rows** for every major won, resolved to the curated
+   *     competition so the profile can group them. `kind = 'title'`, which is
+   *     what separates them from the awards already present and what
+   *     `derivePersonPriority` counts.
+   *   - **`career_status`**, from an activity window rather than from a
+   *     `retired` field. See below.
+   *   - **Attributes**: turned pro, tour, college, the win counts by tour, the
+   *     stated major count and the Hall of Fame year, which give the profile
+   *     something to show for a sport with no goals, runs or points.
+   *
+   * ## Why status is a window rather than a field
+   *
+   * Tennis reads status from whether the infobox carries a `retired` field.
+   * That is exactly wrong for golf: the golfer template carries `retired` as an
+   * empty placeholder on almost every article, Nicklaus's and Player's
+   * included, so its presence means nothing and its absence means nothing.
+   *
+   * Golf also genuinely lacks a retirement moment for most players. Very few
+   * announce one; they play less, then move to a seniors tour, then stop
+   * entering. So the honest signals, in order of how much they settle:
+   *
+   *   1. **Dead.** Decisive, and already handled by `derivePersonStatus`.
+   *   2. **A stated retirement year in the past.** Rare, and decisive when present.
+   *   3. **Last major won long ago, and turned pro long ago.** A player whose
+   *      last major was decades back and who turned professional decades before
+   *      that has finished, whatever the article omits.
+   *   4. **Turned pro recently.** Somebody who turned professional in the last
+   *      few decades and has no retirement statement is competing.
+   *
+   * Where none of those fire, the status is left alone rather than guessed.
+   * Null renders no badge, and labelling somebody Active who stopped in 1975 is
+   * worse than labelling them nothing.
+   *
+   * Curated rows are left alone, as everywhere else.
+   */
+  async ingestGolfCareers(
+    limit: number,
+    /** One player, for correcting a single page without a full crawl. */
+    slug?: string,
+  ): Promise<{ players: number; majors: number; retired: number; active: number }> {
+    const targets = await this.targets('person', 'golf', limit, slug);
+
+    const [sportRow] = await this.database.db.execute<{ id: string }>(
+      sql`SELECT id FROM sport WHERE slug = 'golf' LIMIT 1`,
+    );
+    if (!sportRow) return { players: 0, majors: 0, retired: 0, active: 0 };
+
+    // The curated competitions, resolved once. A major whose competition is
+    // missing is still written, with a null competition_id: the honour is a
+    // fact about the player and should not be lost because the competition
+    // seed has not run. The discontinued majors are always in that case.
+    const competitions = new Map<string, string>();
+    const rows = await this.database.db.execute<{ id: string; slug: string }>(
+      sql`SELECT id, slug FROM competition WHERE sport_id = ${sportRow.id}`,
+    );
+    for (const row of rows) competitions.set(row.slug, row.id);
+
+    const thisYear = new Date().getFullYear();
+
+    let players = 0;
+    let majors = 0;
+    let retired = 0;
+    let active = 0;
+
+    for (const [index, target] of targets.entries()) {
+      try {
+        const career = await this.provider.fetchGolfCareer(target.title);
+        // No golfer infobox means the person is not a golfer in any sense this
+        // pipeline can act on. That is the common case for the mountaineers,
+        // politicians and actors Wikidata's "sport: golf" statement drags into
+        // the catalogue, and skipping them is deliberate: they keep their null
+        // status and score no major evidence.
+        if (!career) continue;
+
+        for (const major of career.majors) {
+          const inserted = await this.database.db.execute<{ id: string }>(sql`
+            INSERT INTO honour (
+              sport_id, person_id, competition_id, kind, title, year, source
+            )
+            SELECT ${sportRow.id}, ${target.id},
+                   ${major.slug ? (competitions.get(major.slug) ?? null) : null}, 'title',
+                   ${major.name}, ${major.year}, 'wikipedia'
+            WHERE NOT EXISTS (
+              SELECT 1 FROM honour h
+              WHERE h.person_id = ${target.id}
+                AND h.title = ${major.name}
+                AND h.year = ${major.year}
+            )
+            RETURNING id
+          `);
+          if (inserted.length > 0) majors += 1;
+        }
+
+        // The activity window. See the doc comment for why golf cannot use the
+        // `retired` field the way tennis does.
+        //
+        // Twelve years since the last major is the threshold, and it is chosen
+        // to be safely longer than a career gap rather than to be precise:
+        // Tiger Woods went eleven years between the 2008 U.S. Open and the 2019
+        // Masters, which is the longest such gap in the modern game, and a
+        // shorter window would have marked him retired in 2018.
+        const status: 'active' | 'retired' | null =
+          career.retiredYear !== null && career.retiredYear < thisYear
+            ? 'retired'
+            : career.lastMajorYear !== null && thisYear - career.lastMajorYear > 12
+              ? 'retired'
+              : career.lastMajorYear !== null
+                ? 'active'
+                : career.turnedPro !== null && thisYear - career.turnedPro > 35
+                  ? 'retired'
+                  : career.turnedPro !== null
+                    ? 'active'
+                    : null;
+
+        if (status === 'retired') retired += 1;
+        else if (status === 'active') active += 1;
+
+        await this.database.db.execute(sql`
+          UPDATE person SET
+            attributes = attributes || ${JSON.stringify({
+              ...(career.turnedPro !== null ? { careerStart: career.turnedPro } : {}),
+              ...(career.retiredYear !== null ? { careerEnd: career.retiredYear } : {}),
+              ...(career.tour !== null ? { tour: career.tour } : {}),
+              ...(career.college !== null ? { college: career.college } : {}),
+              ...(career.hallOfFameYear !== null ? { hallOfFameYear: career.hallOfFameYear } : {}),
+              ...career.winCounts,
+            })}::jsonb,
+            -- Left alone where the window says nothing, rather than cleared. A
+            -- null here would erase a status derivePersonStatus set from a date
+            -- of death, which is better evidence than anything this pass has.
+            career_status = coalesce(${status}::text, career_status),
+            updated_at = now()
+          WHERE id = ${target.id} AND confidence <> 'curated'
+        `);
+
+        players += 1;
+      } catch (error) {
+        this.logger.warn(`Golf career failed for ${target.title}: ${this.message(error)}`);
+      }
+
+      if ((index + 1) % 25 === 0) {
+        this.logger.log(`  ${index + 1}/${targets.length} players, ${majors} majors written`);
+      }
+    }
+
+    return { players, majors, retired, active };
+  }
+
+  /**
+   * NFL teams' championship counts and Super Bowl-winning seasons.
+   *
+   * The counterpart of `ingestFootballTitles` for a sport whose team articles
+   * state a title count directly in the infobox rather than in an honours
+   * table to sum, so this reads `fetchNflTeamTitles` rather than
+   * `fetchClubTitles`. Counts are written to `team.attributes`, and each
+   * Super Bowl-winning season becomes its own `honour` row tied to the
+   * `super-bowl` competition, the same shape `ingestGolfCareers` gives a
+   * major win.
+   */
+  async ingestNflTeamTitles(limit: number): Promise<{ teams: number; written: number }> {
+    const [sportRow] = await this.database.db.execute<{ id: string }>(
+      sql`SELECT id FROM sport WHERE slug = 'american-football' LIMIT 1`,
+    );
+    if (!sportRow) return { teams: 0, written: 0 };
+
+    const [superBowl] = await this.database.db.execute<{ id: string }>(
+      sql`SELECT id FROM competition WHERE sport_id = ${sportRow.id} AND slug = 'super-bowl' LIMIT 1`,
+    );
+
+    const targets = await this.targets('team', 'american-football', limit);
+    this.logger.log(`american-football: ${targets.length} teams`);
+
+    let written = 0;
+
+    for (const [index, target] of targets.entries()) {
+      try {
+        const titles = await this.provider.fetchNflTeamTitles(target.title);
+        // No recognised infobox means a parsing failure, not a team that has
+        // won nothing, the same distinction `ingestFootballTitles` draws with
+        // its `competitions === 0` guard.
+        if (!titles) continue;
+
+        await this.database.db.execute(sql`
+          UPDATE team SET
+            attributes = attributes || ${JSON.stringify({
+              ...(titles.superBowlTitles !== null
+                ? { superBowlTitles: titles.superBowlTitles }
+                : {}),
+              ...(titles.conferenceTitles !== null
+                ? { conferenceTitles: titles.conferenceTitles }
+                : {}),
+              ...(titles.divisionTitles !== null ? { divisionTitles: titles.divisionTitles } : {}),
+              ...(titles.leagueTitles !== null ? { leagueTitles: titles.leagueTitles } : {}),
+              ...(titles.playoffAppearances !== null
+                ? { playoffAppearances: titles.playoffAppearances }
+                : {}),
+            })}::jsonb,
+            updated_at = now()
+          WHERE id = ${target.id} AND confidence <> 'curated'
+        `);
+
+        for (const year of titles.superBowlYears) {
+          const inserted = await this.database.db.execute<{ id: string }>(sql`
+            INSERT INTO honour (
+              sport_id, team_id, competition_id, kind, title, year, source
+            )
+            SELECT ${sportRow.id}, ${target.id}, ${superBowl?.id ?? null}, 'title',
+                   'Super Bowl champions', ${year}, 'wikipedia'
+            WHERE NOT EXISTS (
+              SELECT 1 FROM honour h
+              WHERE h.team_id = ${target.id} AND h.title = 'Super Bowl champions' AND h.year = ${year}
+            )
+            RETURNING id
+          `);
+          if (inserted.length > 0) written += 1;
+        }
+      } catch (error) {
+        this.logger.warn(`NFL titles failed for ${target.title}: ${this.message(error)}`);
+      }
+
+      if ((index + 1) % 25 === 0) {
+        this.logger.log(`  ${index + 1}/${targets.length} teams, ${written} written`);
+      }
+    }
+
+    await this.revalidate(['sport:american-football']);
+
+    return { teams: targets.length, written };
+  }
+
+  /**
+   * Quarterbacks' career regular-season passing totals.
+   *
+   * Scoped to the `quarterback` position only, and to the `passing_yards`,
+   * `passing_touchdowns` and `interceptions_thrown` keys the statistic
+   * registry already declares for this sport (`completions` and `attempts`
+   * are read too, and kept in `stats` even though nothing in the registry
+   * names them yet, rather than discarded). See
+   * `fetchCareerColumnGroup`'s doc comment on `WikipediaProvider` for why
+   * every position needs its own reader rather than one general-purpose
+   * table parser: the season table's columns are not consistent enough
+   * across positions, articles and eras to read safely by anything other
+   * than each column's own header label, checked against a real page.
+   * `ingestRunningBackCareerTotals`, `ingestReceiverCareerTotals` and
+   * `ingestDefenderCareerTotals` below are the same shape for the three
+   * other position groups this reads.
+   */
+  async ingestQuarterbackCareerPassing(
+    limit: number,
+  ): Promise<{ players: number; written: number }> {
+    const [sportRow] = await this.database.db.execute<{ id: string }>(
+      sql`SELECT id FROM sport WHERE slug = 'american-football' LIMIT 1`,
+    );
+    if (!sportRow) return { players: 0, written: 0 };
+
+    const [passingDiscipline] = await this.database.db.execute<{ id: string }>(
+      sql`SELECT id FROM discipline WHERE sport_id = ${sportRow.id} AND key = 'passing' LIMIT 1`,
+    );
+
+    const targets = await this.database.db.execute<{ id: string; title: string; name: string }>(sql`
+      SELECT p.id, em.external_id AS title, p.full_name AS name
+      FROM person p
+      JOIN sport s ON s.id = p.primary_sport_id AND s.slug = 'american-football'
+      JOIN external_mapping em
+        ON em.entity_id = p.id AND em.provider = 'wikipedia' AND em.entity_type = 'person'
+      WHERE p.attributes->>'position' = 'quarterback'
+      ORDER BY p.notability DESC
+      LIMIT ${limit}
+    `);
+    this.logger.log(`american-football: ${targets.length} quarterbacks`);
+
+    let written = 0;
+
+    for (const [index, target] of targets.entries()) {
+      try {
+        const totals = await this.provider.fetchQuarterbackCareerPassing(target.title);
+        // No table read means a parsing failure or an article too old to
+        // carry one, not a quarterback who has thrown for nothing.
+        if (!totals || totals.yards === null) continue;
+
+        await this.database.db.execute(sql`
+          INSERT INTO person_statistic (
+            person_id, sport_id, discipline_id, scope, primary_value, stats, computed_at
+          ) VALUES (
+            ${target.id}, ${sportRow.id}, ${passingDiscipline?.id ?? null}, 'career',
+            ${totals.yards},
+            ${JSON.stringify({
+              ...(totals.yards !== null ? { passing_yards: totals.yards } : {}),
+              ...(totals.touchdowns !== null ? { passing_touchdowns: totals.touchdowns } : {}),
+              ...(totals.interceptions !== null
+                ? { interceptions_thrown: totals.interceptions }
+                : {}),
+              ...(totals.completions !== null ? { completions: totals.completions } : {}),
+              ...(totals.attempts !== null ? { attempts: totals.attempts } : {}),
+            })}::jsonb,
+            now()
+          )
+          ON CONFLICT (
+            person_id, scope,
+            coalesce(competition_id, '00000000-0000-0000-0000-000000000000'::uuid),
+            coalesce(season_id, '00000000-0000-0000-0000-000000000000'::uuid),
+            coalesce(team_id, '00000000-0000-0000-0000-000000000000'::uuid),
+            coalesce(discipline_id, '00000000-0000-0000-0000-000000000000'::uuid)
+          ) DO UPDATE SET
+            primary_value = EXCLUDED.primary_value,
+            stats = person_statistic.stats || EXCLUDED.stats,
+            computed_at = now()
+        `);
+        written += 1;
+      } catch (error) {
+        this.logger.warn(`QB passing totals failed for ${target.title}: ${this.message(error)}`);
+      }
+
+      if ((index + 1) % 25 === 0) {
+        this.logger.log(`  ${index + 1}/${targets.length} quarterbacks, ${written} written`);
+      }
+    }
+
+    await this.revalidate(['sport:american-football']);
+
+    return { players: targets.length, written };
+  }
+
+  /**
+   * Running backs' career rushing totals.
+   *
+   * Position matching covers `running back`, `halfback` and `fullback`: three
+   * names Wikipedia's own infoboxes use for what the registry counts as one
+   * discipline. Halfback is the older term for the same role a modern article
+   * calls running back, and a fullback carries the ball often enough that
+   * excluding it would drop real rushers, not just blockers, from the pass.
+   */
+  async ingestRunningBackCareerTotals(
+    limit: number,
+  ): Promise<{ players: number; written: number }> {
+    const [sportRow] = await this.database.db.execute<{ id: string }>(
+      sql`SELECT id FROM sport WHERE slug = 'american-football' LIMIT 1`,
+    );
+    if (!sportRow) return { players: 0, written: 0 };
+
+    const [rushingDiscipline] = await this.database.db.execute<{ id: string }>(
+      sql`SELECT id FROM discipline WHERE sport_id = ${sportRow.id} AND key = 'rushing' LIMIT 1`,
+    );
+
+    const targets = await this.database.db.execute<{ id: string; title: string; name: string }>(sql`
+      SELECT p.id, em.external_id AS title, p.full_name AS name
+      FROM person p
+      JOIN sport s ON s.id = p.primary_sport_id AND s.slug = 'american-football'
+      JOIN external_mapping em
+        ON em.entity_id = p.id AND em.provider = 'wikipedia' AND em.entity_type = 'person'
+      WHERE p.attributes->>'position' IN ('running back', 'halfback', 'fullback')
+      ORDER BY p.notability DESC
+      LIMIT ${limit}
+    `);
+    this.logger.log(`american-football: ${targets.length} running backs`);
+
+    let written = 0;
+
+    for (const [index, target] of targets.entries()) {
+      try {
+        const totals = await this.provider.fetchRunningBackCareerTotals(target.title);
+        if (!totals || (totals.yards === null && totals.touchdowns === null)) continue;
+
+        await this.database.db.execute(sql`
+          INSERT INTO person_statistic (
+            person_id, sport_id, discipline_id, scope, primary_value, stats, computed_at
+          ) VALUES (
+            ${target.id}, ${sportRow.id}, ${rushingDiscipline?.id ?? null}, 'career',
+            ${totals.yards},
+            ${JSON.stringify({
+              ...(totals.yards !== null ? { rushing_yards: totals.yards } : {}),
+              ...(totals.touchdowns !== null ? { rushing_touchdowns: totals.touchdowns } : {}),
+              ...(totals.attempts !== null ? { rushing_attempts: totals.attempts } : {}),
+            })}::jsonb,
+            now()
+          )
+          ON CONFLICT (
+            person_id, scope,
+            coalesce(competition_id, '00000000-0000-0000-0000-000000000000'::uuid),
+            coalesce(season_id, '00000000-0000-0000-0000-000000000000'::uuid),
+            coalesce(team_id, '00000000-0000-0000-0000-000000000000'::uuid),
+            coalesce(discipline_id, '00000000-0000-0000-0000-000000000000'::uuid)
+          ) DO UPDATE SET
+            primary_value = EXCLUDED.primary_value,
+            stats = person_statistic.stats || EXCLUDED.stats,
+            computed_at = now()
+        `);
+        written += 1;
+      } catch (error) {
+        this.logger.warn(`RB rushing totals failed for ${target.title}: ${this.message(error)}`);
+      }
+
+      if ((index + 1) % 25 === 0) {
+        this.logger.log(`  ${index + 1}/${targets.length} running backs, ${written} written`);
+      }
+    }
+
+    await this.revalidate(['sport:american-football']);
+
+    return { players: targets.length, written };
+  }
+
+  /**
+   * Receivers' career receiving totals.
+   *
+   * Position matching covers `wide receiver` and `tight end`: different roles
+   * on the field, but both are read through the same "Receiving" column
+   * group. A running back's receiving line is deliberately not read here,
+   * even though the same table carries one for them too; a runner is scoped
+   * to `ingestRunningBackCareerTotals` and its rushing figures, and giving
+   * the same person two competing career rows for two different disciplines
+   * from two different ingestion passes at once is exactly the kind of
+   * ambiguity the position filter exists to avoid.
+   */
+  async ingestReceiverCareerTotals(limit: number): Promise<{ players: number; written: number }> {
+    const [sportRow] = await this.database.db.execute<{ id: string }>(
+      sql`SELECT id FROM sport WHERE slug = 'american-football' LIMIT 1`,
+    );
+    if (!sportRow) return { players: 0, written: 0 };
+
+    const [receivingDiscipline] = await this.database.db.execute<{ id: string }>(
+      sql`SELECT id FROM discipline WHERE sport_id = ${sportRow.id} AND key = 'receiving' LIMIT 1`,
+    );
+
+    const targets = await this.database.db.execute<{ id: string; title: string; name: string }>(sql`
+      SELECT p.id, em.external_id AS title, p.full_name AS name
+      FROM person p
+      JOIN sport s ON s.id = p.primary_sport_id AND s.slug = 'american-football'
+      JOIN external_mapping em
+        ON em.entity_id = p.id AND em.provider = 'wikipedia' AND em.entity_type = 'person'
+      WHERE p.attributes->>'position' IN ('wide receiver', 'tight end')
+      ORDER BY p.notability DESC
+      LIMIT ${limit}
+    `);
+    this.logger.log(`american-football: ${targets.length} receivers`);
+
+    let written = 0;
+
+    for (const [index, target] of targets.entries()) {
+      try {
+        const totals = await this.provider.fetchReceiverCareerTotals(target.title);
+        if (!totals || (totals.yards === null && totals.touchdowns === null)) continue;
+
+        await this.database.db.execute(sql`
+          INSERT INTO person_statistic (
+            person_id, sport_id, discipline_id, scope, primary_value, stats, computed_at
+          ) VALUES (
+            ${target.id}, ${sportRow.id}, ${receivingDiscipline?.id ?? null}, 'career',
+            ${totals.yards},
+            ${JSON.stringify({
+              ...(totals.yards !== null ? { receiving_yards: totals.yards } : {}),
+              ...(totals.touchdowns !== null ? { receiving_touchdowns: totals.touchdowns } : {}),
+              ...(totals.receptions !== null ? { receptions: totals.receptions } : {}),
+            })}::jsonb,
+            now()
+          )
+          ON CONFLICT (
+            person_id, scope,
+            coalesce(competition_id, '00000000-0000-0000-0000-000000000000'::uuid),
+            coalesce(season_id, '00000000-0000-0000-0000-000000000000'::uuid),
+            coalesce(team_id, '00000000-0000-0000-0000-000000000000'::uuid),
+            coalesce(discipline_id, '00000000-0000-0000-0000-000000000000'::uuid)
+          ) DO UPDATE SET
+            primary_value = EXCLUDED.primary_value,
+            stats = person_statistic.stats || EXCLUDED.stats,
+            computed_at = now()
+        `);
+        written += 1;
+      } catch (error) {
+        this.logger.warn(`Receiver totals failed for ${target.title}: ${this.message(error)}`);
+      }
+
+      if ((index + 1) % 25 === 0) {
+        this.logger.log(`  ${index + 1}/${targets.length} receivers, ${written} written`);
+      }
+    }
+
+    await this.revalidate(['sport:american-football']);
+
+    return { players: targets.length, written };
+  }
+
+  /**
+   * Defenders' career tackle and takeaway totals.
+   *
+   * Position matching covers every defensive role Wikipedia's infoboxes name
+   * for this catalogue: `linebacker`, `defensive end`, `defensive tackle`,
+   * `cornerback`, `safety` (and its capitalised variant, an ingestion
+   * inconsistency worth matching rather than losing three players over),
+   * `defensive back`, `nose tackle` and the bare `end`. See
+   * `fetchDefenderCareerTotals` for why a player missing one of the two
+   * column groups (an edge rusher with no interceptions, a cornerback whose
+   * table carries no sack column) still gets a row for whichever group was
+   * found.
+   */
+  async ingestDefenderCareerTotals(limit: number): Promise<{ players: number; written: number }> {
+    const [sportRow] = await this.database.db.execute<{ id: string }>(
+      sql`SELECT id FROM sport WHERE slug = 'american-football' LIMIT 1`,
+    );
+    if (!sportRow) return { players: 0, written: 0 };
+
+    const [defenceDiscipline] = await this.database.db.execute<{ id: string }>(
+      sql`SELECT id FROM discipline WHERE sport_id = ${sportRow.id} AND key = 'defence' LIMIT 1`,
+    );
+
+    const targets = await this.database.db.execute<{ id: string; title: string; name: string }>(sql`
+      SELECT p.id, em.external_id AS title, p.full_name AS name
+      FROM person p
+      JOIN sport s ON s.id = p.primary_sport_id AND s.slug = 'american-football'
+      JOIN external_mapping em
+        ON em.entity_id = p.id AND em.provider = 'wikipedia' AND em.entity_type = 'person'
+      WHERE p.attributes->>'position' IN (
+        'linebacker', 'defensive end', 'defensive tackle', 'cornerback',
+        'safety', 'Safety', 'defensive back', 'nose tackle', 'end'
+      )
+      ORDER BY p.notability DESC
+      LIMIT ${limit}
+    `);
+    this.logger.log(`american-football: ${targets.length} defenders`);
+
+    let written = 0;
+
+    for (const [index, target] of targets.entries()) {
+      try {
+        const totals = await this.provider.fetchDefenderCareerTotals(target.title);
+        if (
+          !totals ||
+          (totals.tackles === null && totals.sacks === null && totals.interceptions === null)
+        ) {
+          continue;
+        }
+
+        await this.database.db.execute(sql`
+          INSERT INTO person_statistic (
+            person_id, sport_id, discipline_id, scope, primary_value, stats, computed_at
+          ) VALUES (
+            ${target.id}, ${sportRow.id}, ${defenceDiscipline?.id ?? null}, 'career',
+            ${totals.tackles},
+            ${JSON.stringify({
+              ...(totals.tackles !== null ? { tackles: totals.tackles } : {}),
+              ...(totals.sacks !== null ? { sacks: totals.sacks } : {}),
+              ...(totals.interceptions !== null ? { interceptions: totals.interceptions } : {}),
+            })}::jsonb,
+            now()
+          )
+          ON CONFLICT (
+            person_id, scope,
+            coalesce(competition_id, '00000000-0000-0000-0000-000000000000'::uuid),
+            coalesce(season_id, '00000000-0000-0000-0000-000000000000'::uuid),
+            coalesce(team_id, '00000000-0000-0000-0000-000000000000'::uuid),
+            coalesce(discipline_id, '00000000-0000-0000-0000-000000000000'::uuid)
+          ) DO UPDATE SET
+            primary_value = EXCLUDED.primary_value,
+            stats = person_statistic.stats || EXCLUDED.stats,
+            computed_at = now()
+        `);
+        written += 1;
+      } catch (error) {
+        this.logger.warn(`Defender totals failed for ${target.title}: ${this.message(error)}`);
+      }
+
+      if ((index + 1) % 25 === 0) {
+        this.logger.log(`  ${index + 1}/${targets.length} defenders, ${written} written`);
+      }
+    }
+
+    await this.revalidate(['sport:american-football']);
+
+    return { players: targets.length, written };
+  }
+
+  /**
+   * Gridiron players' club histories, replacing whatever undated spells
+   * Wikidata's "member of sports team" statements had already written.
+   *
+   * Not position-scoped, unlike the four career-total ingesters above: a
+   * club history applies the same way whatever position a player held.
+   *
+   * The rewrite is deliberate, not additive. `fetchGridironTeamSpells`'s own
+   * doc comment covers why: those Wikidata rows carry no dates, so a player
+   * with several spells shows every one of them as still current. A dated
+   * `pastteams` row for the same (player, team, role) tuple does not share a
+   * conflict key with an undated one (the unique index coalesces null dates
+   * to sentinel values that differ from any real date), so simply inserting
+   * the new rows would have left the wrong ones sitting alongside them. Every
+   * existing spell for a player this successfully reads is deleted first, and
+   * only for players whose 'wikidata'-sourced ones are still `provisional`:
+   * a spell some other pass has since verified or hand-corrected is left
+   * alone rather than being silently overwritten by this one.
+   */
+  async ingestGridironTeamHistory(limit: number): Promise<{ players: number; written: number }> {
+    const [sportRow] = await this.database.db.execute<{ id: string }>(
+      sql`SELECT id FROM sport WHERE slug = 'american-football' LIMIT 1`,
+    );
+    if (!sportRow) return { players: 0, written: 0 };
+
+    const teams = await this.database.db.execute<{ id: string; name: string; aliases: string[] }>(
+      sql`
+        SELECT t.id, t.name, t.aliases FROM team t
+        JOIN sport s ON s.id = t.sport_id AND s.slug = 'american-football'
+      `,
+    );
+    // A player's `pastteams` entry names a franchise under whatever it was
+    // called during that spell, not its current name: Jerry Rice's Raiders
+    // years are written as "Oakland Raiders", not "Las Vegas Raiders", and
+    // several other franchises (the Rams, the Chargers, Washington, the
+    // Titans, the Colts, the Cardinals) have moved city or name at least once
+    // in the modern era. Each relocated team's known former names are
+    // resolved to the same row via `aliases`, populated once by hand for the
+    // franchises this catalogue actually has moves for.
+    const teamByName = new Map<string, string>();
+    for (const team of teams) {
+      teamByName.set(team.name.toLowerCase(), team.id);
+      for (const alias of team.aliases ?? []) teamByName.set(alias.toLowerCase(), team.id);
+    }
+
+    const targets = await this.database.db.execute<{ id: string; title: string; name: string }>(sql`
+      SELECT p.id, em.external_id AS title, p.full_name AS name
+      FROM person p
+      JOIN sport s ON s.id = p.primary_sport_id AND s.slug = 'american-football'
+      JOIN external_mapping em
+        ON em.entity_id = p.id AND em.provider = 'wikipedia' AND em.entity_type = 'person'
+      ORDER BY p.notability DESC
+      LIMIT ${limit}
+    `);
+    this.logger.log(`american-football: ${targets.length} players`);
+
+    let written = 0;
+
+    for (const [index, target] of targets.entries()) {
+      try {
+        const spells = await this.provider.fetchGridironTeamSpells(target.title);
+        if (!spells) continue;
+
+        const resolved = spells
+          .map((spell) => ({ spell, teamId: teamByName.get(spell.teamName.toLowerCase()) }))
+          .filter((entry): entry is { spell: GridironTeamSpell; teamId: string } => !!entry.teamId);
+        if (resolved.length === 0) continue;
+
+        await this.database.db.execute(sql`
+          DELETE FROM person_team
+          WHERE person_id = ${target.id} AND role = 'player' AND confidence = 'provisional'
+        `);
+
+        for (const { spell, teamId } of resolved) {
+          // A spell with no stated end that is not "present" is a single
+          // season: Jim Hines' one year at the Chiefs writes as
+          // `{{NFL Year|1970}}` with no second date, and leaving the end
+          // date null would read as a career still in progress fifty years
+          // later. Only an explicit "present" spell stays genuinely open.
+          const startDate = `${spell.startYear}-01-01`;
+          const endDate = spell.current ? null : `${spell.endYear ?? spell.startYear}-12-31`;
+
+          await this.database.db.execute(sql`
+            INSERT INTO person_team (
+              person_id, team_id, role, start_date, end_date, confidence
+            ) VALUES (
+              ${target.id}, ${teamId}, 'player', ${startDate}::date, ${endDate}::date, 'verified'
+            )
+            ON CONFLICT (
+              person_id, team_id, role,
+              coalesce(start_date, '1000-01-01'::date),
+              coalesce(end_date, '9999-12-31'::date)
+            ) DO UPDATE SET
+              confidence = EXCLUDED.confidence,
+              updated_at = now()
+          `);
+          written += 1;
+        }
+      } catch (error) {
+        this.logger.warn(`Team history failed for ${target.title}: ${this.message(error)}`);
+      }
+
+      if ((index + 1) % 25 === 0) {
+        this.logger.log(`  ${index + 1}/${targets.length} players, ${written} spells written`);
+      }
+    }
+
+    await this.revalidate(['sport:american-football']);
+
+    return { players: targets.length, written };
+  }
+
+  /**
+   * Gridiron players' position and current team, rewritten from each
+   * player's own infobox rather than trusted from Wikidata's unscoped
+   * `P413` statement.
+   *
+   * See `fetchGridironPlayerAttributes`'s own doc comment for the bug this
+   * closes: a dual-sport person's Wikidata item can carry a position from
+   * each sport they played, with no way for the enrichment query that reads
+   * it to prefer the American-football one, and the effect reached beyond a
+   * cosmetic label. `derivePersonNotability` treats `positioned` as evidence
+   * of a real football career and scores `honours` for a person's Wikidata
+   * "award received" statements regardless of which sport they came from, so
+   * a handful of real MLB players carrying an incidental American-football
+   * Wikidata statement, and a handful of football legends whose position was
+   * simply overwritten by an unrelated sport's, were both able to distort
+   * the Players tab's ranking. This does not touch `notability` directly;
+   * that is `derivePersonNotability`'s job on its next run, over the
+   * corrected `position` this writes.
+   *
+   * Only `position` and `currentClub` are touched. `heightCm` and any other
+   * existing attribute is preserved by merging rather than replacing.
+   */
+  async ingestGridironPlayerAttributes(
+    limit: number,
+  ): Promise<{ players: number; written: number }> {
+    const targets = await this.database.db.execute<{ id: string; title: string; name: string }>(sql`
+      SELECT p.id, em.external_id AS title, p.full_name AS name
+      FROM person p
+      JOIN sport s ON s.id = p.primary_sport_id AND s.slug = 'american-football'
+      JOIN external_mapping em
+        ON em.entity_id = p.id AND em.provider = 'wikipedia' AND em.entity_type = 'person'
+      ORDER BY p.notability DESC
+      LIMIT ${limit}
+    `);
+    this.logger.log(`american-football: ${targets.length} players`);
+
+    let written = 0;
+
+    for (const [index, target] of targets.entries()) {
+      try {
+        const attrs = await this.provider.fetchGridironPlayerAttributes(target.title);
+        if (!attrs || (!attrs.position && !attrs.currentTeam)) continue;
+
+        await this.database.db.execute(sql`
+          UPDATE person SET
+            attributes = attributes || ${JSON.stringify({
+              ...(attrs.position !== null ? { position: attrs.position } : {}),
+              ...(attrs.currentTeam !== null ? { currentClub: attrs.currentTeam } : {}),
+            })}::jsonb,
+            updated_at = now()
+          WHERE id = ${target.id} AND confidence <> 'curated'
+        `);
+        written += 1;
+      } catch (error) {
+        this.logger.warn(`Player attributes failed for ${target.title}: ${this.message(error)}`);
+      }
+
+      if ((index + 1) % 25 === 0) {
+        this.logger.log(`  ${index + 1}/${targets.length} players, ${written} written`);
+      }
+    }
+
+    await this.revalidate(['sport:american-football']);
+
+    return { players: targets.length, written };
+  }
+
+  /**
+   * MMA fighters' professional records, from `Infobox martial artist` rather
+   * than left unfilled: no ingestion for this sport has ever populated a win,
+   * loss or draw count, and every fighter's page carried nothing beyond
+   * height. See `fetchMmaRecord` for the field-level detail and the real
+   * records it was verified against.
+   *
+   * Written to `person_statistic`'s own typed `wins`/`draws`/`losses`
+   * columns, the shape the schema already carries for exactly this, rather
+   * than to `stats` jsonb the way a sport without those columns' equivalent
+   * has to. `weightClass` and `yearsActive` go to `person.attributes`, and
+   * `career_status` is set from whether `years_active` ends in "present":
+   * this pipeline has no dedicated MMA retirement signal otherwise, and
+   * Wikipedia's own infobox already states the answer plainly.
+   */
+  async ingestMmaRecords(limit: number): Promise<{ players: number; written: number }> {
+    const [sportRow] = await this.database.db.execute<{ id: string }>(
+      sql`SELECT id FROM sport WHERE slug = 'mma' LIMIT 1`,
+    );
+    if (!sportRow) return { players: 0, written: 0 };
+
+    const targets = await this.database.db.execute<{ id: string; title: string; name: string }>(sql`
+      SELECT p.id, em.external_id AS title, p.full_name AS name
+      FROM person p
+      JOIN sport s ON s.id = p.primary_sport_id AND s.slug = 'mma'
+      JOIN external_mapping em
+        ON em.entity_id = p.id AND em.provider = 'wikipedia' AND em.entity_type = 'person'
+      ORDER BY p.notability DESC
+      LIMIT ${limit}
+    `);
+    this.logger.log(`mma: ${targets.length} fighters`);
+
+    let written = 0;
+
+    for (const [index, target] of targets.entries()) {
+      try {
+        const record = await this.provider.fetchMmaRecord(target.title);
+        if (!record) continue;
+
+        const status: 'active' | 'retired' | null = record.yearsActive
+          ? /present/i.test(record.yearsActive)
+            ? 'active'
+            : 'retired'
+          : null;
+
+        await this.database.db.execute(sql`
+          INSERT INTO person_statistic (
+            person_id, sport_id, scope, wins, draws, losses, stats, computed_at
+          ) VALUES (
+            ${target.id}, ${sportRow.id}, 'career',
+            ${record.wins}, ${record.draws}, ${record.losses},
+            ${JSON.stringify({
+              fight_wins: record.wins,
+              fight_losses: record.losses,
+              fight_draws: record.draws,
+              ...(record.noContests > 0 ? { no_contests: record.noContests } : {}),
+              ...(record.knockoutWins > 0 ? { knockout_wins: record.knockoutWins } : {}),
+              ...(record.submissionWins > 0 ? { submission_wins: record.submissionWins } : {}),
+              ...(record.decisionWins > 0 ? { decision_wins: record.decisionWins } : {}),
+            })}::jsonb,
+            now()
+          )
+          ON CONFLICT (
+            person_id, scope,
+            coalesce(competition_id, '00000000-0000-0000-0000-000000000000'::uuid),
+            coalesce(season_id, '00000000-0000-0000-0000-000000000000'::uuid),
+            coalesce(team_id, '00000000-0000-0000-0000-000000000000'::uuid),
+            coalesce(discipline_id, '00000000-0000-0000-0000-000000000000'::uuid)
+          ) DO UPDATE SET
+            wins = EXCLUDED.wins,
+            draws = EXCLUDED.draws,
+            losses = EXCLUDED.losses,
+            stats = person_statistic.stats || EXCLUDED.stats,
+            computed_at = now()
+        `);
+
+        await this.database.db.execute(sql`
+          UPDATE person SET
+            attributes = attributes || ${JSON.stringify({
+              ...(record.weightClass !== null ? { weightClass: record.weightClass } : {}),
+              ...(record.yearsActive !== null ? { yearsActive: record.yearsActive } : {}),
+            })}::jsonb,
+            career_status = coalesce(${status}::text, career_status),
+            updated_at = now()
+          WHERE id = ${target.id} AND confidence <> 'curated'
+        `);
+
+        written += 1;
+      } catch (error) {
+        this.logger.warn(`MMA record failed for ${target.title}: ${this.message(error)}`);
+      }
+
+      if ((index + 1) % 25 === 0) {
+        this.logger.log(`  ${index + 1}/${targets.length} fighters, ${written} written`);
+      }
+    }
+
+    await this.revalidate(['sport:mma']);
+
+    return { players: targets.length, written };
+  }
+
+  /**
+   * MMA fighters' title reigns, one `honour` row per reign.
+   *
+   * See `fetchMmaTitles` for how a reign is counted from the article's own
+   * "Championships and accomplishments" section. A title is resolved to a
+   * `competition_id` only when its own text names one of this sport's
+   * curated promotions (UFC, Bellator, ONE, PFL); a title at a promotion
+   * outside that set, Fedor Emelianenko's PRIDE and RINGS championships
+   * among them, is still written with a null `competition_id`, the same
+   * fallback `ingestGolfCareers` uses for a discontinued major: the honour is
+   * a fact about the fighter and should not be lost because the promotion
+   * is not one this catalogue curates.
+   *
+   * This is also what closes the gap `derivePersonPriority`'s `major_titles`
+   * term depends on: without a tier-1 competition and a real title honour
+   * attached to it, every MMA fighter was scoring identically at the
+   * sitelinks cap regardless of who actually held a belt.
+   */
+  async ingestMmaTitles(limit: number): Promise<{ players: number; written: number }> {
+    const [sportRow] = await this.database.db.execute<{ id: string }>(
+      sql`SELECT id FROM sport WHERE slug = 'mma' LIMIT 1`,
+    );
+    if (!sportRow) return { players: 0, written: 0 };
+
+    const competitions = await this.database.db.execute<{ id: string; name: string }>(
+      sql`SELECT id, name FROM competition WHERE sport_id = ${sportRow.id}`,
+    );
+
+    // A title honour's own text names the promotion by its short form
+    // ("UFC Middleweight Championship", "Bellator Featherweight World
+    // Championship"), never by the competition row's full stored name
+    // ("Ultimate Fighting Championship"). Matching `entry.title.startsWith`
+    // against the full name therefore never matched anything, and every
+    // title honour this ingestion has ever written carries a null
+    // `competition_id` as a result — 412 rows across a full run, none of them
+    // attributable to a promotion despite the great majority clearly being
+    // UFC titles. Matched here against each promotion's known short form
+    // instead, checked longest-alias-first so "UFC" cannot shadow a longer
+    // alias that happens to start with the same letters.
+    const promotionAliases: Record<string, readonly string[]> = {
+      'Ultimate Fighting Championship': ['UFC'],
+      'Bellator MMA': ['Bellator'],
+      'ONE Championship': ['ONE'],
+      'Professional Fighters League': ['PFL'],
+    };
+    const competitionsWithAliases = competitions
+      .map((row) => ({ ...row, aliases: promotionAliases[row.name] ?? [row.name] }))
+      .sort(
+        (a, b) =>
+          Math.max(...b.aliases.map((a2) => a2.length)) -
+          Math.max(...a.aliases.map((a2) => a2.length)),
+      );
+
+    const targets = await this.database.db.execute<{ id: string; title: string; name: string }>(sql`
+      SELECT p.id, em.external_id AS title, p.full_name AS name
+      FROM person p
+      JOIN sport s ON s.id = p.primary_sport_id AND s.slug = 'mma'
+      JOIN external_mapping em
+        ON em.entity_id = p.id AND em.provider = 'wikipedia' AND em.entity_type = 'person'
+      ORDER BY p.notability DESC
+      LIMIT ${limit}
+    `);
+    this.logger.log(`mma: ${targets.length} fighters`);
+
+    let written = 0;
+
+    for (const [index, target] of targets.entries()) {
+      try {
+        const titles = await this.provider.fetchMmaTitles(target.title);
+        if (titles.length === 0) continue;
+
+        // The reigns are read as a name and a repeat count, not as dated
+        // events, so a title held twice becomes two identical rows
+        // distinguished only by an ordinal suffix ("(reign 1)", "(reign 2)")
+        // rather than by year: the source states how many times, not when.
+        for (const entry of titles) {
+          const competition = competitionsWithAliases.find((row) =>
+            row.aliases.some((alias) => entry.title.startsWith(alias)),
+          );
+
+          for (let reign = 1; reign <= entry.count; reign += 1) {
+            const honourTitle = entry.count > 1 ? `${entry.title} (reign ${reign})` : entry.title;
+
+            // `WHERE NOT EXISTS` rather than `ON CONFLICT`, deliberately.
+            // `honour_person_unique_idx` is `(person_id, title, year)`, and
+            // `year` is always null for an MMA title reign: Postgres treats
+            // null as never equal to null even inside a matching unique
+            // index, so `ON CONFLICT (person_id, title, year)` cannot infer a
+            // conflict against an existing null-year row and every "upsert"
+            // silently inserted a fresh duplicate instead. Measured cost:
+            // 1,153 duplicate honour rows across this ingestion's earlier
+            // reruns today, cleaned up separately. `competition_id` on a row
+            // this left behind before the promotion-matching fix above is
+            // backfilled by the UPDATE that follows this loop instead.
+            const inserted = await this.database.db.execute<{ id: string }>(sql`
+              INSERT INTO honour (
+                sport_id, person_id, competition_id, kind, title, year, source
+              )
+              SELECT ${sportRow.id}, ${target.id}, ${competition?.id ?? null}, 'title',
+                     ${honourTitle}, NULL, 'wikipedia'
+              WHERE NOT EXISTS (
+                SELECT 1 FROM honour h
+                WHERE h.person_id = ${target.id} AND h.title = ${honourTitle} AND h.year IS NULL
+              )
+              RETURNING id
+            `);
+            if (inserted.length > 0) written += 1;
+          }
+        }
+      } catch (error) {
+        this.logger.warn(`MMA titles failed for ${target.title}: ${this.message(error)}`);
+      }
+
+      if ((index + 1) % 25 === 0) {
+        this.logger.log(`  ${index + 1}/${targets.length} fighters, ${written} written`);
+      }
+    }
+
+    // Backfills `competition_id` on rows a previous run inserted before the
+    // promotion-matching fix above existed, or before it recognised a given
+    // promotion's short form. `WHERE NOT EXISTS` above only ever inserts, so
+    // this is the only place an existing row's `competition_id` changes.
+    let backfilled = 0;
+    for (const competition of competitionsWithAliases) {
+      for (const alias of competition.aliases) {
+        const updated = await this.database.db.execute<{ id: string }>(sql`
+          UPDATE honour
+          SET competition_id = ${competition.id}, updated_at = now()
+          WHERE sport_id = ${sportRow.id} AND kind = 'title'
+            AND competition_id IS NULL AND title LIKE ${`${alias}%`}
+          RETURNING id
+        `);
+        backfilled += updated.length;
+      }
+    }
+    if (backfilled > 0) this.logger.log(`  backfilled competition_id on ${backfilled} honour rows`);
+
+    await this.revalidate(['sport:mma']);
+
+    return { players: targets.length, written };
+  }
+
+  /**
+   * MMA fighters' UFC title-fight bouts, win or loss.
+   *
+   * A different count from `ingestMmaTitles`, which only sees title reigns
+   * actually won. Written to `person_statistic` scoped to the UFC
+   * (`competitionId` set, `scope='competition'`) rather than career-level,
+   * because a title bout is meaningless outside the promotion that recognises
+   * the title, and this sport's curated competition list is UFC-only.
+   *
+   * See `fetchMmaTitleBouts` for how the fight table is read.
+   */
+  async ingestMmaTitleBouts(limit: number): Promise<{ players: number; written: number }> {
+    const [sportRow] = await this.database.db.execute<{ id: string }>(
+      sql`SELECT id FROM sport WHERE slug = 'mma' LIMIT 1`,
+    );
+    if (!sportRow) return { players: 0, written: 0 };
+
+    const [ufc] = await this.database.db.execute<{ id: string }>(sql`
+      SELECT id FROM competition
+      WHERE sport_id = ${sportRow.id} AND slug = 'ultimate-fighting-championship'
+      LIMIT 1
+    `);
+    if (!ufc) return { players: 0, written: 0 };
+
+    const targets = await this.database.db.execute<{ id: string; title: string; name: string }>(sql`
+      SELECT p.id, em.external_id AS title, p.full_name AS name
+      FROM person p
+      JOIN sport s ON s.id = p.primary_sport_id AND s.slug = 'mma'
+      JOIN external_mapping em
+        ON em.entity_id = p.id AND em.provider = 'wikipedia' AND em.entity_type = 'person'
+      ORDER BY p.notability DESC
+      LIMIT ${limit}
+    `);
+    this.logger.log(`mma title bouts: ${targets.length} fighters`);
+
+    let written = 0;
+
+    for (const [index, target] of targets.entries()) {
+      try {
+        const record = await this.provider.fetchMmaTitleBouts(target.title);
+        if (!record) continue;
+        if (record.titleBoutWins === 0 && record.titleBoutLosses === 0) continue;
+
+        await this.database.db.execute(sql`
+          INSERT INTO person_statistic (
+            person_id, sport_id, competition_id, scope, wins, losses, stats, computed_at
+          ) VALUES (
+            ${target.id}, ${sportRow.id}, ${ufc.id}, 'competition',
+            ${record.titleBoutWins}, ${record.titleBoutLosses},
+            ${JSON.stringify({
+              // Reuses `title_fight_wins`, a key the registry already
+              // defined but that nothing wrote to before this ingestion.
+              title_fight_wins: record.titleBoutWins,
+              title_fight_losses: record.titleBoutLosses,
+              title_fights: record.titleBoutWins + record.titleBoutLosses,
+            })}::jsonb,
+            now()
+          )
+          ON CONFLICT (
+            person_id, scope,
+            coalesce(competition_id, '00000000-0000-0000-0000-000000000000'::uuid),
+            coalesce(season_id, '00000000-0000-0000-0000-000000000000'::uuid),
+            coalesce(team_id, '00000000-0000-0000-0000-000000000000'::uuid),
+            coalesce(discipline_id, '00000000-0000-0000-0000-000000000000'::uuid)
+          ) DO UPDATE SET
+            wins = EXCLUDED.wins,
+            losses = EXCLUDED.losses,
+            stats = person_statistic.stats || EXCLUDED.stats,
+            computed_at = now()
+        `);
+        written += 1;
+      } catch (error) {
+        this.logger.warn(`MMA title bouts failed for ${target.title}: ${this.message(error)}`);
+      }
+
+      if ((index + 1) % 25 === 0) {
+        this.logger.log(`  ${index + 1}/${targets.length} fighters, ${written} written`);
+      }
+    }
+
+    await this.revalidate(['sport:mma']);
+
+    return { players: targets.length, written };
+  }
+
+  /**
+   * The current champion of each UFC weight class, as `entity_fact` rows on
+   * the UFC competition entity.
+   *
+   * Scoped to fighters who already hold at least one UFC title honour rather
+   * than the whole roster, since only someone who has won a UFC title before
+   * can plausibly hold one now, and checking one fighter per contested
+   * division rather than all 990 fighters this sport carries is what keeps
+   * this affordable. See `fetchMmaCurrentUfcTitles` for how a fighter's own
+   * record table decides whether they are still champion.
+   *
+   * Deletes the whole `titles` category on the UFC before rewriting rather
+   * than upserting: `entity_fact_unique_idx` includes `value`, so a
+   * dethroned champion's fact and the new champion's fact are two different
+   * rows under the same key, and an upsert keyed on `(entity_type, entity_id,
+   * key, value)` would never touch the stale one.
+   */
+  async ingestMmaCurrentChampions(): Promise<{ players: number; written: number }> {
+    const [sportRow] = await this.database.db.execute<{ id: string }>(
+      sql`SELECT id FROM sport WHERE slug = 'mma' LIMIT 1`,
+    );
+    if (!sportRow) return { players: 0, written: 0 };
+
+    const [ufc] = await this.database.db.execute<{ id: string }>(sql`
+      SELECT id FROM competition
+      WHERE sport_id = ${sportRow.id} AND slug = 'ultimate-fighting-championship'
+      LIMIT 1
+    `);
+    if (!ufc) return { players: 0, written: 0 };
+
+    const targets = await this.database.db.execute<{ id: string; title: string; name: string }>(sql`
+      SELECT DISTINCT ON (p.id) p.id, em.external_id AS title, p.full_name AS name
+      FROM person p
+      JOIN honour h ON h.person_id = p.id AND h.competition_id = ${ufc.id} AND h.kind = 'title'
+      JOIN external_mapping em
+        ON em.entity_id = p.id AND em.provider = 'wikipedia' AND em.entity_type = 'person'
+      ORDER BY p.id
+    `);
+    this.logger.log(
+      `mma current champions: checking ${targets.length} former/current title holders`,
+    );
+
+    await this.database.db.execute(sql`
+      DELETE FROM entity_fact
+      WHERE entity_type = 'competition' AND entity_id = ${ufc.id} AND category = 'titles'
+    `);
+
+    let written = 0;
+    let order = 10;
+
+    for (const target of targets) {
+      try {
+        const divisions = await this.provider.fetchMmaCurrentUfcTitles(target.title);
+
+        for (const division of divisions) {
+          await this.database.db.execute(sql`
+            INSERT INTO entity_fact (
+              entity_type, entity_id, key, label, value, category, is_current, source, display_order
+            ) VALUES (
+              'competition', ${ufc.id}, ${`champion:${division}`}, ${division},
+              ${target.name}, 'titles', 'true', 'wikipedia', ${order}
+            )
+            ON CONFLICT (entity_type, entity_id, key, value) DO NOTHING
+          `);
+          written += 1;
+          order += 1;
+        }
+      } catch (error) {
+        this.logger.warn(
+          `MMA current champion check failed for ${target.title}: ${this.message(error)}`,
+        );
+      }
+    }
+
+    await this.revalidate(['sport:mma']);
+
+    return { players: targets.length, written };
   }
 
   /**

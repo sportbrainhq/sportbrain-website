@@ -35,6 +35,7 @@ export class PlayersRepository {
         dateOfBirth: person.dateOfBirth,
         imageUrl: person.imageUrl,
         attributes: person.attributes,
+        careerStatus: person.careerStatus,
       })
       .from(person)
       .innerJoin(sport, eq(sport.id, person.primarySportId))
@@ -57,6 +58,12 @@ export class PlayersRepository {
       rows: rows.map((row) => ({
         ...row,
         attributes: (row.attributes ?? {}) as Record<string, unknown>,
+        // Narrowed here rather than trusted: the column is text, so it can gain
+        // a state without a migration, and an unexpected value must render as
+        // no badge rather than fail the response schema for a whole page of
+        // players.
+        careerStatus:
+          row.careerStatus === 'active' || row.careerStatus === 'retired' ? row.careerStatus : null,
       })),
       total: Number(totals?.total ?? 0),
     };

@@ -1,8 +1,8 @@
 import { notFound } from 'next/navigation';
 import { Container } from '@/components/layout/container';
-import { HighlightRail } from '@/components/sports/highlight-rail';
+import { NewsRail } from '@/components/news/news-rail';
 import { SportSidebar } from '@/components/sports/sport-sidebar';
-import { ApiError, fetchHighlights, fetchSport, fetchSports } from '@/lib/api';
+import { ApiError, fetchNews, fetchSport, fetchSports } from '@/lib/api';
 
 /**
  * The shell every sport page shares: navigation, content, discovery rail.
@@ -27,10 +27,10 @@ export default async function SportLayout({
 
   // All three in parallel. None depends on the others, and running them in
   // sequence would treble the time to first byte on every sport page.
-  const [sportsResult, sportResult, highlightsResult] = await Promise.allSettled([
+  const [sportsResult, sportResult, newsResult] = await Promise.allSettled([
     fetchSports(),
     fetchSport(sportSlug),
-    fetchHighlights(),
+    fetchNews({ sport: sportSlug, limit: 8 }),
   ]);
 
   // A wrong slug is a 404, not an error page. Anything else is a real failure
@@ -44,7 +44,7 @@ export default async function SportLayout({
 
   // The rail is decoration around the content, so its failure degrades the page
   // rather than breaking it.
-  const highlights = highlightsResult.status === 'fulfilled' ? highlightsResult.value.data : [];
+  const newsArticles = newsResult.status === 'fulfilled' ? newsResult.value.data : [];
 
   return (
     <Container className="py-8">
@@ -56,7 +56,10 @@ export default async function SportLayout({
         <div className="min-w-0">{children}</div>
 
         <div className="xl:sticky xl:top-24 xl:self-start">
-          <HighlightRail highlights={highlights} />
+          <NewsRail
+            articles={newsArticles}
+            emptyMessage="No news yet for this sport, check back soon."
+          />
         </div>
       </div>
     </Container>

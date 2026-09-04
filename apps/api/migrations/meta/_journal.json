@@ -260,6 +260,34 @@
       "when": 1787653655692,
       "tag": "0036_four_new_sports",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1787653655693,
+      "tag": "0037_golf_explainer_types",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1788444398935,
+      "tag": "0038_curvy_ben_parker",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1788501672315,
+      "tag": "0039_lying_sersi",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1788543693755,
+      "tag": "0040_rapid_fabian_cortez",
+      "breakpoints": true
     }
   ]
 }
