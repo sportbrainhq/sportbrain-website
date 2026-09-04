@@ -71,16 +71,60 @@ export function PlayerCard({ sportSlug, player }: { sportSlug: string; player: P
   const position =
     typeof player.attributes.position === 'string' ? player.attributes.position : null;
 
+  // A count of the sport's biggest prize, where the sport has one and the
+  // player has won it. Golf states it as `majorWins`, and it is the single most
+  // useful thing a golf card can say: a list of names with nothing but a
+  // nationality gives a reader no way to tell Jack Nicklaus from a club
+  // professional. Read defensively, and absent for every sport that does not
+  // set it.
+  const majors =
+    typeof player.attributes.majorWins === 'number' && player.attributes.majorWins > 0
+      ? player.attributes.majorWins
+      : null;
+
+  const detail =
+    [player.nationality, position, majors ? `${majors} major${majors === 1 ? '' : 's'}` : null]
+      .filter(Boolean)
+      .join(' · ') || 'Player';
+
   return (
     <Link href={`/sports/${sportSlug}/players/${player.slug}`} className={cardClass}>
       <Avatar text={player.fullName} imageUrl={player.imageUrl} />
-      <span className="min-w-0">
-        <span className="block truncate font-medium">{player.displayName ?? player.fullName}</span>
-        <span className="block truncate text-xs text-muted-foreground">
-          {[player.nationality, position].filter(Boolean).join(' · ') || 'Player'}
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-1.5">
+          <span className="truncate font-medium">{player.displayName ?? player.fullName}</span>
+          <CareerStatusDot status={player.careerStatus} />
         </span>
+        <span className="block truncate text-xs text-muted-foreground">{detail}</span>
       </span>
     </Link>
+  );
+}
+
+/**
+ * The active/retired marker for a listing card.
+ *
+ * A dot rather than the full `CareerStatusBadge` used on a profile: a card is
+ * one line of a grid of twenty-four, and a pill reading "RETIRED" beside every
+ * name would dominate the listing and push the name itself to a truncation.
+ *
+ * The colour is not the message. It carries a `title` and a visually hidden
+ * word, so the state is available to a screen reader and on hover, and a reader
+ * who cannot separate green from orange loses nothing that the page depends on:
+ * the status is a useful annotation here, not the reason to click.
+ */
+function CareerStatusDot({ status }: { status: 'active' | 'retired' | null }) {
+  if (!status) return null;
+
+  const active = status === 'active';
+
+  return (
+    <span
+      title={active ? 'Active' : 'Retired'}
+      className={`size-1.5 shrink-0 rounded-full ${active ? 'bg-emerald-500' : 'bg-orange-400'}`}
+    >
+      <span className="sr-only">{active ? 'Active' : 'Retired'}</span>
+    </span>
   );
 }
 

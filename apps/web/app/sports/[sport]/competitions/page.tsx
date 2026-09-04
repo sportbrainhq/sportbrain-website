@@ -60,7 +60,7 @@ export default async function CompetitionsPage({
   const kind = KINDS.some((entry) => entry.value === query.kind) ? (query.kind ?? '') : '';
   const term = (query.q ?? '').trim().slice(0, 80);
 
-  const [sport, result] = await Promise.all([
+  const [sport, result, ...kindCounts] = await Promise.all([
     fetchSport(slug),
     fetchCompetitions(slug, {
       page,
@@ -68,7 +68,23 @@ export default async function CompetitionsPage({
       ...(kind ? { kind } : {}),
       ...(term ? { q: term } : {}),
     }),
+    // One count per filter, so a tab that holds nothing for this sport (MMA
+    // has no international competitions once curated to the UFC alone) can be
+    // hidden rather than offered and then found empty. Mirrors the teams page.
+    ...KINDS.filter((entry) => entry.value).map((entry) =>
+      fetchCompetitions(slug, { page: 1, limit: 1, kind: entry.value }).catch(() => null),
+    ),
   ]);
+
+  // A tab survives if it holds anything, or if it is the one currently
+  // selected: a filter reached by URL must render its own empty state rather
+  // than silently losing its tab.
+  const filterableKinds = KINDS.filter((entry) => {
+    if (!entry.value) return true;
+    const index = KINDS.filter((candidate) => candidate.value).indexOf(entry);
+    const total = kindCounts[index]?.pagination.total ?? 0;
+    return total > 0 || entry.value === kind;
+  });
 
   const title =
     kind === 'international'
@@ -94,7 +110,7 @@ export default async function CompetitionsPage({
       emptyMessage={term ? `No competitions match “${term}”.` : undefined}
       toolbar={
         <nav aria-label="Filter competitions" className="flex gap-1">
-          {KINDS.map((entry) => {
+          {filterableKinds.map((entry) => {
             const isActive = entry.value === kind;
             return (
               <Link

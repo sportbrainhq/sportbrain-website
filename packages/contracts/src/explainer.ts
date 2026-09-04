@@ -50,6 +50,34 @@ export const explainerTypeSchema = z.enum([
   'circuit',
   'penalty',
   'flag',
+  // Golf. A `club` is one of a graded set of fourteen tools rather than a
+  // single chosen object, which is what separates it from `equipment`; a `hole`
+  // is the ground performance is split along, as a `surface` and a `circuit`
+  // are; a `swing_element` is a phase of the motion rather than the `shot` it
+  // produces; a `handicap_concept` is the arithmetic that decides a club
+  // competition, which is neither a rule of play nor a statistic; and a
+  // `scoring_term` is the sport's most common lookup, worth filtering for
+  // without the whole glossary.
+  'club',
+  'hole',
+  'swing_element',
+  'handicap_concept',
+  'scoring_term',
+  // MMA. A `technique` is a strike, takedown or submission: what it is, how
+  // it works, when it's used and what it risks. A `position` is a ground or
+  // clinch position, which carries a diagram the way golf's `hole` does, but
+  // of bodies rather than terrain. A `ruleset_concept` covers scoring, fouls
+  // and judging, neither a `rule` in football's single-code sense (MMA's
+  // rules are a promotion-adopted standard, not one governing body's law) nor
+  // a `statistic`. A `promotion` is an organisation that runs events and sets
+  // its own rules and weight limits, closer to `circuit` than to `format` but
+  // distinct enough to warrant its own type. A `fight_result` covers the ways
+  // a bout ends, the sport's single most common lookup.
+  'technique',
+  'position',
+  'ruleset_concept',
+  'promotion',
+  'fight_result',
 ]);
 export type ExplainerType = z.infer<typeof explainerTypeSchema>;
 

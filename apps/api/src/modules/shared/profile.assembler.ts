@@ -99,6 +99,13 @@ const RANKING_ORDER = [
   'all_time_rebounds',
   'all_time_assists',
   'all_time_steals',
+  // The UFC's own page: bouts before wins, career figures before the
+  // title-scoped ones, matching the order the sport's own record pages quote
+  // them in.
+  'most_bouts',
+  'most_title_bouts',
+  'most_wins',
+  'most_title_wins',
 ];
 
 const rankingOrder = sql`array_position(

@@ -99,7 +99,15 @@ export interface CompetitionRankingSeed {
     // of each. Five tables per major in total.
     | 'champions_mens_doubles'
     | 'champions_womens_doubles'
-    | 'champions_mixed_doubles';
+    | 'champions_mixed_doubles'
+    // Golf, which awards one title per major rather than tennis's five, so one
+    // kind covers every table. Kept distinct from the tennis values because a
+    // shared kind would be a shared conflict target, and the two sports' tables
+    // carry different things in `detail`.
+    | 'champions_golf'
+    // American football's Super Bowl champions, one row per game rather than
+    // per season, and carrying a score in `detail` rather than a margin.
+    | 'champions_super_bowl';
   label: string;
   /** Where the figures came from. Rendered as the table's provenance note. */
   source: string;

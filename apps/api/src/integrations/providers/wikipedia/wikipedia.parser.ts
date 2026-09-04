@@ -204,9 +204,39 @@ export function cleanWikitext(value: string): string {
   // almost always repeated as a linked name beside them.
   text = text.replace(/\{\{\s*(?:cr|cricon|flagicon|flagu|flag|fb|fbicon)\s*\|[^}]*\}\}/gi, ' ');
 
-  // Unbulleted lists and similar joiners hold real values separated by pipes.
-  text = text.replace(/\{\{\s*(?:ubl|plainlist|unbulleted list)\s*\|([^}]*)\}\}/gi, (_, inner) =>
-    String(inner).split('|').filter(Boolean).join(', '),
+  // Unbulleted lists and similar joiners hold real values, in one of two
+  // layouts: items separated by pipes (`{{ubl|A|B|C}}`), or one item per line
+  // prefixed with `*` (`{{plainlist|\n* [[A]]\n* [[B]]\n}}`, the form
+  // Wikipedia's own visual editor produces). Splitting the line form on every
+  // `|` shreds each item's wikilink apart, since `[[Target#Section|Label]]`
+  // carries a `|` of its own to introduce the display label: Andrew Tate's
+  // weight_class field came back as literal `[[Cruiserweight (boxing)
+  // #Kickboxing, Cruiserweight]]`, target and label spliced together with a
+  // comma, because the split cut through the link rather than around it.
+  //
+  // Detected by the presence of a `*` line rather than assumed from the
+  // template name, since either form can appear under either name in
+  // practice. Items are re-joined with `, ` but kept as wikitext so the
+  // ordinary link-resolution pass below still turns `[[Target|Label]]` into
+  // `Label`, the same as it would for text that was never inside this
+  // template.
+  text = text.replace(
+    /\{\{\s*(?:ubl|plainlist|unbulleted list)\s*\|([\s\S]*?)\}\}/gi,
+    (_, inner) => {
+      const raw = String(inner);
+      // A real `*` bullet line, not just the presence of a newline: `split`
+      // on a single-line pipe-separated value ("Lightweight|Welterweight")
+      // still returns a one-element array, which a bare length check would
+      // wrongly treat as "one line, no bullets to strip" and then return
+      // whole instead of falling through to the pipe split below.
+      const items = /^\s*\*/m.test(raw)
+        ? raw
+            .split('\n')
+            .map((line) => line.replace(/^\*+\s*/, '').trim())
+            .filter(Boolean)
+        : raw.split('|').map((item) => item.trim());
+      return items.filter(Boolean).join(', ');
+    },
   );
 
   // `{{sortname|Lionel|Messi}}` renders as a name.

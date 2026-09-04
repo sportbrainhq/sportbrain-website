@@ -110,6 +110,20 @@ That commercial split is why English league records divide at 1992. A club's "le
 Twenty clubs play each other home and away, thirty-eight matches, three points for a win. The bottom three are relegated. There are no play-offs at the top: the team with most points wins.`,
     },
   ],
+  'ultimate-fighting-championship': [
+    {
+      kind: 'history',
+      heading: 'About the competition',
+      order: 10,
+      body: `The UFC held its first event on November 12, 1993, in Denver, Colorado, staged by Art Davie, Rorion Gracie and John Milius as an eight-man, single-elimination tournament pitting different martial arts against each other with almost no rules and no weight classes. Royce Gracie, the smallest man in the field, won three of the first four tournaments by submission, and the result made Brazilian jiu-jitsu, until then obscure outside Brazil, a discipline every serious fighter had to learn.
+
+The unregulated early events drew political opposition, most visibly from Senator John McCain, who called it "human cockfighting" and campaigned to have it banned from cable television and state athletic commissions. Weight classes arrived at UFC 12 in 1997, and rounds, judging, mandatory gloves and a lengthening list of banned techniques followed over the next several years, converging on what is now called the Unified Rules of Mixed Martial Arts.
+
+Frank and Lorenzo Fertitta bought the promotion in 2001 through their company Zuffa for a price reported at the time as around two million dollars, rescuing it from near-collapse. The 2005 reality series **The Ultimate Fighter** is widely credited with turning the promotion around commercially. Zuffa sold the UFC to Endeavor (then WME-IMG) in 2016 for a reported 4.2 billion dollars, and Endeavor bought out its remaining partners in 2021. The UFC has been part of TKO Group Holdings, formed by Endeavor's 2023 merger of the promotion with WWE, since that deal closed.
+
+The promotion sanctions eleven weight divisions, eight for men and three for women, each with its own champion.`,
+    },
+  ],
   'cricket-world-cup': [
     {
       kind: 'history',

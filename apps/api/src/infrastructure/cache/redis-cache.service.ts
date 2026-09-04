@@ -1,6 +1,7 @@
 import { Injectable, Logger, type OnModuleDestroy } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
-import type { TypedConfigService } from '../../config';
+import type { AppConfig } from '../../config/configuration';
 import { CacheService } from './cache.service';
 
 /**
@@ -22,7 +23,7 @@ export class RedisCacheService extends CacheService implements OnModuleDestroy {
   private readonly logger = new Logger(RedisCacheService.name);
   private readonly client: Redis;
 
-  constructor(config: TypedConfigService) {
+  constructor(config: ConfigService<AppConfig, true>) {
     super();
     const url = config.get('redis.url', { infer: true });
     if (!url) {

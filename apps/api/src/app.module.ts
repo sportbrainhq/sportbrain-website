@@ -9,6 +9,7 @@ import { HealthModule } from './health/health.module';
 import { IntegrationsModule } from './integrations/integrations.module';
 import { CompetitionsModule } from './modules/competitions/competitions.module';
 import { ContentModule } from './modules/content/content.module';
+import { FixturesModule } from './modules/fixtures/fixtures.module';
 import { NewsModule } from './modules/news/news.module';
 import { PlayersModule } from './modules/players/players.module';
 import { SearchModule } from './modules/search/search.module';
@@ -19,6 +20,7 @@ import { CacheModule } from './infrastructure/cache/cache.module';
 import { MetricsModule } from './infrastructure/metrics/metrics.module';
 import { JobsModule } from './jobs/jobs.module';
 import { InternalNewsModule } from './modules/internal-news/internal-news.module';
+import { ContactModule } from './modules/contact/contact.module';
 import { QueueModule } from './queue/queue.module';
 
 /**
@@ -77,9 +79,11 @@ import { QueueModule } from './queue/queue.module';
     PlayersModule,
     CompetitionsModule,
     ContentModule,
+    FixturesModule,
     SearchModule,
     NewsModule,
     InternalNewsModule,
+    ContactModule,
   ],
   providers: [
     // Registered globally so that every route gets the same error envelope,

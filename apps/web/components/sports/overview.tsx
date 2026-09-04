@@ -267,6 +267,11 @@ function hasConfederationCounts(body: GoverningBody): boolean {
 /** Internal navigation. The call to action matters more than any count. */
 export function ExploreCards({ sportSlug, sportName }: { sportSlug: string; sportName: string }) {
   const destinations = [
+    {
+      label: 'Today',
+      hint: 'Live scores, upcoming fixtures and results',
+      href: `/sports/${sportSlug}/today`,
+    },
     // "Clubs and national sides" was football's vocabulary and understates a
     // sport whose teams also include states, counties and franchises. Kept
     // general rather than enumerated per sport: the Teams tab's own filters

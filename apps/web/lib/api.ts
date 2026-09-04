@@ -1,11 +1,14 @@
 import {
   competitionDetailSchema,
   competitionSummarySchema,
+  contactConfigSchema,
+  contactSubmissionResultSchema,
   contentDetailSchema,
   contentSummarySchema,
   explainerDetailSchema,
   explainerLibrarySchema,
   explainerSummarySchema,
+  fixtureSchema,
   highlightSchema,
   quizSummarySchema,
   sportOverviewSchema,
@@ -22,13 +25,18 @@ import {
   sportSchema,
   teamDetailSchema,
   teamSummarySchema,
+  todayBucketSchema,
   type CompetitionDetail,
+  type ContactConfig,
+  type ContactSubmissionResult,
   type ContentDetail,
   type ContentSummary,
+  type CreateContactRequest,
   type CursorPaginated,
   type ExplainerDetail,
   type ExplainerLibrary,
   type ExplainerSummary,
+  type Fixture,
   type HealthResponse,
   type Highlight,
   type NewsArticleDetail,
@@ -42,6 +50,7 @@ import {
   type Sport,
   type SportDetail,
   type TeamDetail,
+  type TodayBucket,
 } from '@sportbrain/contracts';
 import { z } from 'zod';
 import type { ZodSchema } from 'zod';
@@ -118,6 +127,50 @@ export async function apiGet<T>(
       : options.revalidate === undefined && options.tags === undefined
         ? {}
         : { next: { revalidate: options.revalidate, tags: options.tags } }),
+  });
+
+  if (!response.ok) {
+    throw await toApiError(response);
+  }
+
+  const parsed = schema.safeParse(await response.json());
+
+  if (!parsed.success) {
+    throw new ApiError(
+      response.status,
+      'CONTRACT_MISMATCH',
+      `Response from ${path} did not match its contract: ${parsed.error.issues
+        .map((issue) => `${issue.path.join('.')} ${issue.message}`)
+        .join('; ')}`,
+    );
+  }
+
+  return parsed.data;
+}
+
+/**
+ * Performs a typed POST against the API and validates the response.
+ *
+ * Never cached (POST is a write), and no `noStore`/`revalidate` options: a
+ * mutating request has no cache policy to configure.
+ */
+export async function apiPost<T>(
+  path: string,
+  body: unknown,
+  schema: ZodSchema<T>,
+  options: { timeoutMs?: number; signal?: AbortSignal } = {},
+): Promise<T> {
+  const { API_URL } = serverEnv();
+  const url = `${API_URL}${path}`;
+
+  const timeout = AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+  const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    signal,
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) {
@@ -396,6 +449,53 @@ export function fetchNewsArticle(id: string): Promise<NewsArticleDetail> {
     revalidate: 120,
     tags: ['news'],
   });
+}
+
+/**
+ * Today's live, upcoming and finished fixtures for one sport.
+ *
+ * 45s revalidate rather than the hour-scale window everything else above
+ * uses: this is the one page backed by a live external feed instead of our
+ * own ingestion, and the API's own cache in front of the provider is already
+ * on a similar timescale (see `FixturesService.TTL` on the API side), so a
+ * shorter window here buys freshness the API can actually deliver rather than
+ * polling faster than the data underneath it changes.
+ *
+ * Not tagged the way entity pages are: there is no ingestion event to
+ * `revalidateTag` against, since nothing here is written by us. The TTL is
+ * the only invalidation this endpoint has.
+ */
+export function fetchFixturesToday(sportSlug: string): Promise<TodayBucket> {
+  return apiGet(`/v1/fixtures/${sportSlug}/today`, todayBucketSchema, {
+    revalidate: 45,
+    timeoutMs: 6_000,
+  });
+}
+
+/** One competition's recent results or upcoming fixtures, where the sport's provider supports it. */
+export function fetchCompetitionFixtures(
+  sportSlug: string,
+  competitionRef: string,
+  window: 'past' | 'next' = 'next',
+): Promise<{ data: Fixture[] }> {
+  return apiGet(
+    `/v1/fixtures/${sportSlug}/competitions/${competitionRef}${toQuery({ window })}`,
+    listEnvelope(fixtureSchema),
+    { revalidate: 900, timeoutMs: 6_000 },
+  );
+}
+
+/** Direct-contact addresses that actually exist, for the /contact page. */
+export function fetchContactConfig(): Promise<ContactConfig> {
+  return apiGet('/v1/contact/config', contactConfigSchema, {
+    revalidate: 3_600,
+    tags: ['contact'],
+  });
+}
+
+/** Submits the contact form. Never cached: this is a write. */
+export function submitContact(body: CreateContactRequest): Promise<ContactSubmissionResult> {
+  return apiPost('/v1/contact', body, contactSubmissionResultSchema, { timeoutMs: 10_000 });
 }
 
 /** Builds a query string, dropping undefined values so they do not appear as "undefined". */

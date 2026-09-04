@@ -15,7 +15,10 @@ interface NavItem {
   label: string;
 }
 
-const NAV_ITEMS: NavItem[] = [{ href: '/search', label: 'Search' }];
+const NAV_ITEMS: NavItem[] = [
+  { href: '/about', label: 'About' },
+  { href: '/contact', label: 'Contact Us' },
+];
 
 export function SiteHeader() {
   return (

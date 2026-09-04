@@ -999,6 +999,31 @@ const SPORT_DEFINITIONS: Record<string, StatisticDefinitionSeed[]> = {
   // ---------------------------------------------------------------------------
   golf: [
     {
+      /**
+       * The record a major championship is discussed in terms of.
+       *
+       * Attached to a competition rather than to a player: it is a fact about
+       * the Masters that Jack Nicklaus has won it six times, and the same key
+       * carries the same meaning for every other major. `appliesTo` is
+       * `player` because the holder is a person, which is what the label on
+       * their name reads.
+       *
+       * Declared here so the competition page shows "Most titles" rather than
+       * the raw key. Without a definition the record still renders, which is
+       * the right fallback, but it renders as `most_titles`.
+       */
+      key: 'most_titles',
+      label: 'Most titles',
+      shortLabel: 'Titles',
+      appliesTo: 'player',
+      category: 'Records',
+      aggregation: 'max',
+      format: 'integer',
+      displayOrder: 5,
+      description:
+        'The most wins by one golfer at this championship, counted from its roll of honour.',
+    },
+    {
       key: 'tournament_wins',
       label: 'Tournament Wins',
       shortLabel: 'W',
@@ -1375,7 +1400,31 @@ const SPORT_DEFINITIONS: Record<string, StatisticDefinitionSeed[]> = {
       format: 'integer',
       isHeadline: true,
       displayOrder: 10,
-      description: 'Bouts won with a title on the line.',
+      description: 'Bouts won with a UFC title on the line.',
+    },
+    {
+      key: 'title_fight_losses',
+      label: 'Title Fight Losses',
+      shortLabel: 'TL',
+      appliesTo: 'player',
+      category: 'Titles',
+      aggregation: 'sum',
+      format: 'integer',
+      higherIsBetter: false,
+      displayOrder: 20,
+      description: 'Bouts lost with a UFC title on the line.',
+    },
+    {
+      key: 'title_fights',
+      label: 'Title Fights',
+      shortLabel: 'TF',
+      appliesTo: 'player',
+      category: 'Titles',
+      aggregation: 'sum',
+      format: 'integer',
+      isHeadline: true,
+      displayOrder: 5,
+      description: 'Total bouts fought with a UFC title on the line, won or lost.',
     },
     {
       key: 'knockout_percentage',
@@ -1401,6 +1450,18 @@ const SPORT_DEFINITIONS: Record<string, StatisticDefinitionSeed[]> = {
       isHeadline: true,
       displayOrder: 45,
       description: 'Bouts won by submission, which is the finish boxing has no equivalent of.',
+    },
+    {
+      key: 'no_contests',
+      label: 'No Contests',
+      shortLabel: 'NC',
+      appliesTo: 'player',
+      category: 'Record',
+      aggregation: 'sum',
+      format: 'integer',
+      displayOrder: 55,
+      description:
+        'Bouts ruled to have no official result, most often after an accidental foul or a failed drug test.',
     },
   ],
 

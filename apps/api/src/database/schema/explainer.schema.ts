@@ -111,6 +111,48 @@ export const explainerTypeEnum = pgEnum('explainer_type', [
   'circuit',
   'penalty',
   'flag',
+  /**
+   * The golf templates.
+   *
+   * `club` is the one golf cannot borrow: a driver is not `equipment` in the
+   * tennis sense of a racket, because the bag is a set of fourteen graded tools
+   * and loft, lie, bounce and shaft flex are concepts about the set rather than
+   * about a single object. `hole` is golf's `surface` and `circuit`: the ground
+   * is the axis performance splits along. `swing_element` is a phase of the
+   * motion, which is a different page from a `shot`, the outcome the motion is
+   * trying to produce. `handicap_concept` covers the arithmetic that decides
+   * who wins a club competition, which is neither a rule of play nor a
+   * statistic. `scoring_term` covers par, birdie and the rest: the sport's most
+   * common lookup, and worth filtering for without the whole glossary.
+   */
+  'club',
+  'hole',
+  'swing_element',
+  'handicap_concept',
+  'scoring_term',
+  /**
+   * The MMA templates.
+   *
+   * `technique` is a strike, takedown or submission: what it is, how it works,
+   * when it is used and what it risks, the same shape golf's `shot` types take
+   * but for a combat sport rather than a ball-flight one. `position` is a
+   * ground or clinch position, which carries a diagram the way golf's `hole`
+   * does, but of bodies rather than terrain. `ruleset_concept` covers scoring,
+   * fouls and judging mechanics, which are neither a `rule` in football's
+   * single-code sense (MMA's rules are a promotion-adopted standard, not a
+   * law from one body) nor a `statistic`. `promotion` covers UFC, PFL, ONE and
+   * the rest: an organisation that runs events, which is closer to `circuit`
+   * than to a `format`, but distinct enough (a promotion sets its own rules
+   * and weight limits, a circuit does not) to warrant its own type.
+   * `fight_result` covers the ways a bout ends: KO, TKO, decision and the
+   * rest, which is the sport's single most common lookup and, like golf's
+   * `scoring_term`, worth filtering for without the whole glossary.
+   */
+  'technique',
+  'position',
+  'ruleset_concept',
+  'promotion',
+  'fight_result',
 ]);
 
 /** Reader level. Data rather than a UI constant, so it can be filtered on. */
@@ -273,6 +315,73 @@ export const explainerSectionTypeEnum = pgEnum('explainer_section_type', [
    * which era it means is wrong for every other era without admitting it.
    */
   'regulation_era',
+  // ── Golf ─────────────────────────────────────────────────────────────────
+  /**
+   * What the body and the club are doing.
+   *
+   * Golf's analogue of tennis's `the_shot`, for the swing-mechanics category.
+   * Kept separate from `the_shot` rather than folded into it, because a fade is
+   * a shot and the downswing is a phase of the motion that produces one, and
+   * the unique index on (explainer_id, type) means an explainer covering both
+   * could otherwise hold only one of them.
+   */
+  'the_swing',
+  /**
+   * Where a feature is on the ground and what it looks like.
+   *
+   * The course, design and conditions categories all want this before they want
+   * how it plays. Basketball's `where_it_happens` is close but describes an
+   * action's location; this describes the ground itself.
+   */
+  'on_the_course',
+  /**
+   * Which club the concept implies.
+   *
+   * The decision every golf explainer eventually reaches. Wind, elevation, lie,
+   * altitude and temperature each end in "so take one more club", and that is
+   * the sentence the reader arrived for: buried inside `how_it_works` it is the
+   * one thing they have to hunt for.
+   */
+  'club_selection',
+  /**
+   * What a rule costs and what relief it permits.
+   *
+   * Separate from the mechanics of the rule for the same reason football's
+   * `sanctions` is: the stroke count and the relief area are a different
+   * paragraph from the definition, and the reader consulting it mid-round wants
+   * only that paragraph.
+   */
+  'penalty_and_relief',
+  // ── MMA ──────────────────────────────────────────────────────────────────
+  /**
+   * What the fighter is physically doing.
+   *
+   * MMA's analogue of tennis's `the_shot` and golf's `the_swing`: the
+   * mechanics of a strike, takedown or submission, kept apart from `example`
+   * (a real-fight scenario) and `how_it_works` (the shared, sport-agnostic
+   * fallback) because a technique explainer needs both a mechanical
+   * description and a scenario, and the unique index on (explainer_id, type)
+   * means one explainer can hold only one of each.
+   */
+  'the_technique',
+  /**
+   * What a viewer actually sees during a fight.
+   *
+   * The brief's explicit "how to recognize it" field: distinct from
+   * `the_technique` because recognising a guillotine from the broadcast angle
+   * is a different skill, and a different paragraph, from knowing how the
+   * choke itself works.
+   */
+  'recognition',
+  /**
+   * Why a technique or position ends a fight, and what stops it.
+   *
+   * Submissions and strikes carry a stoppage criterion (a tap, a referee's
+   * judgment of "intelligent defense") that a rule of football or a shot in
+   * tennis has no equivalent of. Kept apart from `the_technique` so the
+   * mechanics and the danger are each their own paragraph.
+   */
+  'danger_and_stoppage',
 ]);
 
 /**

@@ -122,6 +122,22 @@ export const envSchema = z
     // Recency decays to (about) zero influence after this many hours; see
     // `computeRecencyScore`.
     NEWS_RANKING_RECENCY_HALF_LIFE_HOURS: z.coerce.number().positive().default(18),
+
+    // Contact & feedback. Public-facing addresses are configured here rather
+    // than hard-coded, and only rendered on the frontend when set — see
+    // `CONTACT_EMAILS` config below and `GET /v1/contact/config`. Unset means
+    // "does not exist yet", not "empty string", so an address is never
+    // displayed before it is real.
+    CONTACT_EMAIL_GENERAL: z.string().email().optional(),
+    CONTACT_EMAIL_CORRECTIONS: z.string().email().optional(),
+    CONTACT_EMAIL_PARTNERSHIPS: z.string().email().optional(),
+    CONTACT_EMAIL_PRESS: z.string().email().optional(),
+    // Where the internal notification for every submission is sent. Falls
+    // back to CONTACT_EMAIL_GENERAL when unset, so a deployment only has to
+    // configure one address to get notifications flowing.
+    CONTACT_INTERNAL_NOTIFY_EMAIL: z.string().email().optional(),
+    CONTACT_RATE_LIMIT_TTL_SECONDS: z.coerce.number().int().positive().default(60),
+    CONTACT_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(3),
   })
   .superRefine((config, ctx) => {
     if (config.NODE_ENV !== 'production') return;

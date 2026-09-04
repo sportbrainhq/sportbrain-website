@@ -265,7 +265,7 @@ export function peopleQuery(
   limit: number,
   offset: number,
   requireParticipation = false,
-  occupationQid?: string,
+  occupationQid?: string | readonly string[],
   clubClassQid?: string,
   minSitelinks?: number,
   excludeOccupationQids?: readonly string[],
@@ -325,6 +325,34 @@ export function peopleQuery(
           .map((qid) => `wd:${qid}`)
           .join(' ')} } }`
       : '';
+  /**
+   * The occupation predicate, which accepts more than one QID.
+   *
+   * Several sports name their competitors with two occupation items that mean
+   * the same thing, and the community uses both. Golf is the case that found
+   * it: 5,996 people carry "golfer" (Q11303721) and 320 carry "professional
+   * golfer" (Q490253), and the 248 who carry only the second were invisible.
+   * Tiger Woods is one of them, so the sport's most famous player was missing
+   * from the catalogue entirely while 748 lesser golfers were in it.
+   *
+   * A UNION rather than a VALUES join, because a person carrying both QIDs must
+   * produce one row rather than two: the outer SELECT is DISTINCT on ?item, but
+   * a join would still multiply the intermediate result and change the paging.
+   */
+  const occupationQids =
+    occupationQid === undefined
+      ? []
+      : typeof occupationQid === 'string'
+        ? [occupationQid]
+        : [...occupationQid];
+
+  const occupationClause =
+    occupationQids.length === 0
+      ? `?item wdt:P641 wd:${sportQid} .`
+      : occupationQids.length === 1
+        ? `?item wdt:P106 wd:${occupationQids[0]} .`
+        : `{ ${occupationQids.map((qid) => `{ ?item wdt:P106 wd:${qid} }`).join(' UNION ')} }`;
+
   const sitelinkClause = minSitelinks ? `FILTER(?sitelinks >= ${minSitelinks})` : '';
 
   // The name, taken from the English label where one exists and from the
@@ -346,7 +374,7 @@ WHERE {
   ${competitionClause}
   ${participationClause}
   ?item wdt:P31 wd:${WD.HUMAN} .
-  ${occupationQid ? `?item wdt:P106 wd:${occupationQid} .` : `?item wdt:P641 wd:${sportQid} .`}
+  ${occupationClause}
   ?item wikibase:sitelinks ?sitelinks .
   ${sitelinkClause}
   ${clubClause}

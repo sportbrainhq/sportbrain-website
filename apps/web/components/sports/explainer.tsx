@@ -22,6 +22,15 @@ import {
   toTennisCourt,
   toTennisScoreboard,
 } from './tennis-diagrams';
+import {
+  GolfHoleDiagram,
+  GolfScorecard,
+  StrokesGainedTable,
+  toHoleShape,
+  toScorecard,
+  toStrokesGained,
+} from './golf-diagrams';
+import { MmaPositionDiagram, toMatShape } from './mma-diagrams';
 import type {
   ExplainerCategory,
   ExplainerRelated,
@@ -314,6 +323,19 @@ const SECTION_HEADINGS: Record<string, string> = {
   strategic_implications: 'What it means for strategy',
   driver_technique: 'The technique',
   regulation_era: 'Which era this describes',
+  // Golf. `club_selection` is the one that carries weight: wind, elevation,
+  // lie and temperature all end in the same practical question, and a reader
+  // consulting one of those pages mid-round wants that answer without hunting.
+  the_swing: 'The swing',
+  on_the_course: 'Where it is on the course',
+  club_selection: 'What it means for club selection',
+  penalty_and_relief: 'The penalty, and your options',
+  // MMA. `recognition` is the one that carries weight: it answers what a
+  // viewer actually sees during a fight, which is the question most readers
+  // arrive with for a technique or position page.
+  the_technique: 'The technique',
+  recognition: 'How to recognize it',
+  danger_and_stoppage: 'Why it ends a fight',
 };
 
 /**
@@ -351,6 +373,24 @@ export function ArticleSection({ section, title }: { section: ExplainerSection; 
   const track = anyPrior ? null : toTrackShape(section.structuredData);
   const car = anyPrior || track ? null : toCarDiagram(section.structuredData);
   const stints = anyPrior || track || car ? null : toStrategyChart(section.structuredData);
+  // Golf. `hole`, `strokesGained` and the scorecard's `holes` array are each
+  // absent from every other sport's payload, so none can claim another's data.
+  // The scorecard is tried last of the three because its discriminator is the
+  // presence of a `holes` array rather than a literal, which is the loosest
+  // test in the file and so must not run before a stricter one.
+  const golfHole = anyPrior || track || car || stints ? null : toHoleShape(section.structuredData);
+  const strokesGained =
+    anyPrior || track || car || stints || golfHole ? null : toStrokesGained(section.structuredData);
+  const scorecard =
+    anyPrior || track || car || stints || golfHole || strokesGained
+      ? null
+      : toScorecard(section.structuredData);
+  // MMA. `mat: 'position'` is a literal discriminator, unambiguous against
+  // every payload above, so it can be tried unconditionally alongside them.
+  const matPosition =
+    anyPrior || track || car || stints || golfHole || strokesGained || scorecard
+      ? null
+      : toMatShape(section.structuredData);
 
   if (section.type === 'one_sentence') {
     return (
@@ -416,6 +456,26 @@ export function ArticleSection({ section, title }: { section: ExplainerSection; 
       {stints && (
         <div className="mt-4">
           <StrategyChart shape={stints} title={title} />
+        </div>
+      )}
+      {golfHole && (
+        <div className="mt-4">
+          <GolfHoleDiagram shape={golfHole} title={title} />
+        </div>
+      )}
+      {strokesGained && (
+        <div className="mt-4">
+          <StrokesGainedTable shape={strokesGained} />
+        </div>
+      )}
+      {scorecard && (
+        <div className="mt-4">
+          <GolfScorecard shape={scorecard} />
+        </div>
+      )}
+      {matPosition && (
+        <div className="mt-4">
+          <MmaPositionDiagram shape={matPosition} title={title} />
         </div>
       )}
       {section.body && (

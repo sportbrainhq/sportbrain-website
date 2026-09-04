@@ -30,6 +30,7 @@ interface Section {
 
 const SECTIONS: Section[] = [
   { slug: '', label: 'Overview' },
+  { slug: 'today', label: 'Today' },
   { slug: 'explainers', label: 'Explainers' },
   { slug: 'teams', label: 'Teams', requiresTeams: true },
   { slug: 'players', label: 'Players' },

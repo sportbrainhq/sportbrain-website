@@ -30,6 +30,8 @@ export const SPORT_OVERVIEWS: Record<string, string> = {
     'Tennis is an individual sport with no league table and no fixtures in the usual sense. A player is judged by titles, by majors, and by weeks spent at number one, and surface matters enough that clay and grass records are kept apart.',
   'formula-1':
     'Formula One awards two championships from the same races: one for drivers, one for constructors. A driver in a quick car and a quick car with an ordinary driver produce similar results, which is why the sport is read through qualifying pace as much as race wins.',
+  golf: 'Golf is scored against par rather than against an opponent, and every stroke counts the same whether it travels three hundred yards or two feet. There is no standard course, so a winning total means little on its own: the same score can be dominant one week and miss the cut the next.',
+  mma: 'Mixed martial arts combines striking, wrestling and grappling into a single fight, and it settled that question by testing single-discipline fighters against each other and watching them lose. UFC is its largest promotion, not the sport itself, and a fighter judged only on knockouts or only on submissions is being read by half a game.',
 };
 
 export const EXPLAINERS: Record<string, ExplainerSeed[]> = {

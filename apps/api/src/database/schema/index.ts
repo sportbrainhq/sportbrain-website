@@ -37,3 +37,4 @@ export * from './explainer.schema';
 export * from './provider.schema';
 export * from './content.schema';
 export * from './news.schema';
+export * from './contact.schema';

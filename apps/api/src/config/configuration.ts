@@ -58,6 +58,20 @@ export interface AppConfig {
     internalApiKey: string | undefined;
   };
 
+  contact: {
+    emails: {
+      general: string | undefined;
+      corrections: string | undefined;
+      partnerships: string | undefined;
+      press: string | undefined;
+    };
+    internalNotifyEmail: string | undefined;
+    rateLimit: {
+      ttlSeconds: number;
+      limit: number;
+    };
+  };
+
   news: {
     rss: {
       timeoutMs: number;
@@ -158,6 +172,20 @@ export function loadConfiguration(): AppConfig {
 
     security: {
       internalApiKey: env.INTERNAL_API_KEY,
+    },
+
+    contact: {
+      emails: {
+        general: env.CONTACT_EMAIL_GENERAL,
+        corrections: env.CONTACT_EMAIL_CORRECTIONS,
+        partnerships: env.CONTACT_EMAIL_PARTNERSHIPS,
+        press: env.CONTACT_EMAIL_PRESS,
+      },
+      internalNotifyEmail: env.CONTACT_INTERNAL_NOTIFY_EMAIL ?? env.CONTACT_EMAIL_GENERAL,
+      rateLimit: {
+        ttlSeconds: env.CONTACT_RATE_LIMIT_TTL_SECONDS,
+        limit: env.CONTACT_RATE_LIMIT_MAX,
+      },
     },
 
     news: {

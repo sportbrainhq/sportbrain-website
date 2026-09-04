@@ -20,3 +20,5 @@ export * from './pagination';
 export * from './sport';
 export * from './explainer';
 export * from './news';
+export * from './fixture';
+export * from './contact';

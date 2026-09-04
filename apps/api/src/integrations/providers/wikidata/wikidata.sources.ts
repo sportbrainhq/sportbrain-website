@@ -104,7 +104,7 @@ export interface WikidataSportSource {
    * driver" returns Schumacher, Alonso, Hamilton and Senna. The sport property
    * is simply not the one the community maintains for drivers.
    */
-  readonly personOccupationQid?: string;
+  readonly personOccupationQid?: string | readonly string[];
 
   /**
    * Class of club a person must have played for, in place of a league filter.
@@ -402,10 +402,27 @@ export const SPORT_SOURCES: Record<string, WikidataSportSource> = {
     // render, exactly as for tennis.
     competitionQids: [],
     defaultTeamKind: 'international',
-    // Golfer, NOT Q490253 ("professional golfer"). The professional-status item
-    // is barely used as an occupation: 320 people carry it against 5,995 for
-    // this one, and the missing 5,675 include most of the sport.
-    personOccupationQid: 'Q11303721',
+    /**
+     * Both golfer items, because the community uses both.
+     *
+     * This was `Q11303721` ("golfer") alone, on the reasoning that Q490253
+     * ("professional golfer") is barely used: 320 people carry it against
+     * 5,996 for the general item. That measurement was right and the
+     * conclusion from it was wrong, because it counted the population without
+     * looking at who was in it.
+     *
+     * 248 people carry only the professional item, and **Tiger Woods is one of
+     * them**. So the sport's most famous player was absent from the catalogue
+     * while 748 lesser golfers were in it, and no sitelink floor or ranking fix
+     * could have surfaced him: he was never a candidate. Viktor Hovland,
+     * Suzann Pettersen, Joaquín Niemann, Emiliano Grillo and Aaron Rai were
+     * missing for the same reason.
+     *
+     * Twenty-one of those 248 clear the five-sitelink floor, and the two of
+     * them who are not golfers (the singer Dinah Shore and the actor Akira
+     * Kobayashi) are already removed by `excludeOccupationQids`.
+     */
+    personOccupationQid: ['Q11303721', 'Q490253'],
     /**
      * Notability floor for golfers.
      *
@@ -509,12 +526,25 @@ export const SPORT_SOURCES: Record<string, WikidataSportSource> = {
     // Five, matching golf and for the same reason: the corpus is 4,602 people,
     // and eight would cut it to 793.
     personMinSitelinks: 5,
-    // Boxing is kept in the exclusion list rather than paired with MMA, even
-    // though the crossover is real and a fighter who has done both belongs in
-    // either roster. `P106` does not distinguish someone who fought one
-    // professional boxing match from someone whose career was boxing, and the
-    // second is far more common among the names sitelinks promote.
-    excludeOccupationQids: otherOccupationsThan(OTHER_SPORT_OCCUPATIONS.mmaFighter),
+    // Boxing and acting are paired with MMA rather than excluded, both for
+    // Conor McGregor's sake specifically: his Wikidata occupation list carries
+    // mixed martial artist, boxer AND actor (a minor film credit), and the
+    // general exclusion list dropped him for either one on its own before
+    // both were added here. `actor` stays excluded for every other sport,
+    // where it is doing real work (it is what keeps Dwayne Johnson and John
+    // Wayne out of the football and American-football rosters), but an
+    // incidental acting credit is common among MMA's biggest names without
+    // being their known career, unlike those two.
+    //
+    // `personOccupationQid` above already requires the MMA occupation to enter
+    // this roster at all, so a pure boxer or actor cannot get in through this
+    // door; pairing them here only stops re-excluding a fighter for also
+    // having done either.
+    excludeOccupationQids: otherOccupationsThan(
+      OTHER_SPORT_OCCUPATIONS.mmaFighter,
+      OTHER_SPORT_OCCUPATIONS.boxer,
+      OTHER_SPORT_OCCUPATIONS.actor,
+    ),
     // See the golf note. MMA's P1344 coverage is worse still, 218 of 4,602.
     competitionClassQid: 'Q623109',
     venueClassQid: 'Q483110',

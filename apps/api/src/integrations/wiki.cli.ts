@@ -42,7 +42,7 @@ async function main(): Promise<void> {
 
   if (!command) {
     process.stderr.write(
-      'Usage: wiki <map|facts|crests|logos|rankings|cricket-team-rankings|cricket-stats|cricket-careers|tennis-careers|basketball-stats|basketball-leaders|basketball-highlights|competition-about|nba-tables|basketball-competition-tables|careers|career-totals|scan-totals|titles|all> [entityType] [sport] [limit]\n',
+      'Usage: wiki <map|facts|crests|logos|rankings|cricket-team-rankings|cricket-stats|cricket-careers|tennis-careers|golf-careers|basketball-stats|basketball-leaders|basketball-highlights|competition-about|nba-tables|basketball-competition-tables|careers|career-totals|scan-totals|titles|nfl-titles|qb-passing|rb-rushing|receiver-stats|defender-stats|nfl-careers|nfl-positions|mma-records|mma-titles|mma-title-bouts|mma-current-champions|all> [entityType] [sport] [limit]\n',
     );
     process.exitCode = 1;
     return;
@@ -238,6 +238,24 @@ async function main(): Promise<void> {
         break;
       }
 
+      /**
+       * A golfer's majors, career record, status and attributes.
+       *
+       * The golf counterpart of `tennis-careers`, and needed for the same
+       * reason: golf has no clubs, so none of the pipeline's club-based
+       * derivations produce anything for it. One infobox carries the majors,
+       * the win counts by tour and the career span, so one command reads them
+       * all rather than fetching the page three times.
+       */
+      case 'golf-careers': {
+        const result = await ingestion.ingestGolfCareers(Number(args[0] ?? 200), args[1]);
+        process.stdout.write(
+          `${result.players} players, ${result.majors} majors, ` +
+            `${result.active} active, ${result.retired} retired\n`,
+        );
+        break;
+      }
+
       case 'cricket-stats': {
         const result = await ingestion.ingestCricketStats(Number(args[0] ?? 200));
         process.stdout.write(`${result.players} players, ${result.blocks} stat blocks\n`);
@@ -294,6 +312,119 @@ async function main(): Promise<void> {
       case 'careers': {
         const result = await ingestion.ingestFootballCareers(Number(args[0] ?? 200));
         process.stdout.write(`${result.players} players, ${result.spells} club spells\n`);
+        break;
+      }
+
+      /**
+       * NFL teams' championship counts and Super Bowl-winning seasons, read
+       * from `Infobox NFL team` rather than an honours table.
+       */
+      case 'nfl-titles': {
+        const result = await ingestion.ingestNflTeamTitles(Number(args[0] ?? 40));
+        process.stdout.write(`${result.teams} teams examined, ${result.written} written\n`);
+        break;
+      }
+
+      /**
+       * Career totals for the four position groups American football's
+       * season table can be read for, each from its own column group rather
+       * than an assumed position. See `fetchCareerColumnGroup` on
+       * `WikipediaProvider` for the table-reading rules shared by all four.
+       */
+      case 'qb-passing': {
+        const result = await ingestion.ingestQuarterbackCareerPassing(Number(args[0] ?? 60));
+        process.stdout.write(
+          `${result.players} quarterbacks examined, ${result.written} written\n`,
+        );
+        break;
+      }
+
+      case 'rb-rushing': {
+        const result = await ingestion.ingestRunningBackCareerTotals(Number(args[0] ?? 60));
+        process.stdout.write(
+          `${result.players} running backs examined, ${result.written} written\n`,
+        );
+        break;
+      }
+
+      case 'receiver-stats': {
+        const result = await ingestion.ingestReceiverCareerTotals(Number(args[0] ?? 60));
+        process.stdout.write(`${result.players} receivers examined, ${result.written} written\n`);
+        break;
+      }
+
+      case 'defender-stats': {
+        const result = await ingestion.ingestDefenderCareerTotals(Number(args[0] ?? 60));
+        process.stdout.write(`${result.players} defenders examined, ${result.written} written\n`);
+        break;
+      }
+
+      /**
+       * Gridiron players' club histories, from `pastteams` rather than
+       * Wikidata's undated memberships. See `fetchGridironTeamSpells` and
+       * `ingestGridironTeamHistory` for why.
+       */
+      case 'nfl-careers': {
+        const result = await ingestion.ingestGridironTeamHistory(Number(args[0] ?? 150));
+        process.stdout.write(
+          `${result.players} players examined, ${result.written} spells written\n`,
+        );
+        break;
+      }
+
+      /**
+       * Gridiron players' position and current team, from each player's own
+       * infobox rather than Wikidata's unscoped `P413`. See
+       * `fetchGridironPlayerAttributes` and `ingestGridironPlayerAttributes`
+       * for why.
+       */
+      case 'nfl-positions': {
+        const result = await ingestion.ingestGridironPlayerAttributes(Number(args[0] ?? 150));
+        process.stdout.write(`${result.players} players examined, ${result.written} written\n`);
+        break;
+      }
+
+      /**
+       * MMA fighters' win/loss/draw records, from `Infobox martial artist`.
+       * See `fetchMmaRecord` and `ingestMmaRecords` for why.
+       */
+      case 'mma-records': {
+        const result = await ingestion.ingestMmaRecords(Number(args[0] ?? 150));
+        process.stdout.write(`${result.players} fighters examined, ${result.written} written\n`);
+        break;
+      }
+
+      /**
+       * MMA fighters' title reigns. See `fetchMmaTitles` and
+       * `ingestMmaTitles` for why.
+       */
+      case 'mma-titles': {
+        const result = await ingestion.ingestMmaTitles(Number(args[0] ?? 150));
+        process.stdout.write(`${result.players} fighters examined, ${result.written} written\n`);
+        break;
+      }
+
+      /**
+       * MMA fighters' UFC title-fight bouts, win or loss. See
+       * `fetchMmaTitleBouts` and `ingestMmaTitleBouts` for why this is a
+       * different count from `mma-titles`, which only sees reigns won.
+       */
+      case 'mma-title-bouts': {
+        const result = await ingestion.ingestMmaTitleBouts(Number(args[0] ?? 150));
+        process.stdout.write(`${result.players} fighters examined, ${result.written} written\n`);
+        break;
+      }
+
+      /**
+       * The UFC's current champion per weight class. See
+       * `fetchMmaCurrentUfcTitles` and `ingestMmaCurrentChampions` for why
+       * this needs its own pass rather than reusing `mma-titles`' reign data.
+       */
+      case 'mma-current-champions': {
+        const result = await ingestion.ingestMmaCurrentChampions();
+        process.stdout.write(
+          `${result.players} former/current title holders checked, ${result.written} written\n`,
+        );
         break;
       }
 
