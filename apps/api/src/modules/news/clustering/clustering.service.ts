@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { AppConfig } from '../../../config/configuration';
 import { CacheService } from '../../../infrastructure/cache/cache.service';
+import { MetricsService } from '../../../infrastructure/metrics/metrics.service';
 import { ImportanceScorer } from '../ranking/importance-scorer';
 import { RankingRepository } from '../ranking/ranking.repository';
 import { NewsWorkerRepository } from '../news-worker.repository';
@@ -62,6 +63,7 @@ export class ClusteringService {
     private readonly importanceScorer: ImportanceScorer,
     private readonly cache: CacheService,
     private readonly config: ConfigService<AppConfig, true>,
+    private readonly metrics: MetricsService,
   ) {}
 
   async clusterAndPublish(articleId: string): Promise<ClusterAndPublishOutcome> {
@@ -96,6 +98,7 @@ export class ClusteringService {
 
     await this.newsWorkerRepository.markClustered(articleId);
     await this.newsWorkerRepository.markPublished(articleId);
+    this.metrics.incrementCounter('articles_published', { sportId: article.sportId });
 
     await this.invalidatePublicCache(article.sportId);
 

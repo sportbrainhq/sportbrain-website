@@ -74,6 +74,13 @@ function makeService(options: {
     get: vi.fn().mockReturnValue(options.threshold),
   } as unknown as import('../../../config').TypedConfigService;
 
+  const metrics = {
+    incrementCounter: vi.fn(),
+    observeHistogram: vi.fn(),
+    setGauge: vi.fn(),
+    getSnapshot: vi.fn(() => ({ counters: [], gauges: [], histograms: [] })),
+  } as unknown as import('../../../infrastructure/metrics/metrics.service').MetricsService;
+
   const service = new ClassificationService(
     repository,
     sportClassifier,
@@ -81,6 +88,7 @@ function makeService(options: {
     topicClassifier,
     llmFallback,
     config,
+    metrics,
   );
 
   return { service, repository, llmFallback };

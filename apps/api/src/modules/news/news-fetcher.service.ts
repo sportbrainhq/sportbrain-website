@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { AppConfig } from '../../config/configuration';
+import { MetricsService } from '../../infrastructure/metrics/metrics.service';
 import { fetchRssFeed } from './lib/rss-fetcher';
 import { NewsWorkerRepository, type DueSource } from './news-worker.repository';
 
@@ -26,6 +27,7 @@ export class NewsFetcherService {
   constructor(
     private readonly repository: NewsWorkerRepository,
     private readonly config: ConfigService<AppConfig, true>,
+    private readonly metrics: MetricsService,
   ) {}
 
   async fetchSource(source: DueSource): Promise<FetchSourceResult> {
@@ -36,6 +38,10 @@ export class NewsFetcherService {
 
     const previousContentHash = await this.repository.findLatestContentHash(source.id);
 
+    const metricLabels = { sourceId: source.id, sourceSlug: source.slug };
+    this.metrics.incrementCounter('rss_fetch_total', metricLabels);
+    const startedAt = Date.now();
+
     const result = await fetchRssFeed({
       url: source.feedUrl,
       timeoutMs: rssConfig.timeoutMs,
@@ -45,6 +51,14 @@ export class NewsFetcherService {
       lastModified: source.lastModified,
       previousContentHash,
     });
+
+    this.metrics.observeHistogram('rss_fetch_duration', Date.now() - startedAt, metricLabels);
+
+    if (result.outcome === 'failed' || result.outcome === 'rejected') {
+      this.metrics.incrementCounter('rss_fetch_failure_total', metricLabels);
+    } else {
+      this.metrics.incrementCounter('rss_fetch_success_total', metricLabels);
+    }
 
     switch (result.outcome) {
       case 'rejected': {

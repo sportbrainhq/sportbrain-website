@@ -16,7 +16,9 @@ import { SharedModule } from './modules/shared/shared.module';
 import { SportsModule } from './modules/sports/sports.module';
 import { TeamsModule } from './modules/teams/teams.module';
 import { CacheModule } from './infrastructure/cache/cache.module';
+import { MetricsModule } from './infrastructure/metrics/metrics.module';
 import { JobsModule } from './jobs/jobs.module';
+import { InternalNewsModule } from './modules/internal-news/internal-news.module';
 import { QueueModule } from './queue/queue.module';
 
 /**
@@ -54,6 +56,7 @@ import { QueueModule } from './queue/queue.module';
     // services without importing them.
     DatabaseModule,
     CacheModule,
+    MetricsModule,
     // Must precede JobsModule: NewsSchedulerJob (registered by
     // JobsModule.register() when jobs are enabled) injects QueueService and
     // NewsWorkerRepository, both exported by this @Global module.
@@ -76,6 +79,7 @@ import { QueueModule } from './queue/queue.module';
     ContentModule,
     SearchModule,
     NewsModule,
+    InternalNewsModule,
   ],
   providers: [
     // Registered globally so that every route gets the same error envelope,

@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { MetricsService } from '../../infrastructure/metrics/metrics.service';
 import { ClassificationService } from './classification/classification.service';
 import { ClusteringService } from './clustering/clustering.service';
 import { resolveAdapter } from './lib/feed-adapter';
@@ -61,6 +62,7 @@ export class NewsProcessorService {
     private readonly repository: NewsWorkerRepository,
     private readonly classificationService: ClassificationService,
     private readonly clusteringService: ClusteringService,
+    private readonly metrics: MetricsService,
   ) {}
 
   async processFetch(fetchId: string): Promise<ProcessFetchResult> {
@@ -95,6 +97,9 @@ export class NewsProcessorService {
     const adapter = resolveAdapter({ id: source.id, feedUrl: source.feedUrl });
     const fetchedAt = new Date();
 
+    const sourceLabels = { sourceId: source.id, sourceSlug: source.slug };
+    this.metrics.incrementCounter('rss_items_received', sourceLabels, parsed.items.length);
+
     let inserted = 0;
     let skippedDuplicate = 0;
     let skippedMalformed = 0;
@@ -113,6 +118,7 @@ export class NewsProcessorService {
         );
         if (existing) {
           skippedDuplicate++;
+          this.metrics.incrementCounter('articles_deduplicated', sourceLabels);
           continue;
         }
 
@@ -131,6 +137,7 @@ export class NewsProcessorService {
           rawMetadata: normalized.rawMetadata,
         });
         inserted++;
+        this.metrics.incrementCounter('articles_created', sourceLabels);
 
         // Classification failure never fails the batch, mirroring the
         // per-item resilience above: the article stays at 'ingested' (see
@@ -158,6 +165,7 @@ export class NewsProcessorService {
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           warnings.push(`Classification failed for article "${insertedArticle.id}": ${message}`);
+          this.metrics.incrementCounter('classification_failure_total', sourceLabels);
           this.logger.warn(
             `Classification failed for article "${insertedArticle.id}" in fetch "${fetchId}": ${message}`,
           );
@@ -165,8 +173,15 @@ export class NewsProcessorService {
       } catch (error) {
         skippedMalformed++;
         const message = error instanceof Error ? error.message : String(error);
+        // Identify the offending item itself (guid/link/title), not just the
+        // fetch: without this, a malformed-item warning gives an operator no
+        // way to find which feed entry actually failed to normalize.
+        const itemIdentifier =
+          item.link ?? item.guid ?? item.title ?? '(no link/guid/title on item)';
         warnings.push(`Item failed to normalize/insert: ${message}`);
-        this.logger.warn(`Skipped malformed item in fetch "${fetchId}": ${message}`);
+        this.logger.warn(
+          `Skipped malformed item in fetch "${fetchId}" (source "${source.slug}", item "${itemIdentifier}"): ${message}`,
+        );
       }
     }
 

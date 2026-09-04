@@ -47,6 +47,17 @@ export interface AppConfig {
     url: string | undefined;
   };
 
+  security: {
+    /**
+     * Shared-secret stopgap for `/internal/news/*`. Undefined when
+     * unconfigured, which is the signal `InternalApiKeyGuard` uses to fail
+     * closed (reject every request) rather than allow unauthenticated access
+     * to operational data. See the guard's file header for the full v1
+     * caveat.
+     */
+    internalApiKey: string | undefined;
+  };
+
   news: {
     rss: {
       timeoutMs: number;
@@ -143,6 +154,10 @@ export function loadConfiguration(): AppConfig {
 
     redis: {
       url: env.REDIS_URL,
+    },
+
+    security: {
+      internalApiKey: env.INTERNAL_API_KEY,
     },
 
     news: {

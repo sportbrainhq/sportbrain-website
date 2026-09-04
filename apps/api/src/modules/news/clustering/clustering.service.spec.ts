@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ConfigService } from '@nestjs/config';
 import type { AppConfig } from '../../../config/configuration';
 import type { CacheService } from '../../../infrastructure/cache/cache.service';
+import type { MetricsService } from '../../../infrastructure/metrics/metrics.service';
 import type { ArticleForClustering, NewsWorkerRepository } from '../news-worker.repository';
 import { ImportanceScorer } from '../ranking/importance-scorer';
 import type { RankingRepository } from '../ranking/ranking.repository';
@@ -218,11 +219,21 @@ function makeCache(): CacheService {
   } as unknown as CacheService;
 }
 
+function makeMetrics(): MetricsService {
+  return {
+    incrementCounter: vi.fn(),
+    observeHistogram: vi.fn(),
+    setGauge: vi.fn(),
+    getSnapshot: vi.fn(() => ({ counters: [], gauges: [], histograms: [] })),
+  } as unknown as MetricsService;
+}
+
 function buildService(fixture: Fixture) {
   const clusteringRepository = makeClusteringRepository(fixture);
   const newsWorkerRepository = makeNewsWorkerRepository(fixture);
   const rankingRepository = makeRankingRepository();
   const cache = makeCache();
+  const metrics = makeMetrics();
   const config = fakeConfig();
   const importanceScorer = new ImportanceScorer(config);
 
@@ -233,6 +244,7 @@ function buildService(fixture: Fixture) {
     importanceScorer,
     cache,
     config,
+    metrics,
   );
 
   return { service, clusteringRepository, newsWorkerRepository, cache };

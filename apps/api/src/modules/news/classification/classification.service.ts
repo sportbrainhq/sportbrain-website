@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { AppConfig } from '../../../config/configuration';
+import { MetricsService } from '../../../infrastructure/metrics/metrics.service';
 import { ClassificationRepository } from './classification.repository';
 import { EntityClassifier } from './entity-classifier';
 import { NoopLlmClassificationFallback } from './llm-classification-fallback';
@@ -48,6 +49,7 @@ export class ClassificationService {
     private readonly topicClassifier: TopicClassifier,
     private readonly llmFallback: NoopLlmClassificationFallback,
     private readonly config: ConfigService<AppConfig, true>,
+    private readonly metrics: MetricsService,
   ) {}
 
   async classifyArticle(articleId: string): Promise<ClassificationOutcome> {
@@ -174,6 +176,7 @@ export class ClassificationService {
       rawMetadata: article.rawMetadata,
     });
 
+    this.metrics.incrementCounter('classification_failure_total', { reason: 'needs_review' });
     this.logger.warn(`Article "${articleId}" left at "ingested" for manual review: ${reason}`);
 
     return {

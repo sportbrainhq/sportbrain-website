@@ -2,6 +2,7 @@ import { Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@ne
 import { ConfigService } from '@nestjs/config';
 import { Worker, type Job } from 'bullmq';
 import type { AppConfig } from '../config/configuration';
+import { MetricsService } from '../infrastructure/metrics/metrics.service';
 import { NewsProcessorService } from '../modules/news/news-processor.service';
 import { NEWS_PROCESS_QUEUE, type ProcessJobData } from './queue.types';
 import { QueueService } from './queue.service';
@@ -22,6 +23,7 @@ export class NewsProcessWorker implements OnModuleInit, OnModuleDestroy {
     private readonly queueService: QueueService,
     private readonly processor: NewsProcessorService,
     private readonly config: ConfigService<AppConfig, true>,
+    private readonly metrics: MetricsService,
   ) {}
 
   onModuleInit(): void {
@@ -42,7 +44,10 @@ export class NewsProcessWorker implements OnModuleInit, OnModuleDestroy {
     );
 
     this.worker.on('failed', (job, error) => {
-      this.logger.error(`news-process job ${job?.id} failed: ${error.message}`);
+      this.metrics.incrementCounter('queue_failure_total', { queue: NEWS_PROCESS_QUEUE });
+      this.logger.error(
+        `news-process job ${job?.id} failed (fetchId "${job?.data?.fetchId}"): ${error.message}`,
+      );
     });
 
     this.logger.log(`news-process worker started (concurrency ${concurrency})`);

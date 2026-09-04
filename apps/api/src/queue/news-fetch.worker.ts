@@ -2,6 +2,7 @@ import { Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@ne
 import { ConfigService } from '@nestjs/config';
 import { Worker, type Job } from 'bullmq';
 import type { AppConfig } from '../config/configuration';
+import { MetricsService } from '../infrastructure/metrics/metrics.service';
 import { NewsFetcherService } from '../modules/news/news-fetcher.service';
 import { NewsWorkerRepository } from '../modules/news/news-worker.repository';
 import { NEWS_FETCH_QUEUE, type FetchJobData } from './queue.types';
@@ -33,6 +34,7 @@ export class NewsFetchWorker implements OnModuleInit, OnModuleDestroy {
     private readonly fetcher: NewsFetcherService,
     private readonly repository: NewsWorkerRepository,
     private readonly config: ConfigService<AppConfig, true>,
+    private readonly metrics: MetricsService,
   ) {}
 
   onModuleInit(): void {
@@ -51,7 +53,10 @@ export class NewsFetchWorker implements OnModuleInit, OnModuleDestroy {
     );
 
     this.worker.on('failed', (job, error) => {
-      this.logger.error(`news-fetch job ${job?.id} failed: ${error.message}`);
+      this.metrics.incrementCounter('queue_failure_total', { queue: NEWS_FETCH_QUEUE });
+      this.logger.error(
+        `news-fetch job ${job?.id} failed (sourceId "${job?.data?.sourceId}"): ${error.message}`,
+      );
     });
 
     this.logger.log(`news-fetch worker started (concurrency ${concurrency})`);

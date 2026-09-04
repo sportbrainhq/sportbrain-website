@@ -42,6 +42,7 @@ import { NewsWorkerRepository } from '../modules/news/news-worker.repository';
 import { ImportanceScorer } from '../modules/news/ranking/importance-scorer';
 import { RankingRepository } from '../modules/news/ranking/ranking.repository';
 import { InMemoryCacheService } from '../infrastructure/cache/cache.service';
+import { InMemoryMetricsService } from '../infrastructure/metrics/metrics.service';
 
 for (const candidate of [resolve(process.cwd(), '../../.env'), resolve(process.cwd(), '.env')]) {
   if (existsSync(candidate)) loadDotenv({ path: candidate });
@@ -72,7 +73,12 @@ async function main(): Promise<void> {
     get: (key: string) => getByPath(config, key),
   } as unknown as TypedConfigService;
 
-  const fetcher = new NewsFetcherService(repository, typedConfig);
+  // A plain in-memory metrics store, not the shared app instance: same
+  // reasoning as `cache` below (this CLI is a separate one-shot process, so
+  // there is no running API process's metrics to contribute to).
+  const metrics = new InMemoryMetricsService();
+
+  const fetcher = new NewsFetcherService(repository, typedConfig, metrics);
 
   const classificationRepository = new ClassificationRepository(database);
   const entityClassificationRepository = new EntityClassificationRepository(database);
@@ -83,6 +89,7 @@ async function main(): Promise<void> {
     new TopicClassifier(),
     new NoopLlmClassificationFallback(),
     typedConfig,
+    metrics,
   );
   const clusteringRepository = new ClusteringRepository(database);
   const rankingRepository = new RankingRepository(database);
@@ -101,9 +108,15 @@ async function main(): Promise<void> {
     importanceScorer,
     cache,
     typedConfig,
+    metrics,
   );
 
-  const processor = new NewsProcessorService(repository, classificationService, clusteringService);
+  const processor = new NewsProcessorService(
+    repository,
+    classificationService,
+    clusteringService,
+    metrics,
+  );
 
   const startedAt = Date.now();
 

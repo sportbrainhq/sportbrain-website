@@ -47,6 +47,14 @@ export const envSchema = z
     // same cron on every replica is the standard way to double-process work.
     JOBS_ENABLED: booleanFromString.default(false),
 
+    // Internal/admin API stopgap auth (see
+    // `common/guards/internal-api-key.guard.ts`). Protects only
+    // `/internal/news/*`. Optional in the schema, but the guard FAILS CLOSED
+    // when it is unset: every request to a protected route is rejected
+    // rather than silently allowed through. This is a v1 shared-secret
+    // stopgap, not a real auth/authz system.
+    INTERNAL_API_KEY: z.string().min(1).optional(),
+
     // Shared cache backend. Optional: leaving it unset keeps the API on the
     // in-memory cache, which is the correct choice until a second replica or
     // a restart-durability requirement makes that a real limitation. See
