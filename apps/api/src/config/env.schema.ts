@@ -69,6 +69,11 @@ export const envSchema = z
     // `healthStatus: 'disabled'`. See `news_sources` in the schema.
     NEWS_AUTO_DISABLE_FAILURE_THRESHOLD: z.coerce.number().int().positive().default(10),
     NEWS_DEFAULT_FETCH_INTERVAL_SECONDS: z.coerce.number().int().positive().default(900),
+
+    // News Engine queue (Phase 2). Only meaningful when REDIS_URL is set;
+    // see `queue/queue.module.ts` for the no-Redis fallback.
+    NEWS_QUEUE_FETCH_CONCURRENCY: z.coerce.number().int().positive().default(5),
+    NEWS_QUEUE_PROCESS_CONCURRENCY: z.coerce.number().int().positive().default(3),
   })
   .superRefine((config, ctx) => {
     if (config.NODE_ENV !== 'production') return;

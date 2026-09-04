@@ -57,6 +57,10 @@ export interface AppConfig {
     cacheTtlSeconds: number;
     autoDisableFailureThreshold: number;
     defaultFetchIntervalSeconds: number;
+    queue: {
+      fetchConcurrency: number;
+      processConcurrency: number;
+    };
   };
 }
 
@@ -129,6 +133,10 @@ export function loadConfiguration(): AppConfig {
       cacheTtlSeconds: env.NEWS_CACHE_TTL_SECONDS,
       autoDisableFailureThreshold: env.NEWS_AUTO_DISABLE_FAILURE_THRESHOLD,
       defaultFetchIntervalSeconds: env.NEWS_DEFAULT_FETCH_INTERVAL_SECONDS,
+      queue: {
+        fetchConcurrency: env.NEWS_QUEUE_FETCH_CONCURRENCY,
+        processConcurrency: env.NEWS_QUEUE_PROCESS_CONCURRENCY,
+      },
     },
   };
 }

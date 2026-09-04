@@ -17,6 +17,7 @@ import { SportsModule } from './modules/sports/sports.module';
 import { TeamsModule } from './modules/teams/teams.module';
 import { CacheModule } from './infrastructure/cache/cache.module';
 import { JobsModule } from './jobs/jobs.module';
+import { QueueModule } from './queue/queue.module';
 
 /**
  * The application root.
@@ -53,6 +54,10 @@ import { JobsModule } from './jobs/jobs.module';
     // services without importing them.
     DatabaseModule,
     CacheModule,
+    // Must precede JobsModule: NewsSchedulerJob (registered by
+    // JobsModule.register() when jobs are enabled) injects QueueService and
+    // NewsWorkerRepository, both exported by this @Global module.
+    QueueModule,
     JobsModule.register(),
 
     // Platform features.
