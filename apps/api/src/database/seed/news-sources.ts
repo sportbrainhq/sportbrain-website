@@ -120,7 +120,7 @@ export const NEWS_SOURCE_SEEDS: NewsSourceSeed[] = [
     priority: 30,
     trustScore: '0.800',
     fetchIntervalSeconds: 900,
-    isActive: false,
+    isActive: true, // LOCAL TEST FLIP: kept active per user request 2026-09-04 for browsing real data. Revert before any shared/staging use.
     displayHeadlineAllowed: true,
     displaySummaryAllowed: false,
     displayImageAllowed: false,
@@ -136,21 +136,33 @@ export const NEWS_SOURCE_SEEDS: NewsSourceSeed[] = [
     healthStatus: 'disabled',
   },
   {
-    name: 'ESPNcricinfo',
+    // Note: this is ESPN's own general cricket RSS feed
+    // (espn.com/espn/rss/cricket/news), not the separate espncricinfo.com
+    // property (unverified, still a placeholder below as "BBC Sport
+    // Cricket"/"Cricbuzz" siblings are). Kept the original display name for
+    // continuity, but the feed itself is ESPN.com's, not ESPNcricinfo's.
+    name: 'ESPN Cricket',
     slug: 'espn-cricinfo',
     type: 'rss',
-    feedUrl: 'PLACEHOLDER://verify-real-feed-url/espn-cricinfo-rss',
-    websiteUrl: 'https://www.espncricinfo.com',
+    // Verified live 2026-09-04 (channel title "www.espn.com - CRICKET").
+    // Note: first item in the feed at verification time was several years
+    // old (Dec 2020) mixed in with current items - the feed itself is real
+    // and live, but its ordering/freshness should be watched once polled
+    // regularly.
+    feedUrl: 'https://www.espn.com/espn/rss/cricket/news',
+    websiteUrl: 'https://www.espn.com/cricket/',
     defaultSportSlug: 'cricket',
     priority: 10,
     trustScore: '0.900',
     fetchIntervalSeconds: 600,
-    isActive: false,
+    isActive: true, // LOCAL TEST FLIP: kept active per user request 2026-09-04 for browsing real data. Revert before any shared/staging use.
     displayHeadlineAllowed: true,
     displaySummaryAllowed: false,
     displayImageAllowed: false,
-    commercialUsageStatus: 'UNVERIFIED: assume headline + link only until terms are reviewed.',
-    termsUrl: null,
+    commercialUsageStatus:
+      'ESPN RSS terms (read 2026-09-04): attribution + link-back required, no ads in the ' +
+      'feed content, no modifying headline/summary/URL. Headline+link display fits; pending sign-off.',
+    termsUrl: 'https://www.espn.com/espn/news/story?page=rssinfo',
     healthStatus: 'disabled',
   },
   {
@@ -200,7 +212,7 @@ export const NEWS_SOURCE_SEEDS: NewsSourceSeed[] = [
     priority: 10,
     trustScore: '0.850',
     fetchIntervalSeconds: 600,
-    isActive: false,
+    isActive: true, // LOCAL TEST FLIP: kept active per user request 2026-09-04 for browsing real data. Revert before any shared/staging use.
     displayHeadlineAllowed: true,
     displaySummaryAllowed: false,
     displayImageAllowed: false,
@@ -262,6 +274,51 @@ export const NEWS_SOURCE_SEEDS: NewsSourceSeed[] = [
     displayImageAllowed: false,
     commercialUsageStatus: 'UNVERIFIED: assume headline + link only until terms are reviewed.',
     termsUrl: null,
+    healthStatus: 'disabled',
+  },
+  {
+    // Verified live 2026-09-04 (channel title "www.espn.com - TENNIS").
+    // Added alongside the pre-existing BBC/ATP/WTA placeholders below, not
+    // replacing them - those still need real verification of their own.
+    name: 'ESPN Tennis',
+    slug: 'espn-tennis',
+    type: 'rss',
+    feedUrl: 'https://www.espn.com/espn/rss/tennis/news',
+    websiteUrl: 'https://www.espn.com/tennis/',
+    defaultSportSlug: 'tennis',
+    priority: 15,
+    trustScore: '0.800',
+    fetchIntervalSeconds: 900,
+    isActive: true, // LOCAL TEST FLIP: kept active per user request 2026-09-04 for browsing real data. Revert before any shared/staging use.
+    displayHeadlineAllowed: true,
+    displaySummaryAllowed: false,
+    displayImageAllowed: false,
+    commercialUsageStatus:
+      'ESPN RSS terms (read 2026-09-04): attribution + link-back required, no ads in the ' +
+      'feed content, no modifying headline/summary/URL. Headline+link display fits; pending sign-off.',
+    termsUrl: 'https://www.espn.com/espn/news/story?page=rssinfo',
+    healthStatus: 'disabled',
+  },
+  {
+    // Verified live 2026-09-04 (channel title "www.espn.com - GOLF"). No
+    // golf source existed in the original 16-source seed list at all.
+    name: 'ESPN Golf',
+    slug: 'espn-golf',
+    type: 'rss',
+    feedUrl: 'https://www.espn.com/espn/rss/golf/news',
+    websiteUrl: 'https://www.espn.com/golf/',
+    defaultSportSlug: 'golf',
+    priority: 10,
+    trustScore: '0.800',
+    fetchIntervalSeconds: 1_800,
+    isActive: true, // LOCAL TEST FLIP: kept active per user request 2026-09-04 for browsing real data. Revert before any shared/staging use.
+    displayHeadlineAllowed: true,
+    displaySummaryAllowed: false,
+    displayImageAllowed: false,
+    commercialUsageStatus:
+      'ESPN RSS terms (read 2026-09-04): attribution + link-back required, no ads in the ' +
+      'feed content, no modifying headline/summary/URL. Headline+link display fits; pending sign-off.',
+    termsUrl: 'https://www.espn.com/espn/news/story?page=rssinfo',
     healthStatus: 'disabled',
   },
   {
@@ -355,6 +412,54 @@ export const NEWS_SOURCE_SEEDS: NewsSourceSeed[] = [
     healthStatus: 'disabled',
   },
   {
+    // Verified live 2026-09-04 (channel title "www.espn.com - BOXING").
+    // Added alongside the pre-existing BBC Sport Boxing placeholder above,
+    // not replacing it - that one still needs its own verification.
+    name: 'ESPN Boxing',
+    slug: 'espn-boxing',
+    type: 'rss',
+    feedUrl: 'https://www.espn.com/espn/rss/boxing/news',
+    websiteUrl: 'https://www.espn.com/boxing/',
+    defaultSportSlug: 'boxing',
+    priority: 15,
+    trustScore: '0.800',
+    fetchIntervalSeconds: 1_800,
+    isActive: true, // LOCAL TEST FLIP: kept active per user request 2026-09-04 for browsing real data. Revert before any shared/staging use.
+    displayHeadlineAllowed: true,
+    displaySummaryAllowed: false,
+    displayImageAllowed: false,
+    commercialUsageStatus:
+      'ESPN RSS terms (read 2026-09-04): attribution + link-back required, no ads in the ' +
+      'feed content, no modifying headline/summary/URL. Headline+link display fits; pending sign-off.',
+    termsUrl: 'https://www.espn.com/espn/news/story?page=rssinfo',
+    healthStatus: 'disabled',
+  },
+  {
+    // Verified live 2026-09-04 (channel title "www.espn.com - NFL"). No
+    // American football source existed in the original 16-source seed list.
+    // NFL is the dominant American football competition ESPN covers under
+    // this feed; the sport is broader than the NFL alone, but this is the
+    // best available general-coverage feed found so far.
+    name: 'ESPN NFL',
+    slug: 'espn-nfl',
+    type: 'rss',
+    feedUrl: 'https://www.espn.com/espn/rss/nfl/news',
+    websiteUrl: 'https://www.espn.com/nfl/',
+    defaultSportSlug: 'american-football',
+    priority: 10,
+    trustScore: '0.850',
+    fetchIntervalSeconds: 600,
+    isActive: true, // LOCAL TEST FLIP: kept active per user request 2026-09-04 for browsing real data. Revert before any shared/staging use.
+    displayHeadlineAllowed: true,
+    displaySummaryAllowed: false,
+    displayImageAllowed: false,
+    commercialUsageStatus:
+      'ESPN RSS terms (read 2026-09-04): attribution + link-back required, no ads in the ' +
+      'feed content, no modifying headline/summary/URL. Headline+link display fits; pending sign-off.',
+    termsUrl: 'https://www.espn.com/espn/news/story?page=rssinfo',
+    healthStatus: 'disabled',
+  },
+  {
     name: 'ESPN MMA',
     slug: 'espn-mma',
     type: 'rss',
@@ -365,7 +470,7 @@ export const NEWS_SOURCE_SEEDS: NewsSourceSeed[] = [
     priority: 10,
     trustScore: '0.800',
     fetchIntervalSeconds: 1_800,
-    isActive: false,
+    isActive: true, // LOCAL TEST FLIP: kept active per user request 2026-09-04 for browsing real data. Revert before any shared/staging use.
     displayHeadlineAllowed: true,
     displaySummaryAllowed: false,
     displayImageAllowed: false,

@@ -131,6 +131,15 @@ async function main(): Promise<void> {
 
         const result = await fetcher.fetchSource(source);
         process.stdout.write(`${slug}: ${JSON.stringify(result)}\n`);
+
+        // The CLI bypasses the queue (see file header), so unlike the real
+        // fetch worker, nothing else will call processFetch for us — do it
+        // inline so `fetch-source` is a genuine one-shot command rather than
+        // silently leaving the fetch at processingStatus='pending' forever.
+        if (result.outcome === 'processed') {
+          const processed = await processor.processFetch(result.fetchId);
+          process.stdout.write(`  processed: ${JSON.stringify(processed)}\n`);
+        }
         break;
       }
 
@@ -142,6 +151,11 @@ async function main(): Promise<void> {
           try {
             const result = await fetcher.fetchSource(source);
             process.stdout.write(`  ${source.slug}: ${JSON.stringify(result)}\n`);
+
+            if (result.outcome === 'processed') {
+              const processed = await processor.processFetch(result.fetchId);
+              process.stdout.write(`    processed: ${JSON.stringify(processed)}\n`);
+            }
           } catch (error) {
             process.stdout.write(
               `  ${source.slug}: ERROR ${error instanceof Error ? error.message : String(error)}\n`,

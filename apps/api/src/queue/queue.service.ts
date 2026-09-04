@@ -1,7 +1,8 @@
 import { Injectable, Logger, type OnModuleDestroy } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Queue, type JobsOptions } from 'bullmq';
 import Redis from 'ioredis';
-import type { TypedConfigService } from '../config';
+import type { AppConfig } from '../config/configuration';
 import {
   NEWS_FETCH_QUEUE,
   NEWS_PROCESS_QUEUE,
@@ -35,7 +36,7 @@ export class QueueService implements OnModuleDestroy {
   private readonly fetchQueue: Queue<FetchJobData> | undefined;
   private readonly processQueue: Queue<ProcessJobData> | undefined;
 
-  constructor(private readonly config: TypedConfigService) {
+  constructor(private readonly config: ConfigService<AppConfig, true>) {
     const redisUrl = this.config.get('redis.url', { infer: true });
 
     if (!redisUrl) {
@@ -94,7 +95,9 @@ export class QueueService implements OnModuleDestroy {
       return;
     }
     await this.fetchQueue.add(NEWS_FETCH_QUEUE, data, {
-      jobId: `fetch:${data.sourceId}`,
+      // BullMQ rejects a custom id containing ':' ("Custom Id cannot contain
+      // :") since it namespaces its own Redis keys with that character.
+      jobId: `fetch-${data.sourceId}`,
       ...options,
     });
   }
@@ -107,7 +110,8 @@ export class QueueService implements OnModuleDestroy {
       return;
     }
     await this.processQueue.add(NEWS_PROCESS_QUEUE, data, {
-      jobId: `process:${data.fetchId}`,
+      // Same reason as enqueueFetch above: BullMQ rejects ':' in custom ids.
+      jobId: `process-${data.fetchId}`,
       ...options,
     });
   }

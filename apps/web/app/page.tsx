@@ -2,9 +2,9 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 import { unstable_noStore as noStore } from 'next/cache';
 import { Container } from '@/components/layout/container';
-import { HighlightRail } from '@/components/sports/highlight-rail';
 import { NewsList } from '@/components/news/news-list';
-import { fetchHighlights, fetchNews, fetchSports } from '@/lib/api';
+import { NewsRail } from '@/components/news/news-rail';
+import { fetchNews, fetchSports } from '@/lib/api';
 import { SITE_NAME, SITE_TAGLINE, buildMetadata } from '@/lib/seo';
 
 export const metadata: Metadata = buildMetadata({
@@ -24,17 +24,19 @@ export default async function HomePage() {
   // that runs without a reachable API bakes the fallback into the HTML and
   // serves it until the next revalidation. `noStore` on the failure path forces
   // that render to be dynamic, so a failed fetch is never what gets cached.
-  const [sports, highlights, news] = await Promise.all([
+  const [sports, news] = await Promise.all([
     fetchSports()
       .then((result) => result.data)
       .catch(() => {
         noStore();
         return [];
       }),
-    fetchHighlights()
-      .then((result) => result.data)
-      .catch(() => []),
-    fetchNews({ limit: 8 })
+    // Fetched once at 12 and shared: the rail shows the first 8 (its usual
+    // size), and the fuller card-grid section below shows all 12. The two
+    // sections necessarily overlap on those first 8 (both are "latest news"
+    // ordered the same way), but the grid also surfaces 4 articles the rail
+    // never shows, so it isn't a pure re-display of the same set.
+    fetchNews({ limit: 12 })
       .then((result) => result.data)
       .catch(() => []),
   ]);
@@ -80,13 +82,13 @@ export default async function HomePage() {
               Sports are unavailable right now. The API may be starting up.
             </p>
           )}
-
-          <div className="mt-12">
-            <NewsList heading="Latest Sports News" articles={news} />
-          </div>
         </div>
 
-        <HighlightRail highlights={highlights} />
+        <NewsRail articles={news.slice(0, 8)} />
+      </div>
+
+      <div className="mt-16">
+        <NewsList heading="Latest Sports News" articles={news} />
       </div>
     </Container>
   );
