@@ -376,6 +376,31 @@ export const NEWS_SOURCE_SEEDS: NewsSourceSeed[] = [
     healthStatus: 'disabled',
   },
   {
+    // Verified live 2026-09-04 (channel title "www.espn.com - RPM", ESPN's
+    // racing/motorsports vertical). NOT F1-exclusive - it mixes Formula 1,
+    // IndyCar and NASCAR coverage, unlike the sport-specific ESPN feeds
+    // added elsewhere in this file. Kept as the best available general
+    // motorsports feed until a real Formula1.com/Autosport URL is verified.
+    name: 'ESPN Racing (RPM)',
+    slug: 'espn-racing',
+    type: 'rss',
+    feedUrl: 'https://www.espn.com/espn/rss/racing/news',
+    websiteUrl: 'https://www.espn.com/racing/',
+    defaultSportSlug: 'formula-1',
+    priority: 15,
+    trustScore: '0.750',
+    fetchIntervalSeconds: 900,
+    isActive: true, // LOCAL TEST FLIP: kept active per user request 2026-09-04 for browsing real data. Revert before any shared/staging use.
+    displayHeadlineAllowed: true,
+    displaySummaryAllowed: false,
+    displayImageAllowed: false,
+    commercialUsageStatus:
+      'ESPN RSS terms (read 2026-09-04): attribution + link-back required, no ads in the ' +
+      'feed content, no modifying headline/summary/URL. Headline+link display fits; pending sign-off.',
+    termsUrl: 'https://www.espn.com/espn/news/story?page=rssinfo',
+    healthStatus: 'disabled',
+  },
+  {
     name: 'Autosport',
     slug: 'autosport',
     type: 'rss',
