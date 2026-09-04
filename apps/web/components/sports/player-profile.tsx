@@ -190,6 +190,272 @@ export function GrandSlamPanel({ honours }: { honours: Honour[] }) {
 }
 
 /**
+ * The four men's majors and the five women's, in calendar order.
+ *
+ * Two sets rather than one, because the tours genuinely differ: the women's
+ * game recognises five majors and the men's four, and a single nine-column
+ * grid would state that every golfer competes for nine. Which set a player
+ * belongs to is decided by where their wins actually are, not by any gender
+ * field: a player with a Chevron and an Evian is on the women's tour, and the
+ * data says so without the page having to assert it.
+ *
+ * Calendar order rather than most-won-first, matching `SLAM_ORDER` and for the
+ * same reason. A reader scanning for "how did they do at the Masters" wants the
+ * Masters in the same position on every page, and the zero is as informative as
+ * the number: Arnold Palmer never won a PGA Championship, and that missing leg
+ * of the career Grand Slam is among the most-discussed gaps in the sport.
+ */
+const MENS_MAJORS = [
+  'Masters Tournament',
+  'PGA Championship',
+  'U.S. Open',
+  'The Open Championship',
+] as const;
+
+const WOMENS_MAJORS = [
+  'The Chevron Championship',
+  "Women's PGA Championship",
+  "U.S. Women's Open",
+  "AIG Women's Open",
+  'The Evian Championship',
+] as const;
+
+/**
+ * A golfer's majors, by championship.
+ *
+ * The golf counterpart of `GrandSlamPanel`, and the same argument applies: the
+ * majors are the unit a golf career is measured in, they are honours rather
+ * than statistics, and counting them from the honour rows rather than from a
+ * stat field keeps one fact in one place.
+ *
+ * Discontinued majors (the du Maurier Classic, the Titleholders, the Women's
+ * Western Open) are counted into the total but get no column of their own. They
+ * are real major wins and a total that omitted them would understate a record,
+ * and a column for an event abolished in 2000 would be dead space on every
+ * other player's page.
+ */
+export function GolfMajorsPanel({ honours }: { honours: Honour[] }) {
+  const titles = honours.filter((honour) => honour.kind === 'title');
+
+  const years = new Map<string, number[]>();
+  for (const honour of titles) {
+    const list = years.get(honour.title) ?? [];
+    if (honour.year) list.push(honour.year);
+    years.set(honour.title, list);
+  }
+
+  const countFor = (names: readonly string[]) =>
+    names.reduce((sum, name) => sum + (years.get(name)?.length ?? 0), 0);
+
+  const mens = countFor(MENS_MAJORS);
+  const womens = countFor(WOMENS_MAJORS);
+
+  // A golfer with no majors gets no panel. Most of the catalogue has none, and
+  // a row of zeroes says less than nothing: it implies we checked and they
+  // lost, where the truth is usually that they never contended.
+  if (mens === 0 && womens === 0) return null;
+
+  // Whichever tour the wins are actually on. A player with both (none exist,
+  // but the data does not forbid it) is shown the larger set.
+  const columns = womens > mens ? WOMENS_MAJORS : MENS_MAJORS;
+  const shown = countFor(columns);
+
+  // Majors won at events no longer played, which have no column above.
+  const discontinued = titles.filter(
+    (honour) =>
+      !MENS_MAJORS.includes(honour.title as (typeof MENS_MAJORS)[number]) &&
+      !WOMENS_MAJORS.includes(honour.title as (typeof WOMENS_MAJORS)[number]),
+  ).length;
+
+  return (
+    <section>
+      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+        Major championships
+      </h2>
+
+      <div
+        className={`grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border ${
+          columns.length === 5 ? 'sm:grid-cols-6' : 'sm:grid-cols-5'
+        }`}
+      >
+        {columns.map((major) => {
+          const won = years.get(major) ?? [];
+          return (
+            <div key={major} className="bg-card p-3">
+              <p className="text-xs text-muted-foreground">{major}</p>
+              <p
+                className={`mt-0.5 font-mono text-2xl font-bold tabular-nums ${
+                  won.length === 0 ? 'text-muted-foreground/40' : ''
+                }`}
+              >
+                {won.length}
+              </p>
+              {won.length > 0 && (
+                <p className="mt-1 text-2xs leading-relaxed tabular-nums text-muted-foreground">
+                  {[...won].sort((a, b) => a - b).join(', ')}
+                </p>
+              )}
+            </div>
+          );
+        })}
+
+        {/* The total last rather than first: the columns are what a reader
+            scans, and the sum is the number they quote afterwards. */}
+        <div className="bg-card p-3">
+          <p className="text-xs font-medium">Total</p>
+          <p className="mt-0.5 font-mono text-2xl font-bold tabular-nums">{shown + discontinued}</p>
+          {discontinued > 0 && (
+            <p className="mt-1 text-2xs leading-relaxed text-muted-foreground">
+              includes {discontinued} at discontinued majors
+            </p>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * A golfer's win counts, by tour.
+ *
+ * The other half of a golf record, and the half the majors panel cannot show.
+ * Sam Snead won 82 PGA Tour events and seven majors; a profile showing only the
+ * seven describes a different player. This is how golf is actually presented:
+ * every tour publishes a career win count, and a player is introduced by their
+ * professional total and their major total together.
+ *
+ * Counts rather than dated wins, because that is what the source states. The
+ * individual tournaments behind a 73-win PGA Tour career are not in this
+ * catalogue and listing them would be a different feature.
+ *
+ * Ordered by how a golf profile leads: the professional total, the majors, then
+ * the tours in rough order of standing. Anything absent is omitted rather than
+ * shown as zero, since a missing count means the article did not state one, not
+ * that the player won none.
+ */
+const WIN_COUNT_ORDER: { key: string; label: string }[] = [
+  { key: 'proWins', label: 'Professional wins' },
+  { key: 'pgaTourWins', label: 'PGA Tour' },
+  { key: 'europeanTourWins', label: 'European Tour' },
+  { key: 'lpgaTourWins', label: 'LPGA Tour' },
+  { key: 'letWins', label: 'Ladies European Tour' },
+  { key: 'japanTourWins', label: 'Japan Golf Tour' },
+  { key: 'asianTourWins', label: 'Asian Tour' },
+  { key: 'ausTourWins', label: 'PGA Tour of Australasia' },
+  { key: 'sunshineTourWins', label: 'Sunshine Tour' },
+  { key: 'championsTourWins', label: 'PGA Tour Champions' },
+  { key: 'otherWins', label: 'Other wins' },
+];
+
+export function GolfRecordPanel({ attributes }: { attributes: Record<string, unknown> }) {
+  const counts = WIN_COUNT_ORDER.map((entry) => ({
+    ...entry,
+    value: typeof attributes[entry.key] === 'number' ? (attributes[entry.key] as number) : null,
+  })).filter((entry) => entry.value !== null && entry.value > 0);
+
+  if (counts.length === 0) return null;
+
+  return (
+    <section>
+      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+        Career wins
+      </h2>
+      <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-4">
+        {counts.map((entry) => (
+          <div key={entry.key} className="bg-card p-3">
+            <dt className="text-xs text-muted-foreground">{entry.label}</dt>
+            <dd className="mt-0.5 font-mono text-xl font-bold tabular-nums">{entry.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
+}
+
+/**
+ * A boxer's professional record: wins, losses, draws and stoppages.
+ *
+ * The one figure a boxing career is actually introduced by. "50-0 (27 KO)"
+ * says more about Floyd Mayweather in five characters than any statistics
+ * table this catalogue holds for the sport, which is why it renders as a
+ * single headline line rather than the grid the other sport-specific panels
+ * use: a win-loss record is one fact, not several to compare side by side.
+ *
+ * Reads `attributes.boxingRecord` rather than a dedicated column. See
+ * `boxing-cleanup.ts` for why: it is sport-specific structured data of
+ * exactly the kind `attributes` already carries for every other sport, and a
+ * column that is null for every other sport in the catalogue is a column in
+ * the wrong table.
+ */
+export function BoxingRecordPanel({ attributes }: { attributes: Record<string, unknown> }) {
+  const record = attributes.boxingRecord;
+  if (!record || typeof record !== 'object') return null;
+
+  const { wins, losses, draws, koWins, noContests } = record as Record<string, unknown>;
+  if (typeof wins !== 'number' || typeof losses !== 'number' || typeof draws !== 'number') {
+    return null;
+  }
+
+  const koSuffix = typeof koWins === 'number' ? ` (${koWins} KO)` : '';
+  const ncSuffix = typeof noContests === 'number' && noContests > 0 ? `, ${noContests} NC` : '';
+
+  return (
+    <section>
+      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+        Professional record
+      </h2>
+      <p className="font-mono text-3xl font-black tabular-nums">
+        {wins}-{losses}-{draws}
+        <span className="ml-2 text-lg font-semibold text-muted-foreground">
+          {koSuffix}
+          {ncSuffix}
+        </span>
+      </p>
+    </section>
+  );
+}
+
+/**
+ * A boxer's weight division, height, reach and stance.
+ *
+ * Boxing's version of the profile detail block other sports get from the
+ * generic facts grid, pulled into its own panel because `weightDivision` is
+ * not one of the profile attributes the generic grid on the player page
+ * knows to render specially, and a boxer's division is the first thing a
+ * reader wants beside the record above.
+ */
+export function BoxingDetailsPanel({ attributes }: { attributes: Record<string, unknown> }) {
+  const entries = [
+    { label: 'Division', value: attributes.weightDivision },
+    {
+      label: 'Height',
+      value: typeof attributes.heightCm === 'number' ? `${attributes.heightCm} cm` : null,
+    },
+    {
+      label: 'Reach',
+      value: typeof attributes.reachCm === 'number' ? `${attributes.reachCm} cm` : null,
+    },
+    { label: 'Stance', value: attributes.stance },
+  ].filter(
+    (entry): entry is { label: string; value: string } =>
+      typeof entry.value === 'string' && entry.value.length > 0,
+  );
+
+  if (entries.length === 0) return null;
+
+  return (
+    <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-4">
+      {entries.map((entry) => (
+        <div key={entry.label} className="bg-card p-3">
+          <dt className="text-xs text-muted-foreground">{entry.label}</dt>
+          <dd className="mt-0.5 font-medium">{entry.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/**
  * The honours that define a career, grouped by title.
  *
  * Given real weight rather than a pill, because these are the reason a reader

@@ -29,6 +29,8 @@ export class PlayersService {
       `${PlayersService.CACHE_PREFIX}${sportSlug}:${JSON.stringify(query)}`,
       async () => {
         const { rows, total } = await this.repository.findBySport(sportSlug, query);
+        // `careerStatus` is narrowed in the repository, where the text column
+        // meets the typed boundary, so the rows arrive ready to return.
         return { data: rows, pagination: buildPaginationMeta(total, query) };
       },
       PlayersService.CACHE_TTL_SECONDS,

@@ -3,8 +3,12 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { FactPanel, RankingPanel, SectionPanel } from '@/components/sports/entity-profile';
 import {
+  BoxingDetailsPanel,
+  BoxingRecordPanel,
   CareerHighlights,
   CareerStatusBadge,
+  GolfMajorsPanel,
+  GolfRecordPanel,
   GrandSlamPanel,
   HonoursPanel,
   type CareerHighlight,
@@ -109,6 +113,29 @@ export default async function PlayerPage({
       .filter(([, factKey]) => factKeys.has(factKey))
       .map(([attribute]) => attribute),
     'careerHighlights',
+    // Golf's win counts and major total, which `GolfRecordPanel` and
+    // `GolfMajorsPanel` render properly below. Left in the generic grid they
+    // would fill all six slots in whatever order the JSON happened to hold,
+    // pushing out the nationality and turned-pro year, and label themselves
+    // "Pga tour wins" through `humanise`.
+    'proWins',
+    'majorWins',
+    'pgaTourWins',
+    'europeanTourWins',
+    'lpgaTourWins',
+    'letWins',
+    'japanTourWins',
+    'asianTourWins',
+    'ausTourWins',
+    'sunshineTourWins',
+    'championsTourWins',
+    'otherWins',
+    // Boxing's record and division, rendered by `BoxingRecordPanel` and
+    // `BoxingDetailsPanel` below rather than the generic grid: a nested
+    // `boxingRecord` object would print as "[object Object]" there, and the
+    // division/reach/stance read better as their own labelled block beside
+    // the record than mixed into a six-slot grid with nationality and DOB.
+    ...(sportSlug === 'boxing' ? ['boxingRecord', 'weightDivision', 'reachCm', 'stance'] : []),
   ]);
 
   // Nickname first, because it identifies the person rather than describing
@@ -183,6 +210,28 @@ export default async function PlayerPage({
           reader has about a tennis player, and the list below then carries the
           same titles in date order alongside everything else. */}
       <GrandSlamPanel honours={player.honours} />
+
+      {/* Golf's equivalents. The majors panel is the same argument as tennis's:
+          the majors are how a golf career is measured, and they are honours
+          rather than statistics. The record panel is the half that has no
+          tennis counterpart, because golf counts tour wins as a headline figure
+          in a way tennis does not. Both return null for a player with nothing
+          to show, so no other sport's page gains an empty section. */}
+      <GolfMajorsPanel honours={player.honours} />
+      <GolfRecordPanel attributes={player.attributes} />
+
+      {/* Boxing's equivalent block: the professional record is the headline
+          figure the sport is introduced by, and the division/reach/stance
+          detail sits beside it rather than in the generic six-slot grid,
+          which a nested `boxingRecord` object would break anyway. Both
+          return null for a boxer with nothing to show, so no other sport's
+          page gains an empty section. */}
+      {sportSlug === 'boxing' && (
+        <>
+          <BoxingRecordPanel attributes={player.attributes} />
+          <BoxingDetailsPanel attributes={player.attributes} />
+        </>
+      )}
 
       {(highlights.length > 0 || player.honours.length > 0) && (
         <section>

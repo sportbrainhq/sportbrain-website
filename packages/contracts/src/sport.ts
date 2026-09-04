@@ -267,6 +267,15 @@ export const playerSummarySchema = z.object({
   imageUrl: z.string().nullable(),
   /** Sport-specific facts: position, current club, height. Varies by sport. */
   attributes: z.record(z.unknown()),
+  /**
+   * `active`, `retired`, or null where the evidence does not say.
+   *
+   * On the summary as well as the detail because the listing shows it: a
+   * catalogue mixing living professionals with players who finished in the
+   * 1960s is not readable without it. Null is a real state rather than a gap,
+   * and renders no badge at all.
+   */
+  careerStatus: z.enum(['active', 'retired']).nullable(),
 });
 export type PlayerSummary = z.infer<typeof playerSummarySchema>;
 
@@ -278,14 +287,6 @@ export const playerDetailSchema = playerSummarySchema.extend({
    */
   sport: z.object({ slug: z.string(), name: z.string(), traits: sportTraitsSchema }),
   dateOfDeath: z.string().nullable(),
-  /**
-   * `active`, `retired`, or null where the evidence does not say.
-   *
-   * Null is a real state rather than a gap to fill in: the page shows no badge
-   * at all, because labelling someone Active who retired twenty years ago is
-   * worse than labelling them nothing.
-   */
-  careerStatus: z.enum(['active', 'retired']).nullable(),
   biography: z.string().nullable(),
   honours: z.array(honourSchema),
   /** Three entries in a fixed order, or empty where the sport declares none. */
