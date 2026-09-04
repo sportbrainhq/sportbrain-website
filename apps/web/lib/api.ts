@@ -11,6 +11,9 @@ import {
   sportOverviewSchema,
   errorResponseSchema,
   healthResponseSchema,
+  cursorPaginated,
+  newsArticleDetailSchema,
+  newsArticleSummarySchema,
   paginated,
   playerDetailSchema,
   playerSummarySchema,
@@ -22,11 +25,15 @@ import {
   type CompetitionDetail,
   type ContentDetail,
   type ContentSummary,
+  type CursorPaginated,
   type ExplainerDetail,
   type ExplainerLibrary,
   type ExplainerSummary,
   type HealthResponse,
   type Highlight,
+  type NewsArticleDetail,
+  type NewsArticleSummary,
+  type NewsListQuery,
   type QuizSummary,
   type SportOverview,
   type Paginated,
@@ -356,6 +363,38 @@ export function fetchQuizzes(sportSlug: string): Promise<{ data: QuizSummary[] }
   return apiGet(`/v1/sports/${sportSlug}/quizzes`, listEnvelope(quizSummarySchema), {
     revalidate: 3_600,
     tags: ['content', `sport:${sportSlug}`],
+  });
+}
+
+/**
+ * Latest published news, optionally filtered by sport/competition/team/player/topic/source.
+ *
+ * Cached for 120s: matches `NEWS_CACHE_TTL_SECONDS` on the API side (see
+ * `apps/api/src/config/env.schema.ts`), so a page here is never staler than the
+ * API's own cache would already make it. Tagged `news` plus a tag per filter in
+ * use, mirroring the sport-tagging pattern above, so a filtered list can be
+ * invalidated on its own without clearing every other news page.
+ */
+export function fetchNews(
+  query: Partial<NewsListQuery> = {},
+): Promise<CursorPaginated<NewsArticleSummary>> {
+  const tags = ['news'];
+  if (query.sport) tags.push(`sport:${query.sport}`);
+  if (query.team) tags.push(`team:${query.team}`);
+  if (query.competition) tags.push(`competition:${query.competition}`);
+
+  return apiGet(
+    `/v1/news${toQuery(query as Record<string, string | number | undefined>)}`,
+    cursorPaginated(newsArticleSummarySchema),
+    { revalidate: 120, tags },
+  );
+}
+
+/** One published article, with pipeline provenance the list view omits. */
+export function fetchNewsArticle(id: string): Promise<NewsArticleDetail> {
+  return apiGet(`/v1/news/${id}`, newsArticleDetailSchema, {
+    revalidate: 120,
+    tags: ['news'],
   });
 }
 

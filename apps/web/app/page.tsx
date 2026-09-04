@@ -3,7 +3,8 @@ import type { Metadata } from 'next';
 import { unstable_noStore as noStore } from 'next/cache';
 import { Container } from '@/components/layout/container';
 import { HighlightRail } from '@/components/sports/highlight-rail';
-import { fetchHighlights, fetchSports } from '@/lib/api';
+import { NewsList } from '@/components/news/news-list';
+import { fetchHighlights, fetchNews, fetchSports } from '@/lib/api';
 import { SITE_NAME, SITE_TAGLINE, buildMetadata } from '@/lib/seo';
 
 export const metadata: Metadata = buildMetadata({
@@ -23,7 +24,7 @@ export default async function HomePage() {
   // that runs without a reachable API bakes the fallback into the HTML and
   // serves it until the next revalidation. `noStore` on the failure path forces
   // that render to be dynamic, so a failed fetch is never what gets cached.
-  const [sports, highlights] = await Promise.all([
+  const [sports, highlights, news] = await Promise.all([
     fetchSports()
       .then((result) => result.data)
       .catch(() => {
@@ -31,6 +32,9 @@ export default async function HomePage() {
         return [];
       }),
     fetchHighlights()
+      .then((result) => result.data)
+      .catch(() => []),
+    fetchNews({ limit: 8 })
       .then((result) => result.data)
       .catch(() => []),
   ]);
@@ -76,6 +80,10 @@ export default async function HomePage() {
               Sports are unavailable right now. The API may be starting up.
             </p>
           )}
+
+          <div className="mt-12">
+            <NewsList heading="Latest Sports News" articles={news} />
+          </div>
         </div>
 
         <HighlightRail highlights={highlights} />
