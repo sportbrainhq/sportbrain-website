@@ -138,6 +138,77 @@ export const envSchema = z
     CONTACT_INTERNAL_NOTIFY_EMAIL: z.string().email().optional(),
     CONTACT_RATE_LIMIT_TTL_SECONDS: z.coerce.number().int().positive().default(60),
     CONTACT_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(3),
+
+    // Accounts (Google OAuth + sessions). The only identity provider — see
+    // `modules/auth/google-oauth.service.ts`. No sensible default exists for
+    // any of these; an unconfigured auth system must fail to start, not run
+    // half-configured.
+    GOOGLE_CLIENT_ID: z.string().min(1),
+    GOOGLE_CLIENT_SECRET: z.string().min(1),
+    GOOGLE_CALLBACK_URL: z.string().url(),
+
+    // HMAC key that signs the session cookie value, so a tampered cookie is
+    // rejected before it ever reaches the database. Generate with
+    // `openssl rand -hex 32`. No default: a guessable or shared secret here
+    // is a full account-takeover vector.
+    SESSION_SECRET: z.string().min(32),
+    SESSION_TTL_SECONDS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(60 * 60 * 24 * 30),
+    // Shared parent domain for the session cookie, e.g. `.sportbrainhq.com`,
+    // so the web and API origins can both read it. Unset means host-only,
+    // which is correct for local development (same host, different ports
+    // don't need cookie sharing beyond what SameSite already allows).
+    COOKIE_DOMAIN: z.string().optional(),
+
+    // The web app's origin. Required, and the only value `next`/`resume`
+    // redirect targets are ever allowed to point at — see
+    // `common/security/safe-redirect.ts`. A wrong or missing value here is an
+    // open-redirect risk, not just a broken redirect.
+    FRONTEND_URL: z.string().url(),
+
+    // Quiz platform (Phase C). Question counts per mode: config-driven per
+    // Part 2's explicit instruction ("do not scatter constants through
+    // components"). Defaults match the spec exactly; override only to
+    // experiment.
+    QUIZ_SPORT_QUICK_COUNT: z.coerce.number().int().positive().default(5),
+    QUIZ_SPORT_STANDARD_COUNT: z.coerce.number().int().positive().default(10),
+    QUIZ_SPORT_CHALLENGE_COUNT: z.coerce.number().int().positive().default(20),
+    QUIZ_MASTER_QUICK_COUNT: z.coerce.number().int().positive().default(10),
+    QUIZ_MASTER_STANDARD_COUNT: z.coerce.number().int().positive().default(20),
+    QUIZ_MASTER_MARATHON_COUNT: z.coerce.number().int().positive().default(50),
+
+    // Target difficulty distribution for sport quizzes (Part 24). Expected
+    // to sum to 1 but not enforced to, same reasoning as the news clustering
+    // weights above: a deliberate experiment with the mix shouldn't require
+    // hand-renormalising the rest.
+    QUIZ_DIFFICULTY_EASY_WEIGHT: z.coerce.number().min(0).max(1).default(0.3),
+    QUIZ_DIFFICULTY_MEDIUM_WEIGHT: z.coerce.number().min(0).max(1).default(0.4),
+    QUIZ_DIFFICULTY_HARD_WEIGHT: z.coerce.number().min(0).max(1).default(0.25),
+    QUIZ_DIFFICULTY_EXPERT_WEIGHT: z.coerce.number().min(0).max(1).default(0.05),
+
+    // No-repetition policy cooldowns (Part 27). A question answered correctly
+    // is eligible to repeat after the longer window; answered incorrectly,
+    // the shorter one — a wrong answer is exactly the thing worth
+    // re-testing sooner.
+    QUIZ_CORRECT_COOLDOWN_DAYS: z.coerce.number().int().positive().default(90),
+    QUIZ_INCORRECT_COOLDOWN_DAYS: z.coerce.number().int().positive().default(14),
+
+    // An IN_PROGRESS attempt untouched for this long is treated as expired on
+    // next read (Part 29's EXPIRED status) rather than resumable forever.
+    QUIZ_ATTEMPT_EXPIRY_HOURS: z.coerce.number().int().positive().default(48),
+
+    // Minimum answered-question sample size before a category/monthly
+    // "strongest category" insight is shown at all (Part 50) — never label
+    // someone from two data points.
+    QUIZ_STATS_MIN_CATEGORY_SAMPLE: z.coerce.number().int().positive().default(10),
+
+    // Reports a question needs to accumulate before it's auto-flagged
+    // REVIEW_REQUIRED for an editor to look at (Part 45-46) — never
+    // auto-unpublished, only flagged.
+    QUESTION_REPORT_FLAG_THRESHOLD: z.coerce.number().int().positive().default(5),
   })
   .superRefine((config, ctx) => {
     if (config.NODE_ENV !== 'production') return;
@@ -158,6 +229,22 @@ export const envSchema = z
         code: z.ZodIssueCode.custom,
         path: ['CORS_ORIGINS'],
         message: 'CORS_ORIGINS must not contain localhost in production.',
+      });
+    }
+
+    if (config.FRONTEND_URL.includes('localhost')) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['FRONTEND_URL'],
+        message: 'FRONTEND_URL must not be localhost in production.',
+      });
+    }
+
+    if (!config.COOKIE_DOMAIN) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['COOKIE_DOMAIN'],
+        message: 'COOKIE_DOMAIN must be set in production, or the session cookie is host-only.',
       });
     }
   });

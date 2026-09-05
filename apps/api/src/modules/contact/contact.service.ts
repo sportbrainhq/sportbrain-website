@@ -30,6 +30,15 @@ export interface SubmitContactInput {
   /** Captured by the controller, never trusted from the client body. */
   userAgent: string | null;
   ipHash: string | null;
+  /**
+   * Extra structured context a caller other than the public contact form
+   * wants attached — e.g. `QuestionReportsService` attaching
+   * questionId/questionCode/attempt-snapshot context. Merged into
+   * `metadata` alongside the fields every submission carries; never
+   * exposed on `CreateContactRequest` itself, since that contract is
+   * shared with the public form and must stay caller-agnostic.
+   */
+  extraMetadata?: Record<string, unknown>;
 }
 
 /**
@@ -62,6 +71,7 @@ export class ContactService {
     };
     if (request.whatIsIncorrect) metadata.whatIsIncorrect = request.whatIsIncorrect;
     if (request.whatItShouldSay) metadata.whatItShouldSay = request.whatItShouldSay;
+    if (input.extraMetadata) Object.assign(metadata, input.extraMetadata);
 
     const row = await this.repository.create({
       referenceCode,
@@ -87,9 +97,7 @@ export class ContactService {
     return this.toDetail(row);
   }
 
-  async findAll(
-    query: PaginationQuery,
-  ): Promise<{
+  async findAll(query: PaginationQuery): Promise<{
     data: ContactSubmissionSummary[];
     pagination: ReturnType<typeof buildPaginationMeta>;
   }> {

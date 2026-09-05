@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { AccountMenu } from './account-menu';
 import { Container } from './container';
 
 /**
@@ -16,6 +17,7 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
+  { href: '/quiz', label: 'Master Quiz' },
   { href: '/about', label: 'About' },
   { href: '/contact', label: 'Contact Us' },
 ];
@@ -35,22 +37,26 @@ export function SiteHeader() {
             </span>
           </Link>
 
-          {NAV_ITEMS.length > 0 && (
-            <nav aria-label="Main navigation">
-              <ul className="flex items-center gap-6 text-sm font-medium">
-                {NAV_ITEMS.map((item) => (
-                  <li key={item.href}>
-                    <Link
-                      href={item.href}
-                      className="text-muted-foreground transition-colors hover:text-foreground"
-                    >
-                      {item.label}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </nav>
-          )}
+          <div className="flex items-center gap-6">
+            {NAV_ITEMS.length > 0 && (
+              <nav aria-label="Main navigation">
+                <ul className="flex items-center gap-6 text-sm font-medium">
+                  {NAV_ITEMS.map((item) => (
+                    <li key={item.href}>
+                      <Link
+                        href={item.href}
+                        className="text-muted-foreground transition-colors hover:text-foreground"
+                      >
+                        {item.label}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </nav>
+            )}
+
+            <AccountMenu />
+          </div>
         </div>
       </Container>
     </header>

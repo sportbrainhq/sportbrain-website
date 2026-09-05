@@ -21,6 +21,18 @@ import { MetricsModule } from './infrastructure/metrics/metrics.module';
 import { JobsModule } from './jobs/jobs.module';
 import { InternalNewsModule } from './modules/internal-news/internal-news.module';
 import { ContactModule } from './modules/contact/contact.module';
+import { AuthModule } from './modules/auth/auth.module';
+import { UsersModule } from './modules/users/users.module';
+import { SavedEntitiesModule } from './modules/saved-entities/saved-entities.module';
+import { FollowsModule } from './modules/follows/follows.module';
+import { PreferencesModule } from './modules/preferences/preferences.module';
+import { ActivityModule } from './modules/activity/activity.module';
+import { QuestionsModule } from './modules/questions/questions.module';
+import { QuestionGenerationModule } from './modules/question-generation/question-generation.module';
+import { QuizGenerationModule } from './modules/quiz-generation/quiz-generation.module';
+import { QuizAttemptsModule } from './modules/quiz-attempts/quiz-attempts.module';
+import { QuizStatsModule } from './modules/quiz-stats/quiz-stats.module';
+import { QuestionReportsModule } from './modules/question-reports/question-reports.module';
 import { QueueModule } from './queue/queue.module';
 
 /**
@@ -72,8 +84,25 @@ import { QueueModule } from './queue/queue.module';
     IntegrationsModule,
 
     // Domain modules. SharedModule is first because it is @Global and the
-    // others inject the statistics assembler it provides.
+    // others inject the statistics assembler it provides. AuthModule comes
+    // right after: several later modules (users, saved-entities, follows)
+    // will import it for `SessionGuard`.
     SharedModule,
+    AuthModule,
+    ActivityModule,
+    UsersModule,
+    SavedEntitiesModule,
+    FollowsModule,
+    PreferencesModule,
+    // Phase C: the canonical Question Bank. Depends on nothing sport-specific
+    // beyond `sport.id`, so it sits alongside the other account-adjacent
+    // domain modules rather than inside SportsModule.
+    QuestionsModule,
+    QuestionGenerationModule,
+    QuizGenerationModule,
+    QuizAttemptsModule,
+    QuizStatsModule,
+    QuestionReportsModule,
     SportsModule,
     TeamsModule,
     PlayersModule,

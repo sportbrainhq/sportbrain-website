@@ -3,6 +3,7 @@ import { Logger, VersioningType } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import type { AppConfig } from './config';
@@ -45,6 +46,12 @@ async function bootstrap(): Promise<void> {
   // Trust the first proxy hop so that rate limiting and logging see the real
   // client IP rather than the load balancer's.
   app.getHttpAdapter().getInstance().set('trust proxy', 1);
+
+  // Unsigned: the session and OAuth-handoff cookies are HMAC-signed at the
+  // value level (see `common/security/signed-cookie.ts`), which is checked
+  // explicitly wherever they're read, rather than relying on Express's
+  // built-in cookie-signing convention.
+  app.use(cookieParser());
 
   // --- Routing ------------------------------------------------------------
 

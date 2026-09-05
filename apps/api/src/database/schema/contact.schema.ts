@@ -1,5 +1,6 @@
 import { index, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
-import { primaryId, timestamps } from './_shared';
+import { entityRef, primaryId, timestamps } from './_shared';
+import { users } from './user.schema';
 
 /**
  * Contact & feedback submissions.
@@ -50,7 +51,7 @@ export const contactSubmission = pgTable(
     referenceCode: text('reference_code').notNull(),
 
     /** Set when the submitter was authenticated. Null for anonymous senders. */
-    userId: text('user_id'),
+    userId: entityRef('user_id').references(() => users.id, { onDelete: 'set null' }),
 
     category: contactCategoryEnum('category').notNull(),
     status: contactStatusEnum('status').notNull().default('received'),
