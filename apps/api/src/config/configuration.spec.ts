@@ -9,6 +9,13 @@ describe('loadConfiguration', () => {
   const validEnv = {
     NODE_ENV: 'development',
     DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/sportbrain_web',
+    // Accounts (Google OAuth + sessions): required with no default, so every
+    // test needs a valid value, same as DATABASE_URL above.
+    GOOGLE_CLIENT_ID: 'test-client-id',
+    GOOGLE_CLIENT_SECRET: 'test-client-secret',
+    GOOGLE_CALLBACK_URL: 'http://localhost:4000/v1/auth/google/callback',
+    SESSION_SECRET: 'a'.repeat(32),
+    FRONTEND_URL: 'http://localhost:3000',
   };
 
   beforeEach(() => {
@@ -16,7 +23,17 @@ describe('loadConfiguration', () => {
       if (
         key.startsWith('DATABASE_') ||
         key.startsWith('RATE_LIMIT_') ||
-        ['NODE_ENV', 'API_PORT', 'CORS_ORIGINS', 'SWAGGER_ENABLED', 'JOBS_ENABLED'].includes(key)
+        key.startsWith('GOOGLE_') ||
+        key.startsWith('SESSION_') ||
+        [
+          'NODE_ENV',
+          'API_PORT',
+          'CORS_ORIGINS',
+          'SWAGGER_ENABLED',
+          'JOBS_ENABLED',
+          'COOKIE_DOMAIN',
+          'FRONTEND_URL',
+        ].includes(key)
       ) {
         delete process.env[key];
       }
@@ -63,6 +80,8 @@ describe('loadConfiguration', () => {
       ...validEnv,
       NODE_ENV: 'production',
       CORS_ORIGINS: 'https://sportbrainhq.com',
+      FRONTEND_URL: 'https://sportbrainhq.com',
+      COOKIE_DOMAIN: '.sportbrainhq.com',
       SWAGGER_ENABLED: 'true',
     });
 
@@ -75,9 +94,36 @@ describe('loadConfiguration', () => {
       NODE_ENV: 'production',
       SWAGGER_ENABLED: 'false',
       CORS_ORIGINS: 'http://localhost:3000',
+      FRONTEND_URL: 'https://sportbrainhq.com',
+      COOKIE_DOMAIN: '.sportbrainhq.com',
     });
 
     expect(() => loadConfiguration()).toThrow(/must not contain localhost/);
+  });
+
+  it('rejects a localhost FRONTEND_URL in production', () => {
+    Object.assign(process.env, {
+      ...validEnv,
+      NODE_ENV: 'production',
+      SWAGGER_ENABLED: 'false',
+      CORS_ORIGINS: 'https://sportbrainhq.com',
+      FRONTEND_URL: 'http://localhost:3000',
+      COOKIE_DOMAIN: '.sportbrainhq.com',
+    });
+
+    expect(() => loadConfiguration()).toThrow(/FRONTEND_URL must not be localhost/);
+  });
+
+  it('requires COOKIE_DOMAIN in production', () => {
+    Object.assign(process.env, {
+      ...validEnv,
+      NODE_ENV: 'production',
+      SWAGGER_ENABLED: 'false',
+      CORS_ORIGINS: 'https://sportbrainhq.com',
+      FRONTEND_URL: 'https://sportbrainhq.com',
+    });
+
+    expect(() => loadConfiguration()).toThrow(/COOKIE_DOMAIN must be set in production/);
   });
 
   it('accepts a correct production configuration', () => {
@@ -86,6 +132,8 @@ describe('loadConfiguration', () => {
       NODE_ENV: 'production',
       SWAGGER_ENABLED: 'false',
       CORS_ORIGINS: 'https://sportbrainhq.com',
+      FRONTEND_URL: 'https://sportbrainhq.com',
+      COOKIE_DOMAIN: '.sportbrainhq.com',
     });
 
     const config = loadConfiguration();

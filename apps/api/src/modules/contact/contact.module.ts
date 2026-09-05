@@ -16,5 +16,9 @@ import { ContactService } from './contact.service';
 @Module({
   controllers: [ContactController, ContactAdminController],
   providers: [ContactService, ContactRepository, ContactMailerService],
+  // Exported for `QuestionReportsModule`: reporting a question composes
+  // into the existing contact/correction pipeline (Part 44) rather than
+  // building a second submission-and-notification path.
+  exports: [ContactService],
 })
 export class ContactModule {}

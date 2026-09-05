@@ -21,6 +21,8 @@
  *   7. `content`        the editorial layer we own outright
  *   8. `explainer`      the concept library, and the graph joining it up
  *   9. `news`           the News Engine's canonical article model, provider-independent
+ *  10. `user`           accounts, sessions, and everything a signed-in reader owns
+ *  11. `question`       the canonical Question Bank (Phase C) — quizzes select references, never copies
  *
  * To add a table: create the file, re-export it here, run `pnpm db:generate`,
  * read the generated SQL by hand, then `pnpm db:migrate`.
@@ -38,3 +40,14 @@ export * from './provider.schema';
 export * from './content.schema';
 export * from './news.schema';
 export * from './contact.schema';
+export * from './user.schema';
+export * from './session.schema';
+export * from './preference.schema';
+export * from './follow.schema';
+export * from './saved-entity.schema';
+export * from './quiz-attempt.schema';
+export * from './activity.schema';
+export * from './question.schema';
+export * from './question-generation.schema';
+export * from './question-exposure.schema';
+export * from './quiz-attempt-v2.schema';

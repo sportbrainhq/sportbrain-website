@@ -288,6 +288,34 @@
       "when": 1788543693755,
       "tag": "0040_rapid_fabian_cortez",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1788546989893,
+      "tag": "0041_strong_deadpool",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1788601123622,
+      "tag": "0042_simple_edwin_jarvis",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1788602030918,
+      "tag": "0043_smart_valkyrie",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1788603858175,
+      "tag": "0044_special_chamber",
+      "breakpoints": true
     }
   ]
 }

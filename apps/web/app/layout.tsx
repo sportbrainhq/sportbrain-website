@@ -1,7 +1,9 @@
 import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
+import { AuthProvider } from '@/components/auth/auth-provider';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { SiteHeader } from '@/components/layout/site-header';
+import { getCurrentUser } from '@/lib/auth';
 import { siteUrl } from '@/lib/env';
 import {
   DEFAULT_DESCRIPTION,
@@ -57,29 +59,36 @@ export const viewport: Viewport = {
   ],
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Fetched once per render and passed down, so the header never shows a
+  // logged-out flash before a client-side fetch resolves. See
+  // `components/auth/auth-provider.tsx`.
+  const user = await getCurrentUser();
+
   return (
     <html lang="en-GB" className={inter.variable} suppressHydrationWarning>
       <body className="flex min-h-dvh flex-col antialiased">
-        {/* First focusable element on the page, so keyboard users can bypass
-            the header rather than tabbing through it on every navigation. */}
-        <a href="#main" className="skip-link">
-          Skip to main content
-        </a>
+        <AuthProvider initialUser={user}>
+          {/* First focusable element on the page, so keyboard users can bypass
+              the header rather than tabbing through it on every navigation. */}
+          <a href="#main" className="skip-link">
+            Skip to main content
+          </a>
 
-        <SiteHeader />
+          <SiteHeader />
 
-        <main id="main" className="flex-1">
-          {children}
-        </main>
+          <main id="main" className="flex-1">
+            {children}
+          </main>
 
-        <SiteFooter />
+          <SiteFooter />
 
-        <script
-          type="application/ld+json"
-          // Escaped by jsonLdScript. See the note there on why.
-          dangerouslySetInnerHTML={{ __html: jsonLdScript(websiteJsonLd()) }}
-        />
+          <script
+            type="application/ld+json"
+            // Escaped by jsonLdScript. See the note there on why.
+            dangerouslySetInnerHTML={{ __html: jsonLdScript(websiteJsonLd()) }}
+          />
+        </AuthProvider>
       </body>
     </html>
   );

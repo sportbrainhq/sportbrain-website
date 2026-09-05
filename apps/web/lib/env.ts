@@ -45,6 +45,15 @@ const clientSchema = z.object({
   NEXT_PUBLIC_SOCIAL_X: z.string().default(''),
   NEXT_PUBLIC_SOCIAL_YOUTUBE: z.string().default(''),
   NEXT_PUBLIC_SOCIAL_REDDIT: z.string().default(''),
+
+  /**
+   * Where the *browser* reaches the API from — client components' auth
+   * calls (sign-in link, logout, save/follow) go directly to the API with
+   * `credentials: 'include'`, unlike every other fetch in this app, which
+   * goes through server-rendered `apiGet`/`apiPost`. Public by necessity: a
+   * client component cannot read the server-only `API_URL`.
+   */
+  NEXT_PUBLIC_API_URL: z.string().url().default('http://localhost:4000'),
 });
 
 function parse<T extends z.ZodTypeAny>(schema: T, input: unknown, label: string): z.infer<T> {
@@ -69,6 +78,7 @@ export const clientEnv = parse(
     NEXT_PUBLIC_SOCIAL_X: process.env.NEXT_PUBLIC_SOCIAL_X,
     NEXT_PUBLIC_SOCIAL_YOUTUBE: process.env.NEXT_PUBLIC_SOCIAL_YOUTUBE,
     NEXT_PUBLIC_SOCIAL_REDDIT: process.env.NEXT_PUBLIC_SOCIAL_REDDIT,
+    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
   },
   'client',
 );

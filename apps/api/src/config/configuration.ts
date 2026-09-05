@@ -72,6 +72,20 @@ export interface AppConfig {
     };
   };
 
+  auth: {
+    google: {
+      clientId: string;
+      clientSecret: string;
+      callbackUrl: string;
+    };
+    session: {
+      secret: string;
+      ttlSeconds: number;
+      cookieDomain: string | undefined;
+    };
+    frontendUrl: string;
+  };
+
   news: {
     rss: {
       timeoutMs: number;
@@ -108,6 +122,17 @@ export interface AppConfig {
       breakingBonus: number;
       recencyHalfLifeHours: number;
     };
+  };
+
+  quiz: {
+    sportModeCounts: { QUICK: number; STANDARD: number; CHALLENGE: number };
+    masterModeCounts: { QUICK: number; STANDARD: number; MARATHON: number };
+    difficultyWeights: { EASY: number; MEDIUM: number; HARD: number; EXPERT: number };
+    correctCooldownDays: number;
+    incorrectCooldownDays: number;
+    attemptExpiryHours: number;
+    statsMinCategorySample: number;
+    reportFlagThreshold: number;
   };
 }
 
@@ -188,6 +213,20 @@ export function loadConfiguration(): AppConfig {
       },
     },
 
+    auth: {
+      google: {
+        clientId: env.GOOGLE_CLIENT_ID,
+        clientSecret: env.GOOGLE_CLIENT_SECRET,
+        callbackUrl: env.GOOGLE_CALLBACK_URL,
+      },
+      session: {
+        secret: env.SESSION_SECRET,
+        ttlSeconds: env.SESSION_TTL_SECONDS,
+        cookieDomain: env.COOKIE_DOMAIN,
+      },
+      frontendUrl: env.FRONTEND_URL,
+    },
+
     news: {
       rss: {
         timeoutMs: env.NEWS_RSS_TIMEOUT_MS,
@@ -223,6 +262,30 @@ export function loadConfiguration(): AppConfig {
         breakingBonus: env.NEWS_RANKING_BREAKING_BONUS,
         recencyHalfLifeHours: env.NEWS_RANKING_RECENCY_HALF_LIFE_HOURS,
       },
+    },
+
+    quiz: {
+      sportModeCounts: {
+        QUICK: env.QUIZ_SPORT_QUICK_COUNT,
+        STANDARD: env.QUIZ_SPORT_STANDARD_COUNT,
+        CHALLENGE: env.QUIZ_SPORT_CHALLENGE_COUNT,
+      },
+      masterModeCounts: {
+        QUICK: env.QUIZ_MASTER_QUICK_COUNT,
+        STANDARD: env.QUIZ_MASTER_STANDARD_COUNT,
+        MARATHON: env.QUIZ_MASTER_MARATHON_COUNT,
+      },
+      difficultyWeights: {
+        EASY: env.QUIZ_DIFFICULTY_EASY_WEIGHT,
+        MEDIUM: env.QUIZ_DIFFICULTY_MEDIUM_WEIGHT,
+        HARD: env.QUIZ_DIFFICULTY_HARD_WEIGHT,
+        EXPERT: env.QUIZ_DIFFICULTY_EXPERT_WEIGHT,
+      },
+      correctCooldownDays: env.QUIZ_CORRECT_COOLDOWN_DAYS,
+      incorrectCooldownDays: env.QUIZ_INCORRECT_COOLDOWN_DAYS,
+      attemptExpiryHours: env.QUIZ_ATTEMPT_EXPIRY_HOURS,
+      statsMinCategorySample: env.QUIZ_STATS_MIN_CATEGORY_SAMPLE,
+      reportFlagThreshold: env.QUESTION_REPORT_FLAG_THRESHOLD,
     },
   };
 }
