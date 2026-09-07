@@ -35,6 +35,13 @@ export const contactStatusEnum = pgEnum('contact_status', [
   'accepted',
   'rejected',
   'resolved',
+  /**
+   * Submitter closed their own submission from their history page
+   * (`ContactMeController`), distinct from an operator's `resolved` — a
+   * submitter can close whenever they no longer need a response, whether or
+   * not anyone actually responded.
+   */
+  'closed_by_user',
 ]);
 
 export const contactSubmission = pgTable(

@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useCallback, useContext, useState, type ReactNode } from 'react';
+import { useRouter } from 'next/navigation';
 import type { SafeUser } from '@sportbrain/contracts';
 import { fetchCurrentUserClient, logout as logoutRequest } from '@/lib/auth-client';
 
@@ -29,6 +30,7 @@ export function AuthProvider({
   children: ReactNode;
 }) {
   const [user, setUser] = useState<SafeUser | null>(initialUser);
+  const router = useRouter();
 
   const refresh = useCallback(async () => {
     setUser(await fetchCurrentUserClient());
@@ -37,7 +39,12 @@ export function AuthProvider({
   const logout = useCallback(async () => {
     await logoutRequest();
     setUser(null);
-  }, []);
+    // Every /profile/* page is auth-gated; staying put after logout leaves
+    // stale server-rendered data (or a redirect loop) on screen. Home is
+    // always safe to land on signed out.
+    router.push('/');
+    router.refresh();
+  }, [router]);
 
   return <AuthContext.Provider value={{ user, refresh, logout }}>{children}</AuthContext.Provider>;
 }

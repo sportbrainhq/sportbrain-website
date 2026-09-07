@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
+import { AuthModule } from '../auth/auth.module';
 import { ContactAdminController } from './contact-admin.controller';
 import { ContactMailerService } from './contact-mailer.service';
+import { ContactMeController } from './contact-me.controller';
 import { ContactController } from './contact.controller';
 import { ContactRepository } from './contact.repository';
 import { ContactService } from './contact.service';
@@ -14,7 +16,8 @@ import { ContactService } from './contact.service';
  * `@Global` module before a second consumer exists is speculative.
  */
 @Module({
-  controllers: [ContactController, ContactAdminController],
+  imports: [AuthModule],
+  controllers: [ContactController, ContactAdminController, ContactMeController],
   providers: [ContactService, ContactRepository, ContactMailerService],
   // Exported for `QuestionReportsModule`: reporting a question composes
   // into the existing contact/correction pipeline (Part 44) rather than

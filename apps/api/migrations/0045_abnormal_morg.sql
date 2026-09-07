@@ -1,0 +1,1 @@
+ALTER TYPE "public"."contact_status" ADD VALUE 'closed_by_user';

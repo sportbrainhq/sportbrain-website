@@ -17,6 +17,8 @@ import { Avatar } from '@/components/sports/avatar';
 import { StatisticsPanel } from '@/components/sports/statistics-panel';
 import { ApiError, fetchPlayer } from '@/lib/api';
 import { buildMetadata } from '@/lib/seo';
+import { SaveButton } from '@/components/entities/save-button';
+import { FollowButton } from '@/components/entities/follow-button';
 
 export async function generateMetadata({
   params,
@@ -149,34 +151,40 @@ export default async function PlayerPage({
 
   return (
     <article className="space-y-8">
-      <header className="flex flex-wrap items-start gap-4">
-        {player.imageUrl && (
-          // Through `Avatar` rather than a bare `<img>`: these are Wikimedia
-          // `Special:FilePath` URLs, which are `http://` and unsized, so a bare
-          // tag renders as a broken image. `object-cover` overrides the crest
-          // default, since a player portrait should fill the square.
-          <Avatar
-            text={player.fullName}
-            imageUrl={player.imageUrl}
-            size={96}
-            className="rounded-lg object-cover"
-          />
-        )}
-        <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-            <Link href={`/sports/${sportSlug}/players`} className="hover:underline">
-              {player.sport.name} player
-            </Link>
-          </p>
-          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-2">
-            <h1 className="text-3xl font-black tracking-tight sm:text-4xl">{player.fullName}</h1>
-            <CareerStatusBadge status={player.careerStatus} />
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex flex-wrap items-start gap-4">
+          {player.imageUrl && (
+            // Through `Avatar` rather than a bare `<img>`: these are Wikimedia
+            // `Special:FilePath` URLs, which are `http://` and unsized, so a bare
+            // tag renders as a broken image. `object-cover` overrides the crest
+            // default, since a player portrait should fill the square.
+            <Avatar
+              text={player.fullName}
+              imageUrl={player.imageUrl}
+              size={96}
+              className="rounded-lg object-cover"
+            />
+          )}
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+              <Link href={`/sports/${sportSlug}/players`} className="hover:underline">
+                {player.sport.name} player
+              </Link>
+            </p>
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-2">
+              <h1 className="text-3xl font-black tracking-tight sm:text-4xl">{player.fullName}</h1>
+              <CareerStatusBadge status={player.careerStatus} />
+            </div>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {[player.nationality, player.dateOfBirth && `born ${formatDate(player.dateOfBirth)}`]
+                .filter(Boolean)
+                .join(' · ')}
+            </p>
           </div>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {[player.nationality, player.dateOfBirth && `born ${formatDate(player.dateOfBirth)}`]
-              .filter(Boolean)
-              .join(' · ')}
-          </p>
+        </div>
+        <div className="flex shrink-0 gap-2">
+          <SaveButton entityType="player" entityId={player.id} />
+          <FollowButton entityType="player" entityId={player.id} />
         </div>
       </header>
 

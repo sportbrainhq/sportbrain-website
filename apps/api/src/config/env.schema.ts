@@ -138,6 +138,14 @@ export const envSchema = z
     CONTACT_INTERNAL_NOTIFY_EMAIL: z.string().email().optional(),
     CONTACT_RATE_LIMIT_TTL_SECONDS: z.coerce.number().int().positive().default(60),
     CONTACT_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(3),
+    // Outbound email for the two contact-flow messages (ack + internal
+    // notification). Optional: unset means ContactMailerService logs instead
+    // of sending, same log-only stopgap as before Resend was wired in — a
+    // deployment with no key configured yet must not crash on startup.
+    RESEND_API_KEY: z.string().optional(),
+    // Resend's shared sandbox sender, usable with zero domain setup — swap
+    // for a verified custom domain address once one exists.
+    CONTACT_FROM_EMAIL: z.string().email().default('onboarding@resend.dev'),
 
     // Accounts (Google OAuth + sessions). The only identity provider — see
     // `modules/auth/google-oauth.service.ts`. No sensible default exists for

@@ -5,6 +5,7 @@ import type {
   ContactSubmissionResult,
   ContactSubmissionSummary,
   CreateContactRequest,
+  MyContactSubmission,
 } from '@sportbrain/contracts';
 import { buildPaginationMeta, type PaginationQuery } from '@sportbrain/contracts';
 import { AppException } from '../../common';
@@ -118,6 +119,34 @@ export class ContactService {
     return this.toDetail(row);
   }
 
+  /** A submitter's own history — see `ContactMeController`. */
+  async findAllForUser(
+    userId: string,
+    query: PaginationQuery,
+  ): Promise<{
+    data: MyContactSubmission[];
+    pagination: ReturnType<typeof buildPaginationMeta>;
+  }> {
+    const { rows, total } = await this.repository.findAllForUser(userId, query);
+    return {
+      data: rows.map((row) => this.toMySubmission(row)),
+      pagination: buildPaginationMeta(total, query),
+    };
+  }
+
+  /**
+   * Submitter closing their own submission. Distinct from admin
+   * `updateStatus`: scoped to the owning user, and the only transition
+   * allowed is into `closed_by_user` — a submitter can close a request but
+   * cannot forge `resolved`/`accepted`/etc., which stay operator-only
+   * signals of what actually happened.
+   */
+  async closeOwn(id: string, userId: string): Promise<MyContactSubmission> {
+    const row = await this.repository.updateStatusForUser(id, userId, 'closed_by_user', new Date());
+    if (!row) throw AppException.notFound(`No contact submission with id "${id}"`);
+    return this.toMySubmission(row);
+  }
+
   /** Sends both notification emails, isolating failures so a DB write always stands. */
   private async notify(row: ContactSubmissionRow): Promise<void> {
     const emailInput = {
@@ -167,6 +196,19 @@ export class ContactService {
       name: row.name,
       email: row.email,
       subject: row.subject,
+      createdAt: row.createdAt.toISOString(),
+      resolvedAt: row.resolvedAt ? row.resolvedAt.toISOString() : null,
+    };
+  }
+
+  private toMySubmission(row: ContactSubmissionRow): MyContactSubmission {
+    return {
+      id: row.id,
+      referenceCode: row.referenceCode,
+      category: row.category,
+      status: row.status,
+      subject: row.subject,
+      message: row.message,
       createdAt: row.createdAt.toISOString(),
       resolvedAt: row.resolvedAt ? row.resolvedAt.toISOString() : null,
     };

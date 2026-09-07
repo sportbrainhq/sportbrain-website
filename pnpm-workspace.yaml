@@ -14,6 +14,7 @@ allowBuilds:
   unrs-resolver: true # module resolution used by ESLint
   # Analytics ping only. Nothing depends on it running.
   '@scarf/scarf': false
+  msgpackr-extract: true # native msgpack codec used by ioredis/bullmq for the queue
 
 # Dependency versions that must stay identical across every workspace package.
 # Two copies of React or Zod in one monorepo produce runtime errors that are

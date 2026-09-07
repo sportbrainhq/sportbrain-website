@@ -70,6 +70,8 @@ export interface AppConfig {
       ttlSeconds: number;
       limit: number;
     };
+    resendApiKey: string | undefined;
+    fromEmail: string;
   };
 
   auth: {
@@ -211,6 +213,8 @@ export function loadConfiguration(): AppConfig {
         ttlSeconds: env.CONTACT_RATE_LIMIT_TTL_SECONDS,
         limit: env.CONTACT_RATE_LIMIT_MAX,
       },
+      resendApiKey: env.RESEND_API_KEY,
+      fromEmail: env.CONTACT_FROM_EMAIL,
     },
 
     auth: {

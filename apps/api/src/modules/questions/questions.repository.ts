@@ -129,6 +129,21 @@ export class QuestionsRepository {
     });
   }
 
+  /** Transitions `question.status` (publish/retire/etc), setting whichever timestamp column accompanies that transition. */
+  async updateStatus(
+    id: string,
+    status: QuestionRow['status'],
+    extra: Partial<Pick<NewQuestionRow, 'publishedAt' | 'retiredAt'>> = {},
+  ): Promise<QuestionRow> {
+    const [row] = await this.database.db
+      .update(question)
+      .set({ status, ...extra })
+      .where(eq(question.id, id))
+      .returning();
+    if (!row) throw new Error(`Question "${id}" not found on status update`);
+    return row;
+  }
+
   /**
    * Increments `reportCount` and, once it crosses `flagThreshold`, sets
    * `flaggedForReview` — a quality signal for admins (Part 45-46), never an

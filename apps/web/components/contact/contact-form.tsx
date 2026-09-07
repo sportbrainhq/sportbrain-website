@@ -1,11 +1,21 @@
 'use client';
 
-import { useActionState, useMemo, useState } from 'react';
-import { useFormStatus } from 'react-dom';
-import { submitContactForm, type ContactFormState } from '@/app/contact/actions';
+import { useMemo, useState, type FormEvent } from 'react';
+import { createContactRequestSchema } from '@sportbrain/contracts';
+import { useAuth } from '@/components/auth/auth-provider';
+import { googleSignInUrl } from '@/lib/auth-client';
+import { ContactApiError, submitContact } from '@/lib/contact-api';
 import { CONTACT_REASONS, type ContactReasonOption } from '@/app/contact/content';
 
-const INITIAL_STATE: ContactFormState = { status: 'idle' };
+interface FormState {
+  status: 'idle' | 'submitting' | 'success' | 'error';
+  referenceCode?: string;
+  email?: string;
+  message?: string;
+  fieldErrors?: Record<string, string>;
+}
+
+const INITIAL_STATE: FormState = { status: 'idle' };
 
 const inputClass =
   'mt-1.5 w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-foreground/40 focus:ring-2 focus:ring-primary/20';
@@ -16,24 +26,39 @@ interface ContactFormProps {
   /** Pre-fills the reason and page reference when opened from content (e.g. a "Report an issue" link). */
   initialCategory?: ContactReasonOption['value'];
   initialPageUrl?: string;
-  /** Pre-populated when the visitor is signed in. Neither is read from anywhere yet — no auth system exists (see InternalApiKeyGuard's caveat) — so both default empty. */
-  initialName?: string;
-  initialEmail?: string;
 }
 
-export function ContactForm({
-  initialCategory = 'general',
-  initialPageUrl,
-  initialName = '',
-  initialEmail = '',
-}: ContactFormProps) {
-  const [state, formAction] = useActionState(submitContactForm, INITIAL_STATE);
+export function ContactForm({ initialCategory = 'general', initialPageUrl }: ContactFormProps) {
+  const { user } = useAuth();
+  const [state, setState] = useState<FormState>(INITIAL_STATE);
   const [category, setCategory] = useState<ContactReasonOption['value']>(initialCategory);
 
   const selectedReason = useMemo(
     () => CONTACT_REASONS.find((reason) => reason.value === category),
     [category],
   );
+
+  // Submitting requires a signed-in identity — every contact submission
+  // now carries a real user (see ContactController), and it's also how a
+  // submitter later sees it in their own history/close it.
+  if (!user) {
+    return (
+      <div className="rounded-lg border border-border bg-card p-6 text-center sm:p-8">
+        <p className="text-sm text-muted-foreground">
+          Sign in to send a message — it lets us follow up with you and lets you track it under your
+          profile.
+        </p>
+        <a
+          href={googleSignInUrl(
+            typeof window !== 'undefined' ? window.location.pathname : undefined,
+          )}
+          className="mt-4 inline-flex rounded-md bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:opacity-90"
+        >
+          Sign in to continue
+        </a>
+      </div>
+    );
+  }
 
   if (state.status === 'success') {
     return (
@@ -45,14 +70,71 @@ export function ContactForm({
         <p className="text-xs font-bold tracking-widest text-muted-foreground">MESSAGE RECEIVED</p>
         <p className="mt-3 text-2xl font-black tracking-tight">Reference: {state.referenceCode}</p>
         <p className="mt-3 text-sm text-muted-foreground">
-          We&apos;ll review it and contact you at {state.email} if a response is required.
+          We&apos;ll review it and contact you at {state.email} if a response is required. You can
+          track it any time under{' '}
+          <a href="/profile/contact" className="underline underline-offset-4">
+            Support
+          </a>
+          .
         </p>
+        <button
+          type="button"
+          onClick={() => setState(INITIAL_STATE)}
+          className="mt-6 rounded-md border border-border px-5 py-2 text-sm font-semibold transition-colors hover:bg-muted/50"
+        >
+          Submit a new request
+        </button>
       </div>
     );
   }
 
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const raw = {
+      category: formData.get('category'),
+      name: formData.get('name'),
+      email: formData.get('email'),
+      subject: formData.get('subject'),
+      message: formData.get('message'),
+      pageUrl: formData.get('pageUrl') || undefined,
+      sourceUrl: formData.get('sourceUrl') || undefined,
+      whatIsIncorrect: formData.get('whatIsIncorrect') || undefined,
+      whatItShouldSay: formData.get('whatItShouldSay') || undefined,
+    };
+
+    const parsed = createContactRequestSchema.safeParse(raw);
+    if (!parsed.success) {
+      const fieldErrors: Record<string, string> = {};
+      for (const issue of parsed.error.issues) {
+        const key = issue.path.join('.') || '(root)';
+        if (!fieldErrors[key]) fieldErrors[key] = issue.message;
+      }
+      setState({ status: 'error', message: 'Please check the highlighted fields.', fieldErrors });
+      return;
+    }
+
+    setState({ status: 'submitting' });
+    try {
+      const result = await submitContact(parsed.data);
+      setState({ status: 'success', referenceCode: result.referenceCode, email: result.email });
+    } catch (error) {
+      if (error instanceof ContactApiError && error.status === 429) {
+        setState({
+          status: 'error',
+          message: "You've sent a few messages recently. Please try again in a minute.",
+        });
+        return;
+      }
+      setState({
+        status: 'error',
+        message: 'Something went wrong sending your message. Please try again shortly.',
+      });
+    }
+  }
+
   return (
-    <form action={formAction} className="space-y-6" noValidate>
+    <form onSubmit={handleSubmit} className="space-y-6" noValidate>
       {initialPageUrl && <input type="hidden" name="pageUrl" value={initialPageUrl} />}
 
       {/* Reason selector */}
@@ -167,7 +249,7 @@ export function ContactForm({
             name="name"
             type="text"
             required
-            defaultValue={initialName}
+            defaultValue={user.displayName}
             autoComplete="name"
             className={inputClass}
             aria-invalid={Boolean(state.fieldErrors?.name)}
@@ -188,7 +270,7 @@ export function ContactForm({
             name="email"
             type="email"
             required
-            defaultValue={initialEmail}
+            defaultValue={user.email}
             autoComplete="email"
             className={inputClass}
             aria-invalid={Boolean(state.fieldErrors?.email)}
@@ -249,20 +331,13 @@ export function ContactForm({
         </p>
       )}
 
-      <SubmitButton />
+      <button
+        type="submit"
+        disabled={state.status === 'submitting'}
+        className="rounded-md bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        {state.status === 'submitting' ? 'Sending…' : 'Send message'}
+      </button>
     </form>
-  );
-}
-
-function SubmitButton() {
-  const { pending } = useFormStatus();
-  return (
-    <button
-      type="submit"
-      disabled={pending}
-      className="rounded-md bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-    >
-      {pending ? 'Sending…' : 'Send message'}
-    </button>
   );
 }

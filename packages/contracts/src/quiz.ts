@@ -84,6 +84,8 @@ export const quizAttemptSchema = z.object({
   publicCode: z.string(),
   quizType: quizTypeSchema,
   sportId: z.string().nullable(),
+  /** Present for SPORT attempts, so a result/history screen can link back to that sport's quiz landing (`/sports/{slug}/quiz`) without a second lookup. Null for MASTER. */
+  sportSlug: z.string().nullable(),
   mode: quizModeSchema,
   status: quizAttemptStatusSchema,
   requestedQuestionCount: z.number().int(),

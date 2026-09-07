@@ -2,7 +2,6 @@ import {
   competitionDetailSchema,
   competitionSummarySchema,
   contactConfigSchema,
-  contactSubmissionResultSchema,
   contentDetailSchema,
   contentSummarySchema,
   explainerDetailSchema,
@@ -28,10 +27,8 @@ import {
   todayBucketSchema,
   type CompetitionDetail,
   type ContactConfig,
-  type ContactSubmissionResult,
   type ContentDetail,
   type ContentSummary,
-  type CreateContactRequest,
   type CursorPaginated,
   type ExplainerDetail,
   type ExplainerLibrary,
@@ -491,11 +488,6 @@ export function fetchContactConfig(): Promise<ContactConfig> {
     revalidate: 3_600,
     tags: ['contact'],
   });
-}
-
-/** Submits the contact form. Never cached: this is a write. */
-export function submitContact(body: CreateContactRequest): Promise<ContactSubmissionResult> {
-  return apiPost('/v1/contact', body, contactSubmissionResultSchema, { timeoutMs: 10_000 });
 }
 
 /** Builds a query string, dropping undefined values so they do not appear as "undefined". */

@@ -51,6 +51,7 @@
     "pino-http": "^10.4.0",
     "postgres": "^3.4.5",
     "reflect-metadata": "^0.2.2",
+    "resend": "^6.26.0",
     "rxjs": "^7.8.1",
     "zod": "catalog:"
   },

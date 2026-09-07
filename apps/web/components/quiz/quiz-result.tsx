@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import type { QuizAttempt } from '@sportbrain/contracts';
 import { QuestionReviewItem } from './question-review-item';
 
@@ -101,8 +102,25 @@ export function QuizResult({ attempt }: { attempt: QuizAttempt }) {
           ))}
         </div>
       </section>
+
+      <div className="flex justify-center">
+        <Link
+          href={backToQuizHref(attempt)}
+          className="inline-flex items-center justify-center rounded-sm bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+        >
+          {attempt.quizType === 'MASTER' ? 'Back to Master Quiz' : 'Back to Quiz'}
+        </Link>
+      </div>
     </div>
   );
+}
+
+/** Master always returns to `/quiz`; a sport attempt returns to that sport's quiz landing when the slug resolved, otherwise falls back to Master Quiz rather than a dead link. */
+function backToQuizHref(attempt: QuizAttempt): string {
+  if (attempt.quizType === 'SPORT' && attempt.sportSlug) {
+    return `/sports/${attempt.sportSlug}/quiz`;
+  }
+  return '/quiz';
 }
 
 function Stat({ label, value }: { label: string; value: string | number }) {
