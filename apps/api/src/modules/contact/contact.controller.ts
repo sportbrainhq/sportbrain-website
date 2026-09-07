@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Req } from '@nestjs/common';
+import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
@@ -10,20 +10,24 @@ import {
   type CreateContactRequest,
 } from '@sportbrain/contracts';
 import type { AppConfig } from '../../config';
-import { zodPipe } from '../../common';
+import { CurrentUser, zodPipe } from '../../common';
+import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
+import { SessionGuard } from '../auth/guards/session.guard';
 import { ContactService } from './contact.service';
 
 /**
- * Public surface: submitting a message. Nothing here lets a caller read
- * submissions back — see `ContactAdminController` for that, gated behind
- * `InternalApiKeyGuard`.
+ * `GET config` stays public (just tells the frontend which direct addresses
+ * to display). `POST` requires a signed-in session — a real identity behind
+ * every submission, and the basis for the "my submissions" list/close flow
+ * in `ContactMeController`. Nothing here lets a caller read submissions
+ * back — see `ContactAdminController` (internal-key gated) or
+ * `ContactMeController` (session gated, own submissions only).
  *
- * `@Throttle` tightens the bucket for this one route on top of the global
- * `ThrottlerGuard` default, since an unauthenticated write endpoint is the
- * one place in this API that invites spam. The limit mirrors
- * `CONTACT_RATE_LIMIT_*`'s defaults (3/60s); `@Throttle` requires a
- * compile-time value, so unlike most of this config tree it cannot be read
- * from `ConfigService` at request time — change both if the default changes.
+ * `@Throttle` tightens the bucket for the submit route on top of the global
+ * `ThrottlerGuard` default. The limit mirrors `CONTACT_RATE_LIMIT_*`'s
+ * defaults (3/60s); `@Throttle` requires a compile-time value, so unlike
+ * most of this config tree it cannot be read from `ConfigService` at
+ * request time — change both if the default changes.
  */
 @ApiTags('contact')
 @Controller('contact')
@@ -57,18 +61,18 @@ export class ContactController {
   }
 
   @Post()
+  @UseGuards(SessionGuard)
   @Throttle({ default: { limit: 3, ttl: 60_000 } })
-  @ApiOperation({ summary: 'Submit a contact/feedback message' })
+  @ApiOperation({ summary: 'Submit a contact/feedback message (signed-in users only)' })
   @ApiCreatedResponse({ description: 'Message received, with its reference code' })
   async submit(
+    @CurrentUser() user: AuthenticatedUser,
     @Body(zodPipe(createContactRequestSchema)) body: CreateContactRequest,
     @Req() request: Request,
   ): Promise<ContactSubmissionResult> {
     return this.service.submit({
       request: body,
-      // No auth system exists yet (see InternalApiKeyGuard's header comment
-      // for the wider caveat) — there is no authenticated user to attach.
-      userId: null,
+      userId: user.id,
       userAgent: request.header('user-agent') ?? null,
       ipHash: hashIp(request.ip),
     });

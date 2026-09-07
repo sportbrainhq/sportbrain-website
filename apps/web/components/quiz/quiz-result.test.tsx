@@ -9,6 +9,7 @@ function buildAttempt(overrides: Partial<QuizAttempt> = {}): QuizAttempt {
     publicCode: 'QZ-ABCDEF',
     quizType: 'SPORT',
     sportId: 'sport-1',
+    sportSlug: 'football',
     mode: 'STANDARD',
     status: 'COMPLETED',
     requestedQuestionCount: 2,
@@ -92,5 +93,25 @@ describe('QuizResult', () => {
     expect(screen.getByText('Outstanding')).toBeInTheDocument();
     expect(screen.queryByText(/level up/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/achievement/i)).not.toBeInTheDocument();
+  });
+
+  it('links back to the sport quiz landing for a SPORT attempt', () => {
+    render(<QuizResult attempt={buildAttempt({ quizType: 'SPORT', sportSlug: 'football' })} />);
+    const link = screen.getByRole('link', { name: 'Back to Quiz' });
+    expect(link).toHaveAttribute('href', '/sports/football/quiz');
+  });
+
+  it('links back to Master Quiz for a MASTER attempt', () => {
+    render(
+      <QuizResult attempt={buildAttempt({ quizType: 'MASTER', sportId: null, sportSlug: null })} />,
+    );
+    const link = screen.getByRole('link', { name: 'Back to Master Quiz' });
+    expect(link).toHaveAttribute('href', '/quiz');
+  });
+
+  it('falls back to Master Quiz when a SPORT attempt has no resolved slug', () => {
+    render(<QuizResult attempt={buildAttempt({ quizType: 'SPORT', sportSlug: null })} />);
+    const link = screen.getByRole('link', { name: 'Back to Quiz' });
+    expect(link).toHaveAttribute('href', '/quiz');
   });
 });

@@ -7,6 +7,7 @@ export interface LifetimeAggregateRow {
   quizzesCompleted: number;
   bestPercentage: number | null;
   averagePercentage: number | null;
+  /** Parsed by the repository, not the caller — see `lifetime()`'s note on why `max(timestamptz)` isn't auto-parsed by the driver the way a plain column select is. */
   lastQuizAt: Date | null;
 }
 
@@ -48,37 +49,55 @@ export interface DifficultyAggregateRow {
 export class QuizStatsRepository {
   constructor(private readonly database: DatabaseService) {}
 
+  /**
+   * `max(timestamptz_column)` comes back from postgres.js as a string, not
+   * an auto-parsed `Date` — unlike selecting the column directly, an
+   * aggregate function's result type isn't one the driver recognises for
+   * automatic date parsing. Parsed explicitly below rather than trusting
+   * the `sql<...>` type hint, which only affects TypeScript's view of the
+   * value.
+   */
   async lifetime(userId: string): Promise<LifetimeAggregateRow> {
     const [row] = await this.database.db
       .select({
-        quizzesCompleted: sql<number>`count(*)`,
+        quizzesCompleted: sql<string>`count(*)`,
         bestPercentage: sql<number | null>`max(${quizAttemptV2.scorePercentage})`,
         averagePercentage: sql<number | null>`avg(${quizAttemptV2.scorePercentage})`,
-        lastQuizAt: sql<Date | null>`max(${quizAttemptV2.completedAt})`,
+        lastQuizAt: sql<string | null>`max(${quizAttemptV2.completedAt})`,
       })
       .from(quizAttemptV2)
       .where(and(eq(quizAttemptV2.userId, userId), eq(quizAttemptV2.status, 'COMPLETED')));
-    return (
-      row ?? {
-        quizzesCompleted: 0,
-        bestPercentage: null,
-        averagePercentage: null,
-        lastQuizAt: null,
-      }
-    );
+    return {
+      quizzesCompleted: Number(row?.quizzesCompleted ?? 0),
+      bestPercentage: row?.bestPercentage ?? null,
+      averagePercentage: row?.averagePercentage ?? null,
+      lastQuizAt: row?.lastQuizAt ? new Date(row.lastQuizAt) : null,
+    };
   }
 
-  /** Answered-question totals, joined through completed attempts only — an abandoned attempt's answers don't count toward lifetime stats. */
+  /**
+   * Answered-question totals, joined through completed attempts only — an
+   * abandoned attempt's answers don't count toward lifetime stats.
+   *
+   * `count(*)` returns `bigint` in Postgres, which postgres.js hands back as
+   * a JS string rather than a `number` (avoiding silent precision loss past
+   * `Number.MAX_SAFE_INTEGER`) — irrelevant at this table's actual scale, but
+   * the driver doesn't know that, so every `count(*)` result is explicitly
+   * coerced here rather than trusting the `sql<number>` type hint.
+   */
   async questionTotals(userId: string): Promise<QuestionAggregateRow> {
     const [row] = await this.database.db
       .select({
-        questionsAnswered: sql<number>`count(*) filter (where ${quizAttemptQuestionV2.answeredAt} is not null)`,
-        correctAnswers: sql<number>`count(*) filter (where ${quizAttemptQuestionV2.isCorrect} = true)`,
+        questionsAnswered: sql<string>`count(*) filter (where ${quizAttemptQuestionV2.answeredAt} is not null)`,
+        correctAnswers: sql<string>`count(*) filter (where ${quizAttemptQuestionV2.isCorrect} = true)`,
       })
       .from(quizAttemptQuestionV2)
       .innerJoin(quizAttemptV2, eq(quizAttemptQuestionV2.quizAttemptId, quizAttemptV2.id))
       .where(and(eq(quizAttemptV2.userId, userId), eq(quizAttemptV2.status, 'COMPLETED')));
-    return row ?? { questionsAnswered: 0, correctAnswers: 0 };
+    return {
+      questionsAnswered: Number(row?.questionsAnswered ?? 0),
+      correctAnswers: Number(row?.correctAnswers ?? 0),
+    };
   }
 
   async bySport(userId: string): Promise<SportAggregateRow[]> {
@@ -138,8 +157,8 @@ export class QuizStatsRepository {
   async questionTotalsSince(userId: string, since: Date): Promise<QuestionAggregateRow> {
     const [row] = await this.database.db
       .select({
-        questionsAnswered: sql<number>`count(*) filter (where ${quizAttemptQuestionV2.answeredAt} is not null)`,
-        correctAnswers: sql<number>`count(*) filter (where ${quizAttemptQuestionV2.isCorrect} = true)`,
+        questionsAnswered: sql<string>`count(*) filter (where ${quizAttemptQuestionV2.answeredAt} is not null)`,
+        correctAnswers: sql<string>`count(*) filter (where ${quizAttemptQuestionV2.isCorrect} = true)`,
       })
       .from(quizAttemptQuestionV2)
       .innerJoin(quizAttemptV2, eq(quizAttemptQuestionV2.quizAttemptId, quizAttemptV2.id))
@@ -150,18 +169,30 @@ export class QuizStatsRepository {
           gte(quizAttemptV2.completedAt, since),
         ),
       );
-    return row ?? { questionsAnswered: 0, correctAnswers: 0 };
+    return {
+      questionsAnswered: Number(row?.questionsAnswered ?? 0),
+      correctAnswers: Number(row?.correctAnswers ?? 0),
+    };
   }
 
-  /** Every day (date-truncated, UTC) a completed quiz landed on, most recent first — the raw material for streak calculation (Part 52). */
+  /**
+   * Every day (date-truncated, UTC) a completed quiz landed on, most recent
+   * first — the raw material for streak calculation (Part 52).
+   *
+   * `date_trunc` returns `timestamp without time zone`, which the postgres.js
+   * driver hands back as a string rather than auto-parsing to `Date` the way
+   * it does for `timestamptz` columns — explicitly parsed here rather than
+   * trusting the `sql<Date>` type hint, which only affects TypeScript's
+   * view of the value, not what the driver actually returns at runtime.
+   */
   async completedDays(userId: string, limit: number): Promise<Date[]> {
     const rows = await this.database.db
-      .selectDistinct({ day: sql<Date>`date_trunc('day', ${quizAttemptV2.completedAt})` })
+      .selectDistinct({ day: sql<string>`date_trunc('day', ${quizAttemptV2.completedAt})` })
       .from(quizAttemptV2)
       .where(and(eq(quizAttemptV2.userId, userId), eq(quizAttemptV2.status, 'COMPLETED')))
       .orderBy(sql`date_trunc('day', ${quizAttemptV2.completedAt}) desc`)
       .limit(limit);
-    return rows.map((row) => row.day);
+    return rows.map((row) => new Date(row.day));
   }
 
   async mostPlayedSportSince(

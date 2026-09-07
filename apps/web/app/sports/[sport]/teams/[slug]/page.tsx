@@ -6,6 +6,8 @@ import { HonoursList } from '@/components/sports/entity-card';
 import { ApiError, fetchTeam } from '@/lib/api';
 import { Avatar } from '@/components/sports/avatar';
 import { buildMetadata } from '@/lib/seo';
+import { SaveButton } from '@/components/entities/save-button';
+import { FollowButton } from '@/components/entities/follow-button';
 
 export async function generateMetadata({
   params,
@@ -42,26 +44,32 @@ export default async function TeamPage({
 
   return (
     <article className="space-y-8">
-      <header className="flex flex-wrap items-start gap-4">
-        {team.logoUrl && (
-          <Avatar text={team.name} imageUrl={team.logoUrl} size={80} className="rounded-lg" />
-        )}
-        <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-            <Link href={`/sports/${sportSlug}/teams`} className="hover:underline">
-              {team.sport.name}
-            </Link>
-            <span className="ml-2 capitalize">{team.kind}</span>
-          </p>
-          <h1 className="mt-1.5 text-3xl font-black tracking-tight sm:text-4xl">{team.name}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {[team.country, team.foundedYear && `founded ${team.foundedYear}`]
-              .filter(Boolean)
-              .join(' · ')}
-            {/* Defunct clubs stay in the archive rather than being deleted, so
-                the page has to say so. */}
-            {!team.isActive && <span className="ml-2 text-muted-foreground">· defunct</span>}
-          </p>
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex flex-wrap items-start gap-4">
+          {team.logoUrl && (
+            <Avatar text={team.name} imageUrl={team.logoUrl} size={80} className="rounded-lg" />
+          )}
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+              <Link href={`/sports/${sportSlug}/teams`} className="hover:underline">
+                {team.sport.name}
+              </Link>
+              <span className="ml-2 capitalize">{team.kind}</span>
+            </p>
+            <h1 className="mt-1.5 text-3xl font-black tracking-tight sm:text-4xl">{team.name}</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {[team.country, team.foundedYear && `founded ${team.foundedYear}`]
+                .filter(Boolean)
+                .join(' · ')}
+              {/* Defunct clubs stay in the archive rather than being deleted, so
+                  the page has to say so. */}
+              {!team.isActive && <span className="ml-2 text-muted-foreground">· defunct</span>}
+            </p>
+          </div>
+        </div>
+        <div className="flex shrink-0 gap-2">
+          <SaveButton entityType="team" entityId={team.id} />
+          <FollowButton entityType="team" entityId={team.id} />
         </div>
       </header>
 

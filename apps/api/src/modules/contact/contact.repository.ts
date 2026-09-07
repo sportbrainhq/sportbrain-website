@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
 import { contactSubmission } from '../../database/schema';
 import type { ContactCategory, ContactStatus } from '@sportbrain/contracts';
@@ -76,6 +76,51 @@ export class ContactRepository {
       .update(contactSubmission)
       .set({ status, resolvedAt, updatedAt: new Date() })
       .where(eq(contactSubmission.id, id))
+      .returning();
+
+    return row ?? null;
+  }
+
+  /** A submitter's own history — see `ContactMeController`. Newest first. */
+  async findAllForUser(
+    userId: string,
+    params: { page: number; limit: number },
+  ): Promise<{ rows: ContactSubmissionRow[]; total: number }> {
+    const offset = (params.page - 1) * params.limit;
+
+    const [rows, countRows] = await Promise.all([
+      this.database.db
+        .select()
+        .from(contactSubmission)
+        .where(eq(contactSubmission.userId, userId))
+        .orderBy(desc(contactSubmission.createdAt))
+        .limit(params.limit)
+        .offset(offset),
+      this.database.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(contactSubmission)
+        .where(eq(contactSubmission.userId, userId)),
+    ]);
+
+    return { rows, total: countRows[0]?.count ?? 0 };
+  }
+
+  /**
+   * Status update scoped to the owning user, for the submitter's own
+   * "close" action — never lets a user touch another user's row. Returns
+   * null both when the row doesn't exist and when it isn't theirs, so the
+   * service can return the same 404 either way rather than leaking which.
+   */
+  async updateStatusForUser(
+    id: string,
+    userId: string,
+    status: ContactStatus,
+    resolvedAt: Date | null,
+  ): Promise<ContactSubmissionRow | null> {
+    const [row] = await this.database.db
+      .update(contactSubmission)
+      .set({ status, resolvedAt, updatedAt: new Date() })
+      .where(and(eq(contactSubmission.id, id), eq(contactSubmission.userId, userId)))
       .returning();
 
     return row ?? null;

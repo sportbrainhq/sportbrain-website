@@ -80,6 +80,20 @@ export class QuestionsController {
     return { data: await this.service.findById(id) };
   }
 
+  @Post(':id/publish')
+  @ApiOperation({ summary: 'Publish a question, making it eligible for quiz generation' })
+  async publish(@Param('id', ParseUUIDPipe) id: string): Promise<{ data: AdminQuestion }> {
+    return { data: await this.service.publish(id) };
+  }
+
+  @Post(':id/retire')
+  @ApiOperation({
+    summary: 'Retire a question — excluded from future generation, kept for historical attempts',
+  })
+  async retire(@Param('id', ParseUUIDPipe) id: string): Promise<{ data: AdminQuestion }> {
+    return { data: await this.service.retire(id) };
+  }
+
   @Post('check-duplicate')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Pre-flight exact-duplicate check, before submitting the full form' })

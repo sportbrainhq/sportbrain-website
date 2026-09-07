@@ -9,6 +9,7 @@ const SECTIONS = [
   { href: '/profile/quizzes', label: 'Quiz History' },
   { href: '/profile/saved', label: 'Saved' },
   { href: '/profile/following', label: 'Following' },
+  { href: '/profile/contact', label: 'Support' },
   { href: '/profile/preferences', label: 'Preferences' },
   { href: '/profile/account', label: 'Account' },
 ];

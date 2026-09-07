@@ -56,7 +56,13 @@ describe('QuestionGenerationJobService', () => {
     } as unknown as QuestionGenerationRepository;
 
     validation = { validate: vi.fn() } as unknown as QuestionValidationService;
-    templateGenerator = new TemplateGenerator();
+    const emptySubGenerator = { generate: vi.fn().mockResolvedValue([]) };
+    templateGenerator = new TemplateGenerator(
+      emptySubGenerator as unknown as ConstructorParameters<typeof TemplateGenerator>[0],
+      emptySubGenerator as unknown as ConstructorParameters<typeof TemplateGenerator>[1],
+      emptySubGenerator as unknown as ConstructorParameters<typeof TemplateGenerator>[2],
+      emptySubGenerator as unknown as ConstructorParameters<typeof TemplateGenerator>[3],
+    );
     const aiGenerator = { generate: vi.fn().mockResolvedValue([]) } as unknown as AiGenerator;
     const hybridGenerator = {
       generate: vi.fn().mockResolvedValue([]),

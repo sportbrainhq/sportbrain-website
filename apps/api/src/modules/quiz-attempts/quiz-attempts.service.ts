@@ -11,6 +11,7 @@ import type {
 } from '@sportbrain/contracts';
 import { AppException } from '../../common';
 import type { AppConfig } from '../../config';
+import { QuestionsRepository } from '../questions/questions.repository';
 import { EligibleQuestionsRepository } from '../quiz-generation/eligible-questions.repository';
 import { QuestionExposureRepository } from '../quiz-generation/question-exposure.repository';
 import { QuizGenerationService } from '../quiz-generation/quiz-generation.service';
@@ -39,6 +40,7 @@ export class QuizAttemptsService {
     private readonly eligibleQuestions: EligibleQuestionsRepository,
     private readonly exposure: QuestionExposureRepository,
     private readonly config: ConfigService<AppConfig, true>,
+    private readonly questions: QuestionsRepository,
   ) {}
 
   async start(userId: string, request: StartQuizRequest): Promise<QuizAttemptDto> {
@@ -132,13 +134,13 @@ export class QuizAttemptsService {
       now,
     );
 
-    return this.toAttemptDto(attempt, questions);
+    return await this.toAttemptDto(attempt, questions);
   }
 
   async findByPublicCode(userId: string, publicCode: string): Promise<QuizAttemptDto> {
     const attempt = await this.requireOwnedAttempt(userId, publicCode);
     const questions = await this.repository.findQuestionsForAttempt(attempt.id);
-    return this.toAttemptDto(attempt, questions);
+    return await this.toAttemptDto(attempt, questions);
   }
 
   /**
@@ -218,7 +220,7 @@ export class QuizAttemptsService {
     const questions = await this.repository.findQuestionsForAttempt(attempt.id);
 
     if (attempt.status === 'COMPLETED') {
-      return this.toAttemptDto(attempt, questions);
+      return await this.toAttemptDto(attempt, questions);
     }
     if (attempt.status !== 'IN_PROGRESS') {
       throw AppException.conflict(
@@ -247,7 +249,7 @@ export class QuizAttemptsService {
       durationSeconds,
     });
 
-    return this.toAttemptDto(updated, questions);
+    return await this.toAttemptDto(updated, questions);
   }
 
   async abandon(userId: string, publicCode: string): Promise<void> {
@@ -294,7 +296,7 @@ export class QuizAttemptsService {
 
   async listHistory(userId: string, limit: number): Promise<QuizHistoryItem[]> {
     const attempts = await this.repository.findRecentForUser(userId, limit);
-    return attempts.map((attempt) => this.toSummaryDto(attempt));
+    return Promise.all(attempts.map((attempt) => this.toSummaryDto(attempt)));
   }
 
   private async requireOwnedAttempt(userId: string, publicCode: string): Promise<QuizAttemptRow> {
@@ -309,24 +311,34 @@ export class QuizAttemptsService {
     return `QZ-${randomBytes(6).toString('hex').toUpperCase()}`;
   }
 
-  private toAttemptDto(
+  private async toAttemptDto(
     attempt: QuizAttemptRow,
     questions: QuizAttemptQuestionRow[],
-  ): QuizAttemptDto {
+  ): Promise<QuizAttemptDto> {
     return {
-      ...this.toSummaryDto(attempt),
+      ...(await this.toSummaryDto(attempt)),
       questions: questions
         .sort((a, b) => a.position - b.position)
         .map((question) => this.toQuestionDto(question)),
     };
   }
 
-  private toSummaryDto(attempt: QuizAttemptRow): QuizHistoryItem {
+  /**
+   * `sportSlug` is resolved here (not stored on `quiz_attempt_v2`) so a
+   * result/history screen can link back to `/sports/{slug}/quiz` without a
+   * second client-side lookup — see `packages/contracts/src/quiz.ts`'s
+   * field comment. Null for MASTER attempts, which have no single sport.
+   */
+  private async toSummaryDto(attempt: QuizAttemptRow): Promise<QuizHistoryItem> {
+    const sportSlug = attempt.sportId
+      ? ((await this.questions.findSportSlugById(attempt.sportId)) ?? null)
+      : null;
     return {
       id: attempt.id,
       publicCode: attempt.publicCode,
       quizType: attempt.quizType,
       sportId: attempt.sportId,
+      sportSlug,
       mode: attempt.mode,
       status: attempt.status,
       requestedQuestionCount: attempt.requestedQuestionCount,

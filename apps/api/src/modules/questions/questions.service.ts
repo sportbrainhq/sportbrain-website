@@ -108,6 +108,34 @@ export class QuestionsService {
     return this.toAdminDto(found.question, found.options);
   }
 
+  /**
+   * Moves a question into PUBLISHED, the only status `QuizGenerationService`
+   * selects from (Part 8). Callable from any pre-published, non-rejected
+   * status — DRAFT, REVIEW_REQUIRED or VERIFIED — since Phase C1-C4 does not
+   * yet enforce a strict linear workflow between those three; what matters
+   * is that RETIRED/REJECTED questions can never be published without an
+   * explicit un-retire step this API doesn't offer.
+   */
+  async publish(id: string): Promise<AdminQuestion> {
+    const found = await this.repository.findById(id);
+    if (!found) throw AppException.notFound(`No question with id "${id}"`);
+    if (found.question.status === 'RETIRED' || found.question.status === 'REJECTED') {
+      throw AppException.conflict(`Cannot publish a question that is ${found.question.status}.`);
+    }
+    const updated = await this.repository.updateStatus(id, 'PUBLISHED', {
+      publishedAt: new Date(),
+    });
+    return this.toAdminDto(updated, found.options);
+  }
+
+  /** Retires a question — removed from future quiz generation, but never deleted (Part 8: historical attempts still reference it). */
+  async retire(id: string): Promise<AdminQuestion> {
+    const found = await this.repository.findById(id);
+    if (!found) throw AppException.notFound(`No question with id "${id}"`);
+    const updated = await this.repository.updateStatus(id, 'RETIRED', { retiredAt: new Date() });
+    return this.toAdminDto(updated, found.options);
+  }
+
   private toAdminDto(row: QuestionRow, options: QuestionOptionRow[]): AdminQuestion {
     return {
       id: row.id,

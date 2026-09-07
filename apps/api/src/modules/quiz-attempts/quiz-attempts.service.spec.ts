@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ConfigService } from '@nestjs/config';
 import type { AppConfig } from '../../config';
+import { QuestionsRepository } from '../questions/questions.repository';
 import { EligibleQuestionsRepository } from '../quiz-generation/eligible-questions.repository';
 import { QuestionExposureRepository } from '../quiz-generation/question-exposure.repository';
 import { QuizGenerationService } from '../quiz-generation/quiz-generation.service';
@@ -124,7 +125,18 @@ describe('QuizAttemptsService', () => {
       get: vi.fn().mockReturnValue({ attemptExpiryHours: 48 }),
     } as unknown as ConfigService<AppConfig, true>;
 
-    service = new QuizAttemptsService(repository, generation, eligibleQuestions, exposure, config);
+    const questions = {
+      findSportSlugById: vi.fn().mockResolvedValue('football'),
+    } as unknown as QuestionsRepository;
+
+    service = new QuizAttemptsService(
+      repository,
+      generation,
+      eligibleQuestions,
+      exposure,
+      config,
+      questions,
+    );
   });
 
   it('starts an attempt and snapshots questions', async () => {
@@ -178,15 +190,13 @@ describe('QuizAttemptsService', () => {
 
   it('is idempotent on a duplicate answer submission', async () => {
     repository.recordAnswer = vi.fn().mockResolvedValue(undefined); // simulates "already answered"
-    repository.findAttemptQuestion = vi
-      .fn()
-      .mockResolvedValue(
-        buildAttemptQuestionRow({
-          isCorrect: true,
-          answeredAt: new Date(),
-          selectedOptionCode: 'A',
-        }),
-      );
+    repository.findAttemptQuestion = vi.fn().mockResolvedValue(
+      buildAttemptQuestionRow({
+        isCorrect: true,
+        answeredAt: new Date(),
+        selectedOptionCode: 'A',
+      }),
+    );
     const result = await service.submitAnswer('user-1', 'QZ-ABCDEF', 'aq-1', 'A');
     expect(result.isCorrect).toBe(true);
     expect(exposure.recordAnswer).not.toHaveBeenCalled();

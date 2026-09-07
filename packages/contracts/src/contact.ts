@@ -41,6 +41,8 @@ export const contactStatusSchema = z.enum([
   'accepted',
   'rejected',
   'resolved',
+  /** Submitter closed their own submission from their history page. */
+  'closed_by_user',
 ]);
 export type ContactStatus = z.infer<typeof contactStatusSchema>;
 
@@ -115,6 +117,19 @@ export const updateContactStatusRequestSchema = z.object({
   status: contactStatusSchema,
 });
 export type UpdateContactStatusRequest = z.infer<typeof updateContactStatusRequestSchema>;
+
+/** One row in a submitter's own "my submissions" history (`GET /users/me/contact`). */
+export const myContactSubmissionSchema = z.object({
+  id: z.string(),
+  referenceCode: z.string(),
+  category: contactCategorySchema,
+  status: contactStatusSchema,
+  subject: z.string(),
+  message: z.string(),
+  createdAt: z.string(),
+  resolvedAt: z.string().nullable(),
+});
+export type MyContactSubmission = z.infer<typeof myContactSubmissionSchema>;
 
 /**
  * Direct-contact addresses the frontend may display, e.g. under the form.
