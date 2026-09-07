@@ -2,6 +2,9 @@ import { Injectable } from '@nestjs/common';
 import type {
   AdminQuestion,
   CreateQuestionRequest,
+  QuestionCategory,
+  QuestionDifficulty,
+  QuestionStatus,
   QuestionValidationResult,
 } from '@sportbrain/contracts';
 import { AppException } from '../../common';
@@ -106,6 +109,28 @@ export class QuestionsService {
     const found = await this.repository.findById(id);
     if (!found) throw AppException.notFound(`No question with id "${id}"`);
     return this.toAdminDto(found.question, found.options);
+  }
+
+  /**
+   * Filtered list, options omitted (`options: []`) — this exists for the
+   * question-search picker (newsletter issue editor's "SportBrain Challenge"
+   * block, `GET /admin/newsletter/issues/questions/search`), which only needs
+   * enough to render a pick list, not full option/answer-key detail. Callers
+   * needing the full row use `findById`.
+   */
+  async list(
+    filters: {
+      status?: QuestionStatus;
+      sportId?: string;
+      category?: QuestionCategory;
+      difficulty?: QuestionDifficulty;
+      q?: string;
+    },
+    page: number,
+    limit: number,
+  ): Promise<{ rows: AdminQuestion[]; total: number }> {
+    const { rows, total } = await this.repository.list(filters, page, limit);
+    return { rows: rows.map((row) => this.toAdminDto(row, [])), total };
   }
 
   private toAdminDto(row: QuestionRow, options: QuestionOptionRow[]): AdminQuestion {

@@ -316,6 +316,20 @@
       "when": 1788603858175,
       "tag": "0044_special_chamber",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1788799289234,
+      "tag": "0045_light_zeigeist",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1788800179549,
+      "tag": "0046_fresh_wolf_cub",
+      "breakpoints": true
     }
   ]
 }

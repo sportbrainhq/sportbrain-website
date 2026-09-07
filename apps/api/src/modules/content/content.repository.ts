@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, ilike, isNull, sql } from 'drizzle-orm';
 import type { ContentSummary, QuizSummary } from '@sportbrain/contracts';
 import { DatabaseService } from '../../database/database.service';
 import { content, contentEntity, quiz, quizQuestion, sport } from '../../database/schema';
@@ -43,6 +43,55 @@ export class ContentRepository {
       ...row,
       publishedAt: row.publishedAt?.toISOString() ?? null,
     }));
+  }
+
+  /**
+   * Filtered/paginated search across all published content, for the
+   * newsletter issue editor's "From SportBrainHQ" content-selector
+   * (`GET /admin/newsletter/issues/content/search`) — the general-purpose
+   * search this table has never needed until now, so it lives here rather
+   * than as a raw query duplicated in the newsletter-issues module.
+   */
+  async search(
+    filters: { type?: string; sportSlug?: string; q?: string },
+    page: number,
+    limit: number,
+  ): Promise<{ rows: ContentSummary[]; total: number }> {
+    const conditions = [eq(content.status, 'published')];
+    if (filters.type) conditions.push(eq(content.type, filters.type as never));
+    if (filters.sportSlug) conditions.push(eq(sport.slug, filters.sportSlug));
+    if (filters.q) conditions.push(ilike(content.title, `%${filters.q}%`));
+    const where = and(...conditions);
+
+    const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
+      this.database.db
+        .select({
+          id: content.id,
+          type: content.type,
+          slug: content.slug,
+          title: content.title,
+          excerpt: content.excerpt,
+          category: content.category,
+          heroImageUrl: content.heroImageUrl,
+          publishedAt: content.publishedAt,
+        })
+        .from(content)
+        .leftJoin(sport, eq(sport.id, content.sportId))
+        .where(where)
+        .orderBy(desc(content.publishedAt))
+        .limit(limit)
+        .offset((page - 1) * limit),
+      this.database.db
+        .select({ value: count() })
+        .from(content)
+        .leftJoin(sport, eq(sport.id, content.sportId))
+        .where(where),
+    ]);
+
+    return {
+      rows: rows.map((row) => ({ ...row, publishedAt: row.publishedAt?.toISOString() ?? null })),
+      total,
+    };
   }
 
   async findBySlug(type: string, slug: string) {

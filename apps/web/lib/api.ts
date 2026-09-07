@@ -17,12 +17,14 @@ import {
   cursorPaginated,
   newsArticleDetailSchema,
   newsArticleSummarySchema,
+  newsletterTokenActionResponseSchema,
   paginated,
   playerDetailSchema,
   playerSummarySchema,
   searchResultSchema,
   sportDetailSchema,
   sportSchema,
+  subscribeResponseSchema,
   teamDetailSchema,
   teamSummarySchema,
   todayBucketSchema,
@@ -42,6 +44,7 @@ import {
   type NewsArticleDetail,
   type NewsArticleSummary,
   type NewsListQuery,
+  type NewsletterTokenActionResponse,
   type QuizSummary,
   type SportOverview,
   type Paginated,
@@ -49,6 +52,8 @@ import {
   type SearchResult,
   type Sport,
   type SportDetail,
+  type SubscribeRequest,
+  type SubscribeResponse,
   type TeamDetail,
   type TodayBucket,
 } from '@sportbrain/contracts';
@@ -496,6 +501,26 @@ export function fetchContactConfig(): Promise<ContactConfig> {
 /** Submits the contact form. Never cached: this is a write. */
 export function submitContact(body: CreateContactRequest): Promise<ContactSubmissionResult> {
   return apiPost('/v1/contact', body, contactSubmissionResultSchema, { timeoutMs: 10_000 });
+}
+
+/**
+ * Subscribes an anonymous email address to The Monday Brief. Never cached:
+ * this is a write, and the response is deliberately idempotent-safe (see
+ * `SubscribeResponse`'s JSDoc in the contracts package) so a duplicate
+ * submit never surfaces as an error to the visitor.
+ */
+export function subscribeToNewsletter(body: SubscribeRequest): Promise<SubscribeResponse> {
+  return apiPost('/v1/newsletter/subscribe', body, subscribeResponseSchema, { timeoutMs: 10_000 });
+}
+
+/** Unsubscribes via the no-login token mailed with every send. Idempotent: an already-consumed token still returns 200. */
+export function unsubscribeFromNewsletter(token: string): Promise<NewsletterTokenActionResponse> {
+  return apiPost(
+    `/v1/newsletter/unsubscribe/${encodeURIComponent(token)}`,
+    {},
+    newsletterTokenActionResponseSchema,
+    { timeoutMs: 10_000 },
+  );
 }
 
 /** Builds a query string, dropping undefined values so they do not appear as "undefined". */
