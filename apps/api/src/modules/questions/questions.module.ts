@@ -26,6 +26,6 @@ import { QuestionsService } from './questions.service';
     QuestionInventoryRepository,
     QuestionInventoryService,
   ],
-  exports: [QuestionsRepository, QuestionValidationService, QuestionCodeService],
+  exports: [QuestionsService, QuestionsRepository, QuestionValidationService, QuestionCodeService],
 })
 export class QuestionsModule {}

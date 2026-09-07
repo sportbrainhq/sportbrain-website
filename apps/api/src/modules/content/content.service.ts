@@ -43,6 +43,20 @@ export class ContentService {
     );
   }
 
+  /**
+   * Uncached filtered search for the newsletter issue editor's content
+   * picker: an admin typing a query expects the current published set, not a
+   * 30-minute-old cache entry, and the query key space here is unbounded
+   * (same reasoning `SearchModule`'s cross-entity search uses).
+   */
+  async search(
+    filters: { type?: string; sportSlug?: string; q?: string },
+    page: number,
+    limit: number,
+  ): Promise<{ rows: ContentSummary[]; total: number }> {
+    return this.repository.search(filters, page, limit);
+  }
+
   async findBySlug(type: string, slug: string): Promise<ContentDetail> {
     const found = await this.cache.wrap(
       `${ContentService.CACHE_PREFIX}${type}:${slug}`,

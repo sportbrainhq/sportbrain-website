@@ -217,6 +217,16 @@ export const envSchema = z
     // REVIEW_REQUIRED for an editor to look at (Part 45-46) — never
     // auto-unpublished, only flagged.
     QUESTION_REPORT_FLAG_THRESHOLD: z.coerce.number().int().positive().default(5),
+
+    // The Monday Brief newsletter (Phase D1 — subscription foundation only).
+    // Off by default: double opt-in adds a confirmation email round-trip
+    // that most deployments (and all of local dev) don't need to exercise,
+    // and turning it on is a deliberate deliverability decision, not a
+    // sensible default to force on every environment.
+    NEWSLETTER_DOUBLE_OPT_IN: z.coerce.boolean().default(false),
+    NEWSLETTER_FROM_EMAIL: z.string().email().default('onboarding@resend.dev'),
+    NEWSLETTER_RATE_LIMIT_TTL_SECONDS: z.coerce.number().int().positive().default(60),
+    NEWSLETTER_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(5),
   })
   .superRefine((config, ctx) => {
     if (config.NODE_ENV !== 'production') return;

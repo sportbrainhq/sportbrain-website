@@ -136,6 +136,16 @@ export interface AppConfig {
     statsMinCategorySample: number;
     reportFlagThreshold: number;
   };
+
+  newsletter: {
+    /** Whether a new subscription must confirm via email before `status` reaches SUBSCRIBED. */
+    doubleOptIn: boolean;
+    fromEmail: string;
+    rateLimit: {
+      ttlSeconds: number;
+      limit: number;
+    };
+  };
 }
 
 /**
@@ -290,6 +300,15 @@ export function loadConfiguration(): AppConfig {
       attemptExpiryHours: env.QUIZ_ATTEMPT_EXPIRY_HOURS,
       statsMinCategorySample: env.QUIZ_STATS_MIN_CATEGORY_SAMPLE,
       reportFlagThreshold: env.QUESTION_REPORT_FLAG_THRESHOLD,
+    },
+
+    newsletter: {
+      doubleOptIn: env.NEWSLETTER_DOUBLE_OPT_IN,
+      fromEmail: env.NEWSLETTER_FROM_EMAIL,
+      rateLimit: {
+        ttlSeconds: env.NEWSLETTER_RATE_LIMIT_TTL_SECONDS,
+        limit: env.NEWSLETTER_RATE_LIMIT_MAX,
+      },
     },
   };
 }

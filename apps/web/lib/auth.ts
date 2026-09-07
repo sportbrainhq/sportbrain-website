@@ -59,6 +59,19 @@ export async function requireUser(): Promise<SafeUser> {
 }
 
 /**
+ * For `/admin/*` pages (Phase D2 introduces the first ones): redirects home
+ * unless a signed-in reader has the `editor` or `admin` role. Deliberately a
+ * separate check from `requireUser` rather than a role parameter on it — a
+ * generic "requireUser(role?)" would make every future caller (most of which
+ * want no role check at all) read a signature implying one might be needed.
+ */
+export async function requireEditor(): Promise<SafeUser> {
+  const user = await requireUser();
+  if (user.role !== 'editor' && user.role !== 'admin') redirect('/');
+  return user;
+}
+
+/**
  * Authenticated GET against the API from a Server Component, for the
  * `/profile/*` pages — same cookie-forwarding need as `getCurrentUser()`,
  * generalised. Not merged into `apiGet` in `lib/api.ts`: that helper is

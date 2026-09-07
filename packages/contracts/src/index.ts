@@ -30,3 +30,5 @@ export * from './quiz';
 export * from './quiz-stats';
 export * from './question-report';
 export * from './question-inventory';
+export * from './newsletter';
+export * from './newsletter-issue';

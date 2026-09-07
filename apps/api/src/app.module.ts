@@ -21,6 +21,8 @@ import { MetricsModule } from './infrastructure/metrics/metrics.module';
 import { JobsModule } from './jobs/jobs.module';
 import { InternalNewsModule } from './modules/internal-news/internal-news.module';
 import { ContactModule } from './modules/contact/contact.module';
+import { NewsletterModule } from './modules/newsletter/newsletter.module';
+import { NewsletterIssueModule } from './modules/newsletter-issues/newsletter-issue.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { SavedEntitiesModule } from './modules/saved-entities/saved-entities.module';
@@ -113,6 +115,8 @@ import { QueueModule } from './queue/queue.module';
     NewsModule,
     InternalNewsModule,
     ContactModule,
+    NewsletterModule,
+    NewsletterIssueModule,
   ],
   providers: [
     // Registered globally so that every route gets the same error envelope,
