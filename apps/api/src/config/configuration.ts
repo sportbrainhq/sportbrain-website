@@ -145,6 +145,16 @@ export interface AppConfig {
       ttlSeconds: number;
       limit: number;
     };
+    delivery: {
+      batchSize: number;
+      maxSendAttempts: number;
+      defaultSendTime: string;
+      defaultTimezone: string;
+    };
+    webhooks: {
+      /** Undefined when unconfigured, which is the signal `NewsletterWebhookGuard` uses to fail closed. See the env schema's own comment on `NEWSLETTER_WEBHOOK_SECRET`. */
+      secret: string | undefined;
+    };
   };
 }
 
@@ -308,6 +318,15 @@ export function loadConfiguration(): AppConfig {
       rateLimit: {
         ttlSeconds: env.NEWSLETTER_RATE_LIMIT_TTL_SECONDS,
         limit: env.NEWSLETTER_RATE_LIMIT_MAX,
+      },
+      delivery: {
+        batchSize: env.NEWSLETTER_BATCH_SIZE,
+        maxSendAttempts: env.NEWSLETTER_MAX_SEND_ATTEMPTS,
+        defaultSendTime: env.NEWSLETTER_DEFAULT_SEND_TIME,
+        defaultTimezone: env.NEWSLETTER_DEFAULT_TIMEZONE,
+      },
+      webhooks: {
+        secret: env.NEWSLETTER_WEBHOOK_SECRET,
       },
     },
   };

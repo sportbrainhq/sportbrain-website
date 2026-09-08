@@ -3,10 +3,14 @@ import { AuthModule } from '../auth/auth.module';
 import { ContentModule } from '../content/content.module';
 import { NewsletterModule } from '../newsletter/newsletter.module';
 import { QuestionsModule } from '../questions/questions.module';
+import { NewsletterEmailProvider } from './newsletter-email-provider';
 import { NewsletterIssueController } from './newsletter-issue.controller';
+import { NewsletterIssueRenderService } from './newsletter-issue-render.service';
+import { NewsletterIssueTestMailService } from './newsletter-issue-test-mail.service';
 import { NewsletterIssueRepository } from './newsletter-issue.repository';
 import { NewsletterIssueValidationService } from './newsletter-issue-validation.service';
 import { NewsletterIssueService } from './newsletter-issue.service';
+import { NewsletterLoggingEmailProvider } from './newsletter-logging-email-provider.service';
 
 /**
  * The Monday Brief issue model (Phase D2): create/edit/validate/ready only.
@@ -28,6 +32,23 @@ import { NewsletterIssueService } from './newsletter-issue.service';
 @Module({
   imports: [AuthModule, QuestionsModule, ContentModule, NewsletterModule],
   controllers: [NewsletterIssueController],
-  providers: [NewsletterIssueService, NewsletterIssueRepository, NewsletterIssueValidationService],
+  providers: [
+    NewsletterIssueService,
+    NewsletterIssueRepository,
+    NewsletterIssueValidationService,
+    // Rendering (D4): one render service shared by preview and test-email.
+    NewsletterIssueRenderService,
+    NewsletterIssueTestMailService,
+    // Bound to the interface so a real provider swap (see
+    // `newsletter-email-provider.ts`) is a one-line change here, not a
+    // rewrite of every injector.
+    { provide: NewsletterEmailProvider, useClass: NewsletterLoggingEmailProvider },
+  ],
+  exports: [
+    NewsletterIssueRepository,
+    NewsletterIssueService,
+    NewsletterIssueRenderService,
+    NewsletterEmailProvider,
+  ],
 })
 export class NewsletterIssueModule {}

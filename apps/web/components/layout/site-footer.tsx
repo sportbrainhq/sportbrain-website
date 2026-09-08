@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { Container } from './container';
 import { NewsletterSubscribe } from '@/components/newsletter/newsletter-subscribe';
 import { SITE_NAME, SITE_TAGLINE } from '@/lib/seo';
@@ -6,6 +7,9 @@ import { SITE_NAME, SITE_TAGLINE } from '@/lib/seo';
  * Global site footer. The newsletter sign-up is the one piece of client
  * JavaScript on an otherwise server component, isolated to its own
  * `'use client'` component so the footer itself stays server-rendered.
+ *
+ * "Newsletter Archive" (Phase D7) links out from here so the public archive
+ * is reachable from every page, not only from `/newsletter` itself.
  */
 export function SiteFooter() {
   return (
@@ -19,6 +23,9 @@ export function SiteFooter() {
               {' · '}
               {SITE_TAGLINE}
             </p>
+            <Link href="/newsletter/archive" className="hover:underline">
+              Newsletter Archive
+            </Link>
             <p>
               © {new Date().getFullYear()} {SITE_NAME}
             </p>

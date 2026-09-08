@@ -55,7 +55,13 @@ export function MondayBriefSection({ initial }: MondayBriefSectionProps) {
         credentials: 'include',
         headers: { Accept: 'application/json' },
       });
-      if (refreshed.ok) setSubscription(await refreshed.json());
+      if (refreshed.ok) {
+        // Guard the empty-body case the same way `newsletter-api.ts` does
+        // for this same endpoint — defensive here rather than load-bearing,
+        // since a successful subscribe means the refetch has a real row.
+        const text = await refreshed.text();
+        if (text) setSubscription(JSON.parse(text));
+      }
       setStatus('saved');
     } catch {
       setStatus('error');

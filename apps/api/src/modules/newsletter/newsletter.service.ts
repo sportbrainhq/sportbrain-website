@@ -2,16 +2,30 @@ import { randomBytes } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type {
+  NewsletterSubscriptionSource,
   NewsletterSubscriptionSummary,
   NewsletterTokenActionResponse,
   SubscribeRequest,
   SubscribeResponse,
+  SubscriberAnalytics,
+  SubscriberSourceBreakdown,
   UpdateNewsletterPreferencesRequest,
 } from '@sportbrain/contracts';
 import type { AppConfig } from '../../config';
 import { AppException } from '../../common';
 import { NewsletterMailerService } from './newsletter-mailer.service';
 import { NewsletterRepository, type NewsletterSubscriptionRow } from './newsletter.repository';
+
+/** Mirrors `newsletter_subscription_source` — see that schema file for what each value means. Kept here (not imported from the enum) so `getSubscriberAnalytics`'s zero-fill has a plain string array to iterate without pulling in the schema module. */
+const SOURCE_VALUES: NewsletterSubscriptionSource[] = [
+  'NEWSLETTER_PAGE',
+  'HOMEPAGE',
+  'PROFILE',
+  'ARTICLE',
+  'QUIZ_RESULT',
+  'FOOTER',
+  'OTHER',
+];
 
 /**
  * Service layer: the domain logic for the newsletter subscription foundation.
@@ -132,6 +146,34 @@ export class NewsletterService {
   /** Read-only headline stat for the admin newsletter dashboard (Phase D2). See the repository method's own JSDoc for why this addition lives in D1's module. */
   async countActiveSubscribers(): Promise<number> {
     return this.repository.countActiveSubscribers();
+  }
+
+  /**
+   * Site-wide subscriber analytics (Phase D6, org spec section 45/46) — reads
+   * `newsletter_subscription` directly rather than joining through campaigns,
+   * since these are properties of the subscriber base itself, not of any one
+   * send. `bySource` is zero-filled for every known source (see
+   * `SOURCE_VALUES` below) so the admin UI never has to guess whether a
+   * missing key means "zero" or "not computed yet".
+   */
+  async getSubscriberAnalytics(): Promise<SubscriberAnalytics> {
+    const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    const [totalSubscribed, newThisWeek, unsubscribed, bounced, complained, bySourceCounts] =
+      await Promise.all([
+        this.repository.countByStatus('SUBSCRIBED'),
+        this.repository.countSubscribedSince(oneWeekAgo),
+        this.repository.countByStatus('UNSUBSCRIBED'),
+        this.repository.countByStatus('BOUNCED'),
+        this.repository.countByStatus('COMPLAINED'),
+        this.repository.countBySource(),
+      ]);
+
+    const bySource = Object.fromEntries(
+      SOURCE_VALUES.map((source) => [source, bySourceCounts[source] ?? 0]),
+    ) as SubscriberSourceBreakdown;
+
+    return { totalSubscribed, newThisWeek, unsubscribed, bounced, complained, bySource };
   }
 
   async getMyStatus(userId: string): Promise<NewsletterSubscriptionSummary | null> {

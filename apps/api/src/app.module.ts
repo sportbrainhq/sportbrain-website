@@ -23,6 +23,9 @@ import { InternalNewsModule } from './modules/internal-news/internal-news.module
 import { ContactModule } from './modules/contact/contact.module';
 import { NewsletterModule } from './modules/newsletter/newsletter.module';
 import { NewsletterIssueModule } from './modules/newsletter-issues/newsletter-issue.module';
+import { NewsletterDeliveryModule } from './modules/newsletter-delivery/newsletter-delivery.module';
+import { NewsletterWebhookModule } from './modules/newsletter-webhooks/newsletter-webhook.module';
+import { NewsletterArchiveModule } from './modules/newsletter-archive/newsletter-archive.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { SavedEntitiesModule } from './modules/saved-entities/saved-entities.module';
@@ -117,6 +120,9 @@ import { QueueModule } from './queue/queue.module';
     ContactModule,
     NewsletterModule,
     NewsletterIssueModule,
+    NewsletterDeliveryModule,
+    NewsletterWebhookModule,
+    NewsletterArchiveModule,
   ],
   providers: [
     // Registered globally so that every route gets the same error envelope,

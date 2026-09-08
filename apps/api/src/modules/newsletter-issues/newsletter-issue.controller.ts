@@ -15,11 +15,13 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   createIssueRequestSchema,
   paginationQuerySchema,
+  sendTestEmailRequestSchema,
   updateIssueContentSchema,
   updateIssueMetaSchema,
   type AdminQuestion,
   type ContentSummary,
   type CreateIssueRequest,
+  type IssuePreviewResponse,
   type IssueValidationResult,
   type NewsletterIssueDetail,
   type NewsletterIssueStatus,
@@ -28,6 +30,7 @@ import {
   type QuestionCategory,
   type QuestionDifficulty,
   type QuestionStatus,
+  type SendTestEmailRequest,
   type UpdateIssueContentRequest,
   type UpdateIssueMetaRequest,
 } from '@sportbrain/contracts';
@@ -39,6 +42,8 @@ import { SessionGuard } from '../auth/guards/session.guard';
 import { ContentService } from '../content/content.service';
 import { NewsletterService } from '../newsletter/newsletter.service';
 import { QuestionsService } from '../questions/questions.service';
+import { NewsletterIssueRenderService } from './newsletter-issue-render.service';
+import { NewsletterIssueTestMailService } from './newsletter-issue-test-mail.service';
 import { NewsletterIssueService } from './newsletter-issue.service';
 
 /**
@@ -59,6 +64,8 @@ export class NewsletterIssueController {
     private readonly questions: QuestionsService,
     private readonly content: ContentService,
     private readonly newsletter: NewsletterService,
+    private readonly render: NewsletterIssueRenderService,
+    private readonly testMail: NewsletterIssueTestMailService,
   ) {}
 
   /**
@@ -149,22 +156,42 @@ export class NewsletterIssueController {
   }
 
   /**
-   * Same payload as `GET :id` for D2. `NewsletterIssueEditor` uses this route
-   * as a boundary marker for "the reader-facing render" rather than reusing
-   * `GET :id` directly, so that D4 (real email-preview rendering: desktop /
-   * mobile / web variants, actual HTML template) is additive here — a
-   * response-shape change on this route, not a new route plus a migration of
-   * every caller off `GET :id`.
-   *
-   * TODO(D4): render desktop/mobile/web preview variants instead of the raw
-   * content DTO.
+   * Real rendering (Phase D4): returns both the raw issue DTO and the
+   * `RenderedIssue` view model `NewsletterIssueRenderService` produces from
+   * it — the same model the email template consumes. The admin preview UI
+   * renders this view model inside desktop-width and mobile-width panes
+   * (one model, two container widths — see the render service's own header
+   * comment for why that is the right call for V1) rather than the API
+   * producing three separately-rendered variants.
    */
   @Get(':id/preview')
-  @ApiOperation({
-    summary: 'Preview an issue (D2: same payload as GET :id; D4 adds real rendering)',
-  })
-  async preview(@Param('id', ParseUUIDPipe) id: string): Promise<{ data: NewsletterIssueDetail }> {
-    return { data: await this.service.getIssue(id) };
+  @ApiOperation({ summary: 'Render an issue for preview (desktop/mobile panes, admin UI only)' })
+  async preview(@Param('id', ParseUUIDPipe) id: string): Promise<{ data: IssuePreviewResponse }> {
+    const issue = await this.service.getIssue(id);
+    return { data: { issue, rendered: this.render.render(issue) } };
+  }
+
+  /**
+   * Sends a real-template test email to an arbitrary address, entirely
+   * outside the recipient/campaign model: no `NewsletterRecipient` row, no
+   * campaign, and the subject is prefixed so the inbox is unambiguous about
+   * what it is. Uses a dummy unsubscribe token (there is no real
+   * subscription behind a test send) — the link is present and clickable in
+   * the rendered HTML for visual QA, but following it would 404 against a
+   * token that matches no row, which is the correct behaviour for a link
+   * that must never be a live unsubscribe.
+   */
+  @Post(':id/test')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Send a test email of this issue to one address' })
+  async sendTest(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(zodPipe(sendTestEmailRequestSchema)) body: SendTestEmailRequest,
+  ): Promise<{ data: { sent: true } }> {
+    const issue = await this.service.getIssue(id);
+    const rendered = this.render.render(issue);
+    await this.testMail.sendTest(issue, rendered, body.email);
+    return { data: { sent: true } };
   }
 
   @Patch(':id')

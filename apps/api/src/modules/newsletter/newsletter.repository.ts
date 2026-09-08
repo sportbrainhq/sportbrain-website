@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { count, eq } from 'drizzle-orm';
+import { count, eq, gte } from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
 import { newsletterSubscription } from '../../database/schema';
 import type {
@@ -181,5 +181,59 @@ export class NewsletterRepository {
       .returning();
 
     return row ?? null;
+  }
+
+  /**
+   * Permanent suppression on a hard bounce/spam complaint (Phase D6) —
+   * `status` is `BOUNCED` or `COMPLAINED`, never anything else. Unlike
+   * `unsubscribeByToken`, this has no status guard in the `WHERE` clause: a
+   * subscription already `BOUNCED`/`COMPLAINED`/`UNSUBSCRIBED` is already out
+   * of the send pool (see `createRecipientSnapshot`'s `status = 'SUBSCRIBED'`
+   * filter), so re-applying the same or a "worse" suppression status is
+   * harmless — the idempotency `NewsletterWebhookService` needs comes from
+   * the recipient-row guard instead (see
+   * `NewsletterRecipientRepository.markRecipientBouncedOrComplained`), not
+   * from this call being a no-op on a repeat.
+   */
+  async suppress(
+    subscriptionId: string,
+    status: Extract<NewsletterSubscriptionStatus, 'BOUNCED' | 'COMPLAINED'>,
+  ): Promise<NewsletterSubscriptionRow | null> {
+    const [row] = await this.database.db
+      .update(newsletterSubscription)
+      .set({ status, updatedAt: new Date() })
+      .where(eq(newsletterSubscription.id, subscriptionId))
+      .returning();
+
+    return row ?? null;
+  }
+
+  /** Count of rows in any of the given statuses — the shared building block behind every `SubscriberAnalytics` count (Phase D6). */
+  async countByStatus(status: NewsletterSubscriptionStatus): Promise<number> {
+    const [row] = await this.database.db
+      .select({ value: count() })
+      .from(newsletterSubscription)
+      .where(eq(newsletterSubscription.status, status));
+    return row?.value ?? 0;
+  }
+
+  /** Rows whose `subscribedAt` falls on/after `since` — "new this week" in `SubscriberAnalytics`. Counts every status, not just `SUBSCRIBED`: a `PENDING` double-opt-in signup this week is still a new signup, even if not yet confirmed. */
+  async countSubscribedSince(since: Date): Promise<number> {
+    const [row] = await this.database.db
+      .select({ value: count() })
+      .from(newsletterSubscription)
+      .where(gte(newsletterSubscription.subscribedAt, since));
+    return row?.value ?? 0;
+  }
+
+  /** Count of every subscription, grouped by `source` — `SubscriberAnalytics.bySource`. Scoped to currently-active (`SUBSCRIBED`) rows: a source breakdown of unsubscribed/bounced addresses answers a different question than "where do my current subscribers come from", which is what this stat is for. */
+  async countBySource(): Promise<Record<string, number>> {
+    const rows = await this.database.db
+      .select({ source: newsletterSubscription.source, value: count() })
+      .from(newsletterSubscription)
+      .where(eq(newsletterSubscription.status, 'SUBSCRIBED'))
+      .groupBy(newsletterSubscription.source);
+
+    return Object.fromEntries(rows.map((row) => [row.source, row.value]));
   }
 }

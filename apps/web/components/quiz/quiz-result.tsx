@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import type { QuizAttempt } from '@sportbrain/contracts';
+import { QuizResultNewsletterCta } from '@/components/newsletter/quiz-result-newsletter-cta';
 import { QuestionReviewItem } from './question-review-item';
 
 const RESULT_LABEL_THRESHOLDS: [number, string][] = [
@@ -102,6 +103,8 @@ export function QuizResult({ attempt }: { attempt: QuizAttempt }) {
           ))}
         </div>
       </section>
+
+      <QuizResultNewsletterCta />
 
       <div className="flex justify-center">
         <Link

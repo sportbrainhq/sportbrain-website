@@ -32,3 +32,7 @@ export * from './question-report';
 export * from './question-inventory';
 export * from './newsletter';
 export * from './newsletter-issue';
+export * from './newsletter-campaign';
+export * from './newsletter-webhooks';
+export * from './newsletter-analytics';
+export * from './newsletter-archive';

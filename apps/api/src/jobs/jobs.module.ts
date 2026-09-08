@@ -1,7 +1,10 @@
 import { Logger, Module, type DynamicModule } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
 import { loadConfiguration } from '../config/configuration';
+import { NewsletterDeliveryModule } from '../modules/newsletter-delivery/newsletter-delivery.module';
+import { NewsletterIssueModule } from '../modules/newsletter-issues/newsletter-issue.module';
 import { NewsSchedulerJob } from './news-scheduler.job';
+import { NewsletterIssueSchedulerJob } from '../modules/newsletter-delivery/newsletter-issue-scheduler.job';
 
 /**
  * Scheduled and background work.
@@ -64,14 +67,25 @@ export class JobsModule {
 
     return {
       module: JobsModule,
-      imports: enabled ? [ScheduleModule.forRoot()] : [],
+      imports: enabled
+        ? [
+            ScheduleModule.forRoot(),
+            // NewsletterIssueSchedulerJob depends on NewsletterIssueRepository
+            // (NewsletterIssueModule) and NewsletterCampaignRepository/
+            // NewsletterRecipientRepository (NewsletterDeliveryModule) — see
+            // that module's own header for why the job class lives there but
+            // is registered here.
+            NewsletterIssueModule,
+            NewsletterDeliveryModule,
+          ]
+        : [],
       providers: [
         // Job providers go here. See the class comment.
         //
         // NewsSchedulerJob depends on NewsWorkerRepository and QueueService,
         // both exported by the @Global QueueModule, so no import is needed
         // here beyond ScheduleModule for @Cron to work.
-        ...(enabled ? [NewsSchedulerJob] : []),
+        ...(enabled ? [NewsSchedulerJob, NewsletterIssueSchedulerJob] : []),
       ],
     };
   }

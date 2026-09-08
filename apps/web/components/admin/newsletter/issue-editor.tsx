@@ -16,6 +16,8 @@ import type {
 import { adminPatch, adminPost } from '@/lib/admin-api';
 import { QuestionPickerModal } from './question-picker-modal';
 import { ContentPickerModal } from './content-picker-modal';
+import { ScheduleSection } from './schedule-section';
+import { TestEmailSection } from './test-email-section';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -158,6 +160,12 @@ export function IssueEditor({ initial }: { initial: NewsletterIssueDetail }) {
           </div>
         )}
       </section>
+
+      <TestEmailSection issueId={issue.id} />
+
+      {(issue.status === 'READY' || issue.status === 'SCHEDULED') && (
+        <ScheduleSection issue={issue} onChange={setIssue} />
+      )}
     </div>
   );
 }

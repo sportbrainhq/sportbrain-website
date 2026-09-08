@@ -25,6 +25,7 @@
  *  11. `question`       the canonical Question Bank (Phase C) — quizzes select references, never copies
  *  12. `newsletter`     The Monday Brief subscription foundation (Phase D1) — subscribe/confirm/unsubscribe only, no issues yet
  *  13. `newsletter-issue` The Monday Brief issue model (Phase D2) — create/edit/validate/ready only, no scheduling/delivery yet
+ *  14. `newsletter-campaign`/`newsletter-recipient` Scheduling + delivery (Phase D5) — one row per send run, one row per recipient of that run
  *
  * To add a table: create the file, re-export it here, run `pnpm db:generate`,
  * read the generated SQL by hand, then `pnpm db:migrate`.
@@ -55,3 +56,5 @@ export * from './question-exposure.schema';
 export * from './quiz-attempt-v2.schema';
 export * from './newsletter-subscription.schema';
 export * from './newsletter-issue.schema';
+export * from './newsletter-campaign.schema';
+export * from './newsletter-recipient.schema';

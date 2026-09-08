@@ -221,6 +221,8 @@ export const newsletterIssueDetailSchema = z.object({
   createdBy: z.string().nullable(),
   updatedBy: z.string().nullable(),
   scheduledAt: z.string().nullable(),
+  /** IANA timezone the (nullable) `scheduledAt` instant was picked in — see `newsletterIssue.scheduleTimezone`'s schema comment. Always present, even for an issue never scheduled, since the column carries a default. */
+  scheduleTimezone: z.string(),
   sendStartedAt: z.string().nullable(),
   sentAt: z.string().nullable(),
   publishedAt: z.string().nullable(),
@@ -228,3 +230,48 @@ export const newsletterIssueDetailSchema = z.object({
   updatedAt: z.string(),
 });
 export type NewsletterIssueDetail = z.infer<typeof newsletterIssueDetailSchema>;
+
+// --- Rendering (Phase D4) ------------------------------------------------------
+
+/**
+ * The presentation-ready shape produced from `NewsletterIssueContent` by
+ * `NewsletterIssueRenderService`. One source of truth for three consumers:
+ * the admin preview pane, the HTML email template, and (D7, later) the
+ * public issue page — all three read this shape rather than each re-deriving
+ * "how do I turn `content.bigStory` into something displayable" from the raw
+ * jsonb independently.
+ *
+ * Deliberately NOT desktop/mobile/web-specific: every section here is the
+ * same data regardless of where it renders. Desktop vs. mobile is a
+ * container-width/CSS concern in the admin preview UI and a responsive
+ * table-layout concern in the email template — both consume this one model,
+ * neither needs a different one. See `newsletter-issue-render.service.ts`'s
+ * own header comment for the full reasoning.
+ */
+export const renderedIssueSchema = z.object({
+  issueNumber: z.number().int(),
+  title: z.string(),
+  subject: z.string(),
+  previewText: z.string(),
+  /** `heroTitle` if set, else falls back to `title` — the one piece of "apply a default" logic this model resolves once so every consumer doesn't repeat it. */
+  heroTitle: z.string(),
+  issueDate: z.string(),
+  intro: z.string().nullable(),
+  quickRecap: z.array(quickRecapItemSchema),
+  bigStory: bigStorySchema.nullable(),
+  scoreboard: z.array(scoreboardGroupSchema),
+  numbers: z.array(numberItemSchema),
+  missedStory: missedStorySchema.nullable(),
+  history: historyItemSchema.nullable(),
+  quiz: challengeBlockSchema.nullable(),
+  watchNext: z.array(watchNextItemSchema),
+  sportbrainLinks: z.array(sportbrainLinkSchema),
+});
+export type RenderedIssue = z.infer<typeof renderedIssueSchema>;
+
+/** `GET /admin/newsletter/issues/:id/preview` response (D4: real rendering, replacing D2's raw-DTO placeholder). */
+export const issuePreviewResponseSchema = z.object({
+  issue: newsletterIssueDetailSchema,
+  rendered: renderedIssueSchema,
+});
+export type IssuePreviewResponse = z.infer<typeof issuePreviewResponseSchema>;

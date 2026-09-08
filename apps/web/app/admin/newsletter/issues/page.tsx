@@ -20,11 +20,12 @@ const STATUS_BADGE: Record<NewsletterIssueStatus, string> = {
 };
 
 /**
- * The issue list table. D2 only implements the DRAFT/READY action set
- * (Edit/Preview/Duplicate) — later statuses (SCHEDULED/SENDING/SENT/FAILED/
- * CANCELLED) render with no row actions at all rather than actions this
- * phase cannot honestly perform (cancel-send, view-delivery-report, etc.
- * belong to D3+).
+ * The issue list table. DRAFT/READY get the D2 action set (Edit/Preview/
+ * Duplicate). SCHEDULED/SENDING/SENT/FAILED (Phase D5) get a link to the
+ * delivery view instead — the one place those statuses have anything
+ * meaningful to show (campaign counters, Retry Failed). CANCELLED still
+ * renders no actions: there is nothing to do with a cancelled issue in this
+ * phase.
  */
 export default async function NewsletterIssuesListPage() {
   await requireEditor();
@@ -90,9 +91,19 @@ export default async function NewsletterIssuesListPage() {
                   </span>
                 </td>
                 <td className="px-4 py-3 text-right">
-                  {/* Only DRAFT/READY get an action set in D2 — see this page's header comment. */}
                   {(issue.status === 'DRAFT' || issue.status === 'READY') && (
                     <IssueRowActions issueId={issue.id} />
+                  )}
+                  {(issue.status === 'SCHEDULED' ||
+                    issue.status === 'SENDING' ||
+                    issue.status === 'SENT' ||
+                    issue.status === 'FAILED') && (
+                    <Link
+                      href={`/admin/newsletter/issues/${issue.id}/delivery`}
+                      className="text-xs text-primary hover:underline"
+                    >
+                      View delivery
+                    </Link>
                   )}
                 </td>
               </tr>

@@ -337,6 +337,13 @@
       "when": 1788800179549,
       "tag": "0047_fresh_wolf_cub",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1788809941525,
+      "tag": "0048_minor_power_pack",
+      "breakpoints": true
     }
   ]
 }

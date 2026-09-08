@@ -227,6 +227,33 @@ export const envSchema = z
     NEWSLETTER_FROM_EMAIL: z.string().email().default('onboarding@resend.dev'),
     NEWSLETTER_RATE_LIMIT_TTL_SECONDS: z.coerce.number().int().positive().default(60),
     NEWSLETTER_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(5),
+
+    // Scheduling + delivery (Phase D5). Batch size caps how many recipients
+    // one BullMQ job processes, so a large subscriber list becomes many
+    // small jobs (resumable, individually retryable) rather than one job
+    // that runs for an unbounded amount of time. Max attempts bounds
+    // `NewsletterCampaignService.retryFailed`'s eligibility — a recipient
+    // that has failed this many times stops being auto-retryable and needs
+    // a human to look at it. Default send time/timezone seed the "Schedule"
+    // UI's date/time picker default (next Monday at this time, in this
+    // zone) — purely a UI default, not enforced server-side.
+    NEWSLETTER_BATCH_SIZE: z.coerce.number().int().positive().default(200),
+    NEWSLETTER_MAX_SEND_ATTEMPTS: z.coerce.number().int().positive().default(3),
+    NEWSLETTER_DEFAULT_SEND_TIME: z
+      .string()
+      .regex(/^\d{2}:\d{2}$/)
+      .default('08:00'),
+    NEWSLETTER_DEFAULT_TIMEZONE: z.string().min(1).default('Asia/Kolkata'),
+
+    // Webhooks (Phase D6). Shared-secret HMAC-SHA256 signing key for
+    // `POST /webhooks/email/:provider` — see `NewsletterWebhookGuard`'s file
+    // header for the full v1 caveat. This is a generic, provider-agnostic
+    // placeholder: no real email provider is installed yet (see
+    // `NewsletterEmailProvider`), so there is no real provider signature
+    // scheme to verify against. Optional in the schema, but the guard FAILS
+    // CLOSED when it is unset, mirroring `INTERNAL_API_KEY`/
+    // `InternalApiKeyGuard` exactly.
+    NEWSLETTER_WEBHOOK_SECRET: z.string().min(1).optional(),
   })
   .superRefine((config, ctx) => {
     if (config.NODE_ENV !== 'production') return;

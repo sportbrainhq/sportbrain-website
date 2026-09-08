@@ -130,6 +130,17 @@ export const newsletterIssue = pgTable(
      * already full of live DRAFT/READY rows.
      */
     scheduledAt: timestamp('scheduled_at', { withTimezone: true }),
+    /**
+     * IANA timezone name the `scheduledAt` instant was chosen in (e.g.
+     * `Asia/Kolkata`) — added in D5. `scheduledAt` itself is always an
+     * absolute instant (`timestamptz`), so this column exists purely for
+     * displaying it back to the editor in the timezone they picked ("Mon,
+     * 8:00 AM IST") rather than converting to their browser's local zone,
+     * which would show a different clock time than what they scheduled.
+     * Defaults to the newsletter's default send timezone so D2-created rows
+     * (created before this column existed) read sensibly if ever scheduled.
+     */
+    scheduleTimezone: text('schedule_timezone').notNull().default('Asia/Kolkata'),
     sendStartedAt: timestamp('send_started_at', { withTimezone: true }),
     sentAt: timestamp('sent_at', { withTimezone: true }),
     publishedAt: timestamp('published_at', { withTimezone: true }),

@@ -16,11 +16,17 @@ import { NewsletterService } from './newsletter.service';
  * Exports `NewsletterService` (Phase D2 onward): the newsletter-issues
  * module's admin dashboard reads `countActiveSubscribers()` from it rather
  * than duplicating a subscription-count query.
+ *
+ * Also exports `NewsletterRepository` (Phase D6): `NewsletterWebhookService`
+ * calls `.suppress()` directly on a bounce/complaint, a repository-level
+ * write with no service-level equivalent worth adding for one caller —
+ * mirrors `NewsletterDeliveryModule` exporting its repositories alongside
+ * its service for the same reason.
  */
 @Module({
   imports: [AuthModule],
   controllers: [NewsletterController, NewsletterMeController],
   providers: [NewsletterService, NewsletterRepository, NewsletterMailerService],
-  exports: [NewsletterService],
+  exports: [NewsletterService, NewsletterRepository],
 })
 export class NewsletterModule {}

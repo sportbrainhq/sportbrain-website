@@ -21,3 +21,19 @@ export interface ProcessJobData {
 
 export const NEWS_FETCH_QUEUE = 'news-fetch';
 export const NEWS_PROCESS_QUEUE = 'news-process';
+
+/**
+ * Enqueued by `NewsletterIssueSchedulerJob` (D5), one job per batch of
+ * `NEWSLETTER_BATCH_SIZE` pending recipients. `batchIndex` is informational
+ * only (useful in logs to see how many batches a campaign was split into);
+ * it plays no role in ordering or idempotency, which the recipient-level
+ * status guards in `NewsletterRecipientRepository` already provide — two
+ * workers racing to process the same batch simply both no-op on any
+ * recipient the other already claimed.
+ */
+export interface NewsletterDeliveryJobData {
+  campaignId: string;
+  batchIndex: number;
+}
+
+export const NEWSLETTER_DELIVERY_QUEUE = 'newsletter-delivery';

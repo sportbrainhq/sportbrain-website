@@ -175,6 +175,57 @@ export class NewsletterIssueService {
     return this.toDetail(row ?? created);
   }
 
+  /**
+   * READY -> SCHEDULED (Phase D5). Only READY issues may be scheduled — a
+   * DRAFT issue may still have validation errors, and re-scheduling an
+   * already-SCHEDULED issue must go through `cancelSchedule` first so the
+   * new time is a deliberate, visible action rather than a silent
+   * overwrite. `scheduledAt` must be in the future: scheduling something for
+   * the past would be claimed by the scheduler on its very next tick, which
+   * is surprising rather than useful — an editor who wants "send now" has no
+   * endpoint for that in D5 by design (send-now is a product decision this
+   * phase does not make).
+   */
+  async scheduleIssue(
+    id: string,
+    input: { scheduledAt: string; timezone: string },
+  ): Promise<NewsletterIssueDetail> {
+    const existing = await this.mustFind(id);
+    if (existing.status !== 'READY') {
+      throw AppException.conflict(
+        `Cannot schedule an issue from status "${existing.status}". Mark it READY first.`,
+      );
+    }
+
+    const scheduledAt = new Date(input.scheduledAt);
+    if (scheduledAt.getTime() <= Date.now()) {
+      throw AppException.validationFailed('scheduledAt must be in the future.', [
+        { path: 'scheduledAt', message: 'Must be in the future.' },
+      ]);
+    }
+
+    const row = await this.repository.scheduleIssue(id, scheduledAt, input.timezone);
+    if (!row) {
+      // Lost a race against a concurrent schedule/edit that changed status
+      // out from under this check — report the same conflict a fresh
+      // mustFind would have hit, rather than a confusing 404.
+      throw AppException.conflict('Issue is no longer READY; refresh and try again.');
+    }
+    return this.toDetail(row);
+  }
+
+  /** SCHEDULED -> READY, clearing `scheduledAt`. A no-op-shaped conflict (not a 404) when the issue has already moved past SCHEDULED (e.g. the scheduler already claimed it for sending). */
+  async cancelSchedule(id: string): Promise<NewsletterIssueDetail> {
+    const existing = await this.mustFind(id);
+    if (existing.status !== 'SCHEDULED') {
+      throw AppException.conflict(`Issue is "${existing.status}", not SCHEDULED.`);
+    }
+
+    const row = await this.repository.cancelSchedule(id);
+    if (!row) throw AppException.conflict('Issue is no longer SCHEDULED; refresh and try again.');
+    return this.toDetail(row);
+  }
+
   private async mustFind(id: string): Promise<NewsletterIssueRow> {
     const row = await this.repository.findById(id);
     if (!row) throw AppException.notFound(`No newsletter issue with id "${id}"`);
@@ -217,6 +268,7 @@ export class NewsletterIssueService {
       createdBy: row.createdBy,
       updatedBy: row.updatedBy,
       scheduledAt: row.scheduledAt?.toISOString() ?? null,
+      scheduleTimezone: row.scheduleTimezone,
       sendStartedAt: row.sendStartedAt?.toISOString() ?? null,
       sentAt: row.sentAt?.toISOString() ?? null,
       publishedAt: row.publishedAt?.toISOString() ?? null,
