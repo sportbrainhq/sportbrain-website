@@ -48,6 +48,8 @@ export const achievementDefinitionSchema = z.object({
 export type AchievementDefinitionDto = z.infer<typeof achievementDefinitionSchema>;
 
 export const userAchievementSchema = z.object({
+  /** `UserAchievement.id` — an opaque random primary key, safe to use as the public share token (Part 81). */
+  userAchievementId: z.string(),
   achievement: achievementDefinitionSchema,
   earnedAt: z.string(),
 });
@@ -276,6 +278,32 @@ export const scoringConfigSchema = z.object({
   demotionHysteresisPoints: z.number(),
 });
 export type ScoringConfigDto = z.infer<typeof scoringConfigSchema>;
+
+export const adminAchievementDefinitionSchema = achievementDefinitionSchema.extend({
+  criteriaType: z.string(),
+  isActive: z.boolean(),
+  displayOrder: z.number().int(),
+  earnedCount: z.number().int().nonnegative(),
+});
+export type AdminAchievementDefinitionDto = z.infer<typeof adminAchievementDefinitionSchema>;
+
+export const adminAchievementsListSchema = z.object({
+  achievements: z.array(adminAchievementDefinitionSchema),
+});
+export type AdminAchievementsList = z.infer<typeof adminAchievementsListSchema>;
+
+export const setAchievementActiveRequestSchema = z.object({
+  isActive: z.boolean(),
+});
+export type SetAchievementActiveRequest = z.infer<typeof setAchievementActiveRequestSchema>;
+
+/** Public achievement-share data (Part 53-54, 81) — only returned when the earning user's Passport and achievements are both public. */
+export const publicAchievementShareSchema = z.object({
+  achievement: achievementDefinitionSchema,
+  displayName: z.string(),
+  earnedAt: z.string(),
+});
+export type PublicAchievementShare = z.infer<typeof publicAchievementShareSchema>;
 
 export const recalculateBatchRequestSchema = z.object({
   userIds: z.array(z.string()).min(1).max(500),

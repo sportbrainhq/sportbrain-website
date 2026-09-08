@@ -2,18 +2,23 @@ import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@ne
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   recalculateBatchRequestSchema,
+  setAchievementActiveRequestSchema,
   updatePassportPrivacySchema,
   type AchievementsResponse,
+  type AdminAchievementsList,
   type PassportActivity,
   type PassportMethodology,
   type PassportPrivacySettings,
   type PassportProgress,
   type PassportSportDetailDto,
+  type PassportImpact,
   type PassportSportKnowledgeDto,
   type PassportSummary,
+  type PublicAchievementShare,
   type PublicPassport,
   type RecalculateBatchRequest,
   type ScoringConfigDto,
+  type SetAchievementActiveRequest,
   type UpdatePassportPrivacyRequest,
 } from '@sportbrain/contracts';
 import { AppException, CurrentUser, zodPipe } from '../../common';
@@ -112,6 +117,19 @@ export class PassportController {
     return { data: await this.service.getActivity(user.id, days ? Number(days) : 90) };
   }
 
+  @Get('me/passport/impact/:quizAttemptId')
+  @UseGuards(SessionGuard)
+  @ApiOperation({
+    summary:
+      'SportBrain Impact of one completed quiz — recomputes synchronously, ownership-checked',
+  })
+  async getImpact(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('quizAttemptId') quizAttemptId: string,
+  ): Promise<{ data: PassportImpact | null }> {
+    return { data: await this.service.getImpactForAttempt(user.id, quizAttemptId) };
+  }
+
   @Get('me/passport/methodology')
   @UseGuards(SessionGuard)
   @ApiOperation({ summary: 'How the SportBrain Score is calculated' })
@@ -152,6 +170,38 @@ export class PassportController {
   @ApiOperation({ summary: 'Current SportBrain scoring configuration (admin)' })
   getScoringConfig(): { data: ScoringConfigDto } {
     return { data: this.service.getScoringConfig() };
+  }
+
+  @Get('share/achievement/:userAchievementId')
+  @ApiOperation({ summary: 'Public achievement share data — no authentication' })
+  async getAchievementShare(
+    @Param('userAchievementId') userAchievementId: string,
+  ): Promise<{ data: PublicAchievementShare }> {
+    return {
+      data: await this.service.getPublicAchievementShare(userAchievementId, (userId) =>
+        this.identityFor(userId),
+      ),
+    };
+  }
+
+  @Get('admin/achievements')
+  @UseGuards(SessionGuard, RolesGuard)
+  @Roles('admin')
+  @ApiOperation({ summary: 'All achievement definitions with earned counts (admin)' })
+  async listAchievementsForAdmin(): Promise<{ data: AdminAchievementsList }> {
+    return { data: await this.service.listAllAchievementsForAdmin() };
+  }
+
+  @Patch('admin/achievements/:achievementId/active')
+  @UseGuards(SessionGuard, RolesGuard)
+  @Roles('admin')
+  @ApiOperation({ summary: 'Activate/deactivate an achievement definition (admin)' })
+  async setAchievementActive(
+    @Param('achievementId') achievementId: string,
+    @Body(zodPipe(setAchievementActiveRequestSchema)) body: SetAchievementActiveRequest,
+  ): Promise<{ data: { updated: true } }> {
+    await this.service.setAchievementActive(achievementId, body.isActive);
+    return { data: { updated: true } };
   }
 
   @Post('admin/passport/recalculate/:userId')

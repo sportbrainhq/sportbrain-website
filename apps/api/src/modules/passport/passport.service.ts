@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type {
+  AdminAchievementsList,
   KnowledgeLevel,
   PassportActivity,
   PassportImpact,
@@ -66,6 +67,33 @@ export class PassportService {
     private readonly achievements: AchievementEvaluationService,
     private readonly streaks: PassportStreakService,
   ) {}
+
+  /**
+   * Quiz-result "SportBrain Impact" (Part 44, 70): the async
+   * `passport-recalc` queue job is the source of truth for the persisted
+   * cache, but the result page needs the delta in the same session as the
+   * quiz, not after an arbitrary queue delay. Recalculation is idempotent
+   * and cheap at the volumes a single user's history reaches, so this
+   * simply re-runs it synchronously, scoped to the caller's own attempt
+   * (ownership checked in the repository — a mismatched or incomplete
+   * attempt returns `null`, never another user's data).
+   */
+  async getImpactForAttempt(userId: string, quizAttemptId: string): Promise<PassportImpact | null> {
+    const attempt = await this.repository.findOwnedCompletedAttemptSummary(userId, quizAttemptId);
+    if (!attempt) return null;
+
+    return this.recalculateUserScore(userId, {
+      justCompletedQuiz: {
+        quizAttemptId,
+        quizType: attempt.quizType,
+        sportId: attempt.sportId,
+        questionCount: attempt.questionCount,
+        correctCount: attempt.correctCount,
+        percentage: attempt.percentage,
+        completedAt: attempt.completedAt,
+      },
+    });
+  }
 
   async recalculateUserScore(userId: string, options: RecalcOptions = {}): Promise<PassportImpact> {
     const [answers, sports, previousProfile] = await Promise.all([
@@ -277,6 +305,7 @@ export class PassportService {
             }
           : null,
       newAchievements: newlyGranted.map((g) => ({
+        userAchievementId: g.userAchievementId,
         achievement: {
           id: g.definition.id,
           code: g.definition.code,
@@ -372,6 +401,7 @@ export class PassportService {
         longestDailyStreak: daily.longest,
       },
       recentAchievements: earned.slice(0, 5).map((e) => ({
+        userAchievementId: e.id,
         achievement: {
           id: e.achievement.id,
           code: e.achievement.code,
@@ -488,6 +518,7 @@ export class PassportService {
 
     return {
       earned: earned.map((e) => ({
+        userAchievementId: e.id,
         achievement: {
           id: e.achievement.id,
           code: e.achievement.code,
@@ -576,6 +607,58 @@ export class PassportService {
       levelThresholds: LEVEL_THRESHOLDS,
       demotionHysteresisPoints: DEMOTION_HYSTERESIS_POINTS,
     };
+  }
+
+  async getPublicAchievementShare(
+    userAchievementId: string,
+    displayNameFor: (userId: string) => Promise<{ displayName: string }>,
+  ) {
+    const found = await this.repository.findPublicUserAchievement(userAchievementId);
+    if (!found) throw AppException.notFound('Achievement not found.');
+    const identity = await displayNameFor(found.userId);
+    return {
+      achievement: {
+        id: found.achievement.id,
+        code: found.achievement.code,
+        name: found.achievement.name,
+        description: found.achievement.description,
+        category: found.achievement.category,
+        tier: found.achievement.tier,
+        iconKey: found.achievement.iconKey,
+        isHidden: found.achievement.isHidden,
+      },
+      displayName: identity.displayName,
+      earnedAt: found.userAchievement.earnedAt.toISOString(),
+    };
+  }
+
+  // ---- Admin: achievements ----
+
+  async listAllAchievementsForAdmin(): Promise<AdminAchievementsList> {
+    const [definitions, earnedCounts] = await Promise.all([
+      this.repository.listAllAchievementDefinitions(),
+      this.repository.countEarnedByAchievement(),
+    ]);
+    return {
+      achievements: definitions.map((d) => ({
+        id: d.id,
+        code: d.code,
+        name: d.name,
+        description: d.description,
+        category: d.category,
+        tier: d.tier,
+        iconKey: d.iconKey,
+        isHidden: d.isHidden,
+        criteriaType: d.criteriaType,
+        isActive: d.isActive,
+        displayOrder: d.displayOrder,
+        earnedCount: earnedCounts.get(d.id) ?? 0,
+      })),
+    };
+  }
+
+  async setAchievementActive(achievementId: string, isActive: boolean): Promise<void> {
+    await this.repository.setAchievementActive(achievementId, isActive);
   }
 
   // ---- Privacy ----

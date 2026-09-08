@@ -35,6 +35,7 @@ export interface AchievementEvaluationContext {
 }
 
 export interface GrantedAchievement {
+  userAchievementId: string;
   definition: AchievementDefinitionRow;
   triggerContext?: Record<string, unknown>;
 }
@@ -83,7 +84,11 @@ export class AchievementEvaluationService {
         evaluation.triggerContext,
       );
       if (row) {
-        granted.push({ definition, triggerContext: evaluation.triggerContext });
+        granted.push({
+          userAchievementId: row.id,
+          definition,
+          triggerContext: evaluation.triggerContext,
+        });
         this.logger.log(`Granted achievement ${definition.code} to user ${userId}`);
       }
     }

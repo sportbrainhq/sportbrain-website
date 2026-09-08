@@ -79,6 +79,56 @@ export class PassportRepository {
       }));
   }
 
+  /**
+   * One attempt's summary, scoped to `userId` (ownership check baked in —
+   * a mismatched owner returns `undefined`, same as not found). Used only
+   * by the quiz-result "SportBrain Impact" sync endpoint, which needs the
+   * attempt's `quizType`/`sportId`/counts to feed `PassportService` the
+   * same `justCompletedQuiz` context the async worker would have used.
+   */
+  async findOwnedCompletedAttemptSummary(
+    userId: string,
+    quizAttemptId: string,
+  ): Promise<
+    | {
+        quizType: 'SPORT' | 'MASTER';
+        sportId: string | null;
+        questionCount: number;
+        correctCount: number;
+        percentage: number;
+        completedAt: Date;
+      }
+    | undefined
+  > {
+    const [row] = await this.database.db
+      .select({
+        userId: quizAttemptV2.userId,
+        quizType: quizAttemptV2.quizType,
+        sportId: quizAttemptV2.sportId,
+        status: quizAttemptV2.status,
+        actualQuestionCount: quizAttemptV2.actualQuestionCount,
+        correctCount: quizAttemptV2.correctCount,
+        scorePercentage: quizAttemptV2.scorePercentage,
+        completedAt: quizAttemptV2.completedAt,
+      })
+      .from(quizAttemptV2)
+      .where(eq(quizAttemptV2.id, quizAttemptId))
+      .limit(1);
+
+    if (!row || row.userId !== userId || row.status !== 'COMPLETED' || !row.completedAt) {
+      return undefined;
+    }
+
+    return {
+      quizType: row.quizType,
+      sportId: row.sportId,
+      questionCount: row.actualQuestionCount,
+      correctCount: row.correctCount,
+      percentage: row.scorePercentage ? Number(row.scorePercentage) : 0,
+      completedAt: row.completedAt,
+    };
+  }
+
   async listSports(): Promise<{ id: string; slug: string; name: string }[]> {
     return this.database.db
       .select({ id: sport.id, slug: sport.slug, name: sport.name })
@@ -241,6 +291,28 @@ export class PassportRepository {
       .orderBy(achievementDefinition.displayOrder);
   }
 
+  /** Earned count per achievement — admin analytics only (Part 73-74), never exposed per-user. */
+  async countEarnedByAchievement(): Promise<Map<string, number>> {
+    const rows = await this.database.db
+      .select({ achievementId: userAchievement.achievementId, count: sql<number>`count(*)::int` })
+      .from(userAchievement)
+      .groupBy(userAchievement.achievementId);
+    return new Map(rows.map((r) => [r.achievementId, r.count]));
+  }
+
+  async setAchievementActive(
+    achievementId: string,
+    isActive: boolean,
+  ): Promise<AchievementDefinitionRow> {
+    const [row] = await this.database.db
+      .update(achievementDefinition)
+      .set({ isActive, updatedAt: sql`now()` })
+      .where(eq(achievementDefinition.id, achievementId))
+      .returning();
+    if (!row) throw new Error(`Achievement definition ${achievementId} not found`);
+    return row;
+  }
+
   async listEarnedAchievements(
     userId: string,
   ): Promise<(UserAchievementRow & { achievement: AchievementDefinitionRow })[]> {
@@ -251,6 +323,40 @@ export class PassportRepository {
       .where(eq(userAchievement.userId, userId))
       .orderBy(desc(userAchievement.earnedAt));
     return rows.map((r) => ({ ...r.userAchievement, achievement: r.achievement }));
+  }
+
+  /**
+   * Public share lookup by `UserAchievement.id` — an opaque random primary
+   * key already, so it doubles as the share token without exposing
+   * `userId` (Part 81). Returns nothing unless the earning user has both
+   * `isPublic` and `showAchievementsPublicly` set — a private achievement
+   * is never renderable via this path even with a valid id.
+   */
+  async findPublicUserAchievement(
+    userAchievementId: string,
+  ): Promise<
+    | { userAchievement: UserAchievementRow; achievement: AchievementDefinitionRow; userId: string }
+    | undefined
+  > {
+    const [row] = await this.database.db
+      .select({
+        userAchievement,
+        achievement: achievementDefinition,
+        profile: userSportBrainProfile,
+      })
+      .from(userAchievement)
+      .innerJoin(achievementDefinition, eq(userAchievement.achievementId, achievementDefinition.id))
+      .innerJoin(userSportBrainProfile, eq(userAchievement.userId, userSportBrainProfile.userId))
+      .where(eq(userAchievement.id, userAchievementId))
+      .limit(1);
+
+    if (!row || !row.profile.isPublic || !row.profile.showAchievementsPublicly) return undefined;
+
+    return {
+      userAchievement: row.userAchievement,
+      achievement: row.achievement,
+      userId: row.userAchievement.userId,
+    };
   }
 
   async hasAchievement(userId: string, achievementId: string): Promise<boolean> {

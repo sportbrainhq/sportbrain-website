@@ -62,6 +62,14 @@ export default async function PassportAchievementsPage() {
                         year: 'numeric',
                       })}
                     </p>
+                    <a
+                      href={`/share/achievement/${a.userAchievementId}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-2 inline-block text-[11px] font-medium text-primary hover:underline"
+                    >
+                      Share
+                    </a>
                   </li>
                 ))}
               </ul>

@@ -1,7 +1,13 @@
 import Link from 'next/link';
-import { passportSummarySchema } from '@sportbrain/contracts';
+import {
+  passportActivitySchema,
+  passportProgressSchema,
+  passportSummarySchema,
+} from '@sportbrain/contracts';
 import { apiGetAuthed } from '@/lib/auth';
+import { ActivityCalendar } from '@/components/passport/activity-calendar';
 import { KnowledgeLevelBadge } from '@/components/passport/knowledge-level-badge';
+import { ProgressGraph } from '@/components/passport/progress-graph';
 import { SharePassportButton } from '@/components/passport/share-passport-button';
 
 export const metadata = { title: 'SportBrain Passport' };
@@ -14,6 +20,10 @@ export const metadata = { title: 'SportBrain Passport' };
  */
 export default async function PassportPage() {
   const summary = await apiGetAuthed('/v1/me/passport', passportSummarySchema);
+  const [progress, activity] = await Promise.all([
+    apiGetAuthed('/v1/me/passport/progress?range=6m', passportProgressSchema),
+    apiGetAuthed('/v1/me/passport/activity?days=90', passportActivitySchema),
+  ]);
 
   if (!summary) {
     return (
@@ -252,6 +262,28 @@ export default async function PassportPage() {
               </li>
             ))}
           </ul>
+        </section>
+      )}
+
+      {progress && (
+        <section>
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Your Progress
+          </h2>
+          <div className="rounded-lg border border-border bg-card p-4">
+            <ProgressGraph progress={progress} />
+          </div>
+        </section>
+      )}
+
+      {activity && (
+        <section>
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Your Activity
+          </h2>
+          <div className="rounded-lg border border-border bg-card p-4">
+            <ActivityCalendar activity={activity} />
+          </div>
         </section>
       )}
 
