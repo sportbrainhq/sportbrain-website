@@ -119,6 +119,15 @@ export class PassportController {
     return { data: this.service.getMethodology() };
   }
 
+  @Get('me/passport/privacy')
+  @UseGuards(SessionGuard)
+  @ApiOperation({ summary: 'Current Passport privacy settings' })
+  async getPrivacy(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<{ data: PassportPrivacySettings }> {
+    return { data: await this.service.getPrivacySettings(user.id) };
+  }
+
   @Patch('me/passport/privacy')
   @UseGuards(SessionGuard)
   @ApiOperation({ summary: 'Update Passport privacy settings' })

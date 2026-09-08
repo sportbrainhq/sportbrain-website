@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 
 const SECTIONS = [
   { href: '/profile', label: 'Overview' },
+  { href: '/profile/passport', label: 'Passport' },
   { href: '/profile/quizzes', label: 'Quiz History' },
   { href: '/profile/saved', label: 'Saved' },
   { href: '/profile/following', label: 'Following' },
