@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type {
   ActiveQuizAttempt,
@@ -11,6 +11,7 @@ import type {
 } from '@sportbrain/contracts';
 import { AppException } from '../../common';
 import type { AppConfig } from '../../config';
+import { QueueService } from '../../queue/queue.service';
 import { QuestionsRepository } from '../questions/questions.repository';
 import { EligibleQuestionsRepository } from '../quiz-generation/eligible-questions.repository';
 import { QuestionExposureRepository } from '../quiz-generation/question-exposure.repository';
@@ -34,6 +35,8 @@ type OptionCode = 'A' | 'B' | 'C' | 'D';
  */
 @Injectable()
 export class QuizAttemptsService {
+  private readonly logger = new Logger(QuizAttemptsService.name);
+
   constructor(
     private readonly repository: QuizAttemptsRepository,
     private readonly generation: QuizGenerationService,
@@ -41,6 +44,7 @@ export class QuizAttemptsService {
     private readonly exposure: QuestionExposureRepository,
     private readonly config: ConfigService<AppConfig, true>,
     private readonly questions: QuestionsRepository,
+    private readonly queue: QueueService,
   ) {}
 
   async start(userId: string, request: StartQuizRequest): Promise<QuizAttemptDto> {
@@ -248,6 +252,27 @@ export class QuizAttemptsService {
       scorePercentage: scorePercentage.toFixed(2),
       durationSeconds,
     });
+
+    // Phase E: enqueue a Passport recalculation. Deliberately fire-and-forget
+    // relative to this method's own success — the quiz result below is
+    // returned regardless of whether the enqueue succeeds (Part 69).
+    try {
+      await this.queue.enqueuePassportRecalc({
+        userId,
+        quizAttemptId: attempt.id,
+        justCompletedQuiz: {
+          quizType: attempt.quizType,
+          sportId: attempt.sportId,
+          questionCount: answeredCount,
+          correctCount,
+          percentage: scorePercentage,
+          completedAt: now.toISOString(),
+        },
+      });
+    } catch (error) {
+      // Never fail quiz completion because Passport recalculation could not be enqueued.
+      this.logger.error('Failed to enqueue passport-recalc job', error as Error);
+    }
 
     return await this.toAttemptDto(updated, questions);
   }

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ConfigService } from '@nestjs/config';
 import type { AppConfig } from '../../config';
+import type { QueueService } from '../../queue/queue.service';
 import { QuestionsRepository } from '../questions/questions.repository';
 import { EligibleQuestionsRepository } from '../quiz-generation/eligible-questions.repository';
 import { QuestionExposureRepository } from '../quiz-generation/question-exposure.repository';
@@ -129,6 +130,10 @@ describe('QuizAttemptsService', () => {
       findSportSlugById: vi.fn().mockResolvedValue('football'),
     } as unknown as QuestionsRepository;
 
+    const queue = {
+      enqueuePassportRecalc: vi.fn().mockResolvedValue(undefined),
+    } as unknown as QueueService;
+
     service = new QuizAttemptsService(
       repository,
       generation,
@@ -136,6 +141,7 @@ describe('QuizAttemptsService', () => {
       exposure,
       config,
       questions,
+      queue,
     );
   });
 

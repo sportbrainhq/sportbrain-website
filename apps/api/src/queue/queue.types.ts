@@ -37,3 +37,26 @@ export interface NewsletterDeliveryJobData {
 }
 
 export const NEWSLETTER_DELIVERY_QUEUE = 'newsletter-delivery';
+
+/**
+ * Enqueued by `QuizAttemptsService.complete()` (Phase E) once an attempt
+ * transitions to COMPLETED. Deliberately decoupled from the quiz-completion
+ * transaction (Part 69): the quiz result is saved and returned to the user
+ * regardless of whether Passport recalculation succeeds, retries, or is
+ * temporarily delayed by a disabled queue.
+ */
+export interface PassportRecalcJobData {
+  userId: string;
+  quizAttemptId: string;
+  /** Completion details for the PERFECT_SCORE/MASTER_MIND achievement checks — omitted for admin-triggered recalculations, which pass no quiz context. */
+  justCompletedQuiz?: {
+    quizType: 'SPORT' | 'MASTER';
+    sportId: string | null;
+    questionCount: number;
+    correctCount: number;
+    percentage: number;
+    completedAt: string;
+  };
+}
+
+export const PASSPORT_RECALC_QUEUE = 'passport-recalc';

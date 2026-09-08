@@ -344,6 +344,13 @@
       "when": 1788809941525,
       "tag": "0048_minor_power_pack",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1788888540596,
+      "tag": "0049_serious_black_bird",
+      "breakpoints": true
     }
   ]
 }

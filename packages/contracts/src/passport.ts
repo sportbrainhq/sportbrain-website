@@ -276,3 +276,8 @@ export const scoringConfigSchema = z.object({
   demotionHysteresisPoints: z.number(),
 });
 export type ScoringConfigDto = z.infer<typeof scoringConfigSchema>;
+
+export const recalculateBatchRequestSchema = z.object({
+  userIds: z.array(z.string()).min(1).max(500),
+});
+export type RecalculateBatchRequest = z.infer<typeof recalculateBatchRequestSchema>;

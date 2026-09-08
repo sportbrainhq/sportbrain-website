@@ -13,8 +13,10 @@ import { NewsProcessorService } from '../modules/news/news-processor.service';
 import { NewsWorkerRepository } from '../modules/news/news-worker.repository';
 import { ImportanceScorer } from '../modules/news/ranking/importance-scorer';
 import { RankingRepository } from '../modules/news/ranking/ranking.repository';
+import { PassportModule } from '../modules/passport/passport.module';
 import { NewsFetchWorker } from './news-fetch.worker';
 import { NewsProcessWorker } from './news-process.worker';
+import { PassportRecalcWorker } from './passport-recalc.worker';
 import { QueueService } from './queue.service';
 
 /**
@@ -37,6 +39,7 @@ import { QueueService } from './queue.service';
  */
 @Global()
 @Module({
+  imports: [PassportModule],
   providers: [
     QueueService,
     NewsWorkerRepository,
@@ -55,6 +58,7 @@ import { QueueService } from './queue.service';
     RankingRepository,
     NewsFetchWorker,
     NewsProcessWorker,
+    PassportRecalcWorker,
   ],
   exports: [
     QueueService,

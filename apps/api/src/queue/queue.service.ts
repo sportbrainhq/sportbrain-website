@@ -7,8 +7,10 @@ import {
   NEWS_FETCH_QUEUE,
   NEWS_PROCESS_QUEUE,
   NEWSLETTER_DELIVERY_QUEUE,
+  PASSPORT_RECALC_QUEUE,
   type FetchJobData,
   type NewsletterDeliveryJobData,
+  type PassportRecalcJobData,
   type ProcessJobData,
 } from './queue.types';
 
@@ -38,6 +40,7 @@ export class QueueService implements OnModuleDestroy {
   private readonly fetchQueue: Queue<FetchJobData> | undefined;
   private readonly processQueue: Queue<ProcessJobData> | undefined;
   private readonly newsletterDeliveryQueue: Queue<NewsletterDeliveryJobData> | undefined;
+  private readonly passportRecalcQueue: Queue<PassportRecalcJobData> | undefined;
 
   constructor(private readonly config: ConfigService<AppConfig, true>) {
     const redisUrl = this.config.get('redis.url', { infer: true });
@@ -64,9 +67,12 @@ export class QueueService implements OnModuleDestroy {
     this.newsletterDeliveryQueue = new Queue<NewsletterDeliveryJobData>(NEWSLETTER_DELIVERY_QUEUE, {
       connection: this.connection,
     });
+    this.passportRecalcQueue = new Queue<PassportRecalcJobData>(PASSPORT_RECALC_QUEUE, {
+      connection: this.connection,
+    });
 
     this.logger.log(
-      'REDIS_URL configured, news-fetch/news-process/newsletter-delivery queues are active',
+      'REDIS_URL configured, news-fetch/news-process/newsletter-delivery/passport-recalc queues are active',
     );
   }
 
@@ -151,10 +157,36 @@ export class QueueService implements OnModuleDestroy {
     });
   }
 
+  getPassportRecalcQueue(): Queue<PassportRecalcJobData> | undefined {
+    return this.passportRecalcQueue;
+  }
+
+  /**
+   * Enqueues a Passport recalculation for one user after a quiz completes.
+   * Deterministic job id per (user, attempt) so a retry of the same
+   * completion call (e.g. `complete()`'s own idempotent-return path) never
+   * double-enqueues. Never throws: `QuizAttemptsService.complete()` must be
+   * able to call this and still return the quiz result even if the queue is
+   * disabled or briefly unavailable (Part 69).
+   */
+  async enqueuePassportRecalc(data: PassportRecalcJobData, options?: JobsOptions): Promise<void> {
+    if (!this.passportRecalcQueue) {
+      this.logger.warn(
+        `Queue disabled (no REDIS_URL): skipped enqueueing passport-recalc for user ${data.userId}`,
+      );
+      return;
+    }
+    await this.passportRecalcQueue.add(PASSPORT_RECALC_QUEUE, data, {
+      jobId: `passport-recalc-${data.userId}-${data.quizAttemptId}`,
+      ...options,
+    });
+  }
+
   async onModuleDestroy(): Promise<void> {
     await this.fetchQueue?.close().catch(() => undefined);
     await this.processQueue?.close().catch(() => undefined);
     await this.newsletterDeliveryQueue?.close().catch(() => undefined);
+    await this.passportRecalcQueue?.close().catch(() => undefined);
     await this.connection?.quit().catch(() => undefined);
   }
 }

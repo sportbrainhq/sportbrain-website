@@ -39,6 +39,7 @@ import { QuizAttemptsModule } from './modules/quiz-attempts/quiz-attempts.module
 import { QuizStatsModule } from './modules/quiz-stats/quiz-stats.module';
 import { QuestionReportsModule } from './modules/question-reports/question-reports.module';
 import { QueueModule } from './queue/queue.module';
+import { PassportModule } from './modules/passport/passport.module';
 
 /**
  * The application root.
@@ -108,6 +109,10 @@ import { QueueModule } from './queue/queue.module';
     QuizAttemptsModule,
     QuizStatsModule,
     QuestionReportsModule,
+    // Phase E: SportBrain Passport. Reads `QuizAttemptsModule`'s data via its
+    // own repository (never imports `QuizAttemptsModule` directly); the
+    // quiz-completion hook runs the other way, through `QueueModule`.
+    PassportModule,
     SportsModule,
     TeamsModule,
     PlayersModule,
