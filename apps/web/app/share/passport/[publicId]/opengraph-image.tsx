@@ -5,12 +5,7 @@ import { PASSPORT_CARD_SIZE, renderPassportCard } from '@/lib/passport-card';
 export const size = PASSPORT_CARD_SIZE;
 export const contentType = 'image/png';
 
-/**
- * Link-preview image for the public Passport page (Part 51, 54, 80) — same
- * renderer as the dedicated `/share/passport/:publicId` route, so a pasted
- * link and an explicit "Share" download look identical.
- */
-export default async function PassportOgImage({
+export default async function PassportShareOgImage({
   params,
 }: {
   params: Promise<{ publicId: string }>;

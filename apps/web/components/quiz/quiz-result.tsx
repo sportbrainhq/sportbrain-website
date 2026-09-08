@@ -109,13 +109,23 @@ export function QuizResult({ attempt }: { attempt: QuizAttempt }) {
 
       <QuizResultNewsletterCta />
 
-      <div className="flex justify-center">
+      <div className="flex justify-center gap-3">
         <Link
           href={backToQuizHref(attempt)}
           className="inline-flex items-center justify-center rounded-sm bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
         >
           {attempt.quizType === 'MASTER' ? 'Back to Master Quiz' : 'Back to Quiz'}
         </Link>
+        {attempt.status === 'COMPLETED' && (
+          <Link
+            href={`/share/quiz/${attempt.publicCode}`}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center justify-center rounded-sm border border-border px-5 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-secondary"
+          >
+            Share Result
+          </Link>
+        )}
       </div>
     </div>
   );

@@ -138,3 +138,28 @@ export const activeQuizAttemptSchema = z.object({
   lastActivityAt: z.string(),
 });
 export type ActiveQuizAttempt = z.infer<typeof activeQuizAttemptSchema>;
+
+/**
+ * Public quiz-result share card data (Part 52, 54, 81) — score and a
+ * per-sport breakdown only, deliberately no question text/options/
+ * explanations. Addressed by `publicCode`, the same non-sequential
+ * identifier the result URL already uses, not the attempt's internal id.
+ * `GET /share/quiz/:publicCode` returns this only for a COMPLETED attempt.
+ */
+export const quizShareSportBreakdownSchema = z.object({
+  sportName: z.string(),
+  correctCount: z.number().int().nonnegative(),
+  totalCount: z.number().int().nonnegative(),
+});
+export type QuizShareSportBreakdown = z.infer<typeof quizShareSportBreakdownSchema>;
+
+export const quizShareSchema = z.object({
+  quizType: quizTypeSchema,
+  sportName: z.string().nullable(),
+  correctCount: z.number().int().nonnegative(),
+  totalCount: z.number().int().nonnegative(),
+  scorePercentage: z.number().nullable(),
+  /** Present only for MASTER attempts — per-sport breakdown for the card (Part 52's Football 4/4, Cricket 3/4, ... rows). */
+  sportBreakdown: z.array(quizShareSportBreakdownSchema).nullable(),
+});
+export type QuizShare = z.infer<typeof quizShareSchema>;

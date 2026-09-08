@@ -8,6 +8,7 @@ import type {
   QuizHistoryItem,
   StartQuizRequest,
   SubmitAnswerResponse,
+  QuizShare,
 } from '@sportbrain/contracts';
 import { AppException } from '../../common';
 import type { AppConfig } from '../../config';
@@ -330,6 +331,44 @@ export class QuizAttemptsService {
     if (attempt.userId !== userId)
       throw AppException.forbidden('This quiz attempt belongs to someone else.');
     return attempt;
+  }
+
+  /**
+   * Public quiz-result share card data (Part 52, 54): score + per-sport
+   * breakdown only, addressed by `publicCode` (no ownership check needed —
+   * this is deliberately the same non-guessable identifier the result URL
+   * already exposes, and the card never includes question text/options).
+   * Returns `null` for an attempt that isn't COMPLETED yet.
+   */
+  async getShareData(publicCode: string): Promise<QuizShare | null> {
+    const attempt = await this.repository.findByPublicCode(publicCode);
+    if (!attempt || attempt.status !== 'COMPLETED') return null;
+
+    if (attempt.quizType === 'MASTER') {
+      const questions = await this.repository.findQuestionsForAttempt(attempt.id);
+      const breakdown = await this.repository.getSportBreakdownForAttempt(attempt.id);
+      return {
+        quizType: 'MASTER',
+        sportName: null,
+        correctCount: attempt.correctCount,
+        totalCount: questions.length,
+        scorePercentage: attempt.scorePercentage ? Number(attempt.scorePercentage) : null,
+        sportBreakdown: breakdown,
+      };
+    }
+
+    const sportName = attempt.sportId
+      ? await this.questions.findSportNameById(attempt.sportId)
+      : null;
+    const questions = await this.repository.findQuestionsForAttempt(attempt.id);
+    return {
+      quizType: 'SPORT',
+      sportName: sportName ?? null,
+      correctCount: attempt.correctCount,
+      totalCount: questions.length,
+      scorePercentage: attempt.scorePercentage ? Number(attempt.scorePercentage) : null,
+      sportBreakdown: null,
+    };
   }
 
   private generatePublicCode(): string {

@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { and, asc, desc, eq, isNull } from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
-import { quizAttemptQuestionV2, quizAttemptV2 } from '../../database/schema';
+import { question, quizAttemptQuestionV2, quizAttemptV2, sport } from '../../database/schema';
 
 export type QuizAttemptRow = typeof quizAttemptV2.$inferSelect;
 export type NewQuizAttemptRow = typeof quizAttemptV2.$inferInsert;
@@ -54,6 +54,40 @@ export class QuizAttemptsRepository {
       .from(quizAttemptQuestionV2)
       .where(eq(quizAttemptQuestionV2.quizAttemptId, attemptId))
       .orderBy(asc(quizAttemptQuestionV2.position));
+  }
+
+  /**
+   * Per-sport correct/total counts for a MASTER attempt's share card
+   * (Part 52) — joins through `question.sportId` since MASTER attempt-
+   * questions span sports and `quizAttemptV2.sportId` is null for them.
+   * Never returns question text/options (Part 52: no answers on the card).
+   */
+  async getSportBreakdownForAttempt(
+    attemptId: string,
+  ): Promise<{ sportName: string; correctCount: number; totalCount: number }[]> {
+    const rows = await this.database.db
+      .select({
+        sportName: sport.name,
+        isCorrect: quizAttemptQuestionV2.isCorrect,
+      })
+      .from(quizAttemptQuestionV2)
+      .innerJoin(question, eq(quizAttemptQuestionV2.questionId, question.id))
+      .innerJoin(sport, eq(question.sportId, sport.id))
+      .where(eq(quizAttemptQuestionV2.quizAttemptId, attemptId));
+
+    const bySport = new Map<string, { correct: number; total: number }>();
+    for (const row of rows) {
+      const entry = bySport.get(row.sportName) ?? { correct: 0, total: 0 };
+      entry.total += 1;
+      if (row.isCorrect) entry.correct += 1;
+      bySport.set(row.sportName, entry);
+    }
+
+    return Array.from(bySport.entries()).map(([sportName, { correct, total }]) => ({
+      sportName,
+      correctCount: correct,
+      totalCount: total,
+    }));
   }
 
   async findAttemptQuestion(

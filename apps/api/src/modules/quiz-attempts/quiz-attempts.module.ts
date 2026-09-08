@@ -5,10 +5,11 @@ import { QuizGenerationModule } from '../quiz-generation/quiz-generation.module'
 import { QuizAttemptsController } from './quiz-attempts.controller';
 import { QuizAttemptsRepository } from './quiz-attempts.repository';
 import { QuizAttemptsService } from './quiz-attempts.service';
+import { QuizShareController } from './quiz-share.controller';
 
 @Module({
   imports: [AuthModule, QuizGenerationModule, QuestionsModule],
-  controllers: [QuizAttemptsController],
+  controllers: [QuizAttemptsController, QuizShareController],
   providers: [QuizAttemptsService, QuizAttemptsRepository],
   exports: [QuizAttemptsRepository],
 })

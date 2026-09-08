@@ -70,6 +70,15 @@ export class QuestionsRepository {
     return row?.slug;
   }
 
+  async findSportNameById(sportId: string): Promise<string | undefined> {
+    const [row] = await this.database.db
+      .select({ name: sport.name })
+      .from(sport)
+      .where(eq(sport.id, sportId))
+      .limit(1);
+    return row?.name;
+  }
+
   /**
    * List/search for the Question Bank search picker (used by the newsletter
    * issue editor's "SportBrain Challenge" question search, and reusable by
