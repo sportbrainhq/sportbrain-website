@@ -17,6 +17,8 @@ export const activityTypeEnum = pgEnum('activity_type', [
   'quiz_completed',
   'content_saved',
   'entity_followed',
+  /** Phase E: one row per newly granted `UserAchievement`. `metadata` carries `{ achievementCode, achievementName }`. */
+  'achievement_unlocked',
 ]);
 
 export const userActivities = pgTable(

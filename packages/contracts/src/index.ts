@@ -36,3 +36,4 @@ export * from './newsletter-campaign';
 export * from './newsletter-webhooks';
 export * from './newsletter-analytics';
 export * from './newsletter-archive';
+export * from './passport';

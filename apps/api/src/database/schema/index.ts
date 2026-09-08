@@ -58,3 +58,4 @@ export * from './newsletter-subscription.schema';
 export * from './newsletter-issue.schema';
 export * from './newsletter-campaign.schema';
 export * from './newsletter-recipient.schema';
+export * from './passport.schema';
