@@ -14,7 +14,7 @@ import type {
   StrengthAreaDto,
   AchievementsResponse,
 } from '@sportbrain/contracts';
-import { AppException } from '../../common';
+import { AppException, isUuid } from '../../common';
 import {
   CATEGORY_LEVEL_MIN_SAMPLE,
   DEMOTION_HYSTERESIS_POINTS,
@@ -79,6 +79,7 @@ export class PassportService {
    * attempt returns `null`, never another user's data).
    */
   async getImpactForAttempt(userId: string, quizAttemptId: string): Promise<PassportImpact | null> {
+    if (!isUuid(quizAttemptId)) return null;
     const attempt = await this.repository.findOwnedCompletedAttemptSummary(userId, quizAttemptId);
     if (!attempt) return null;
 
@@ -450,6 +451,7 @@ export class PassportService {
   }
 
   async getSportDetail(userId: string, sportId: string): Promise<PassportSportDetailDto> {
+    if (!isUuid(sportId)) throw AppException.notFound('No knowledge recorded for this sport yet.');
     const [row, sports, categories] = await Promise.all([
       this.repository.findSportKnowledge(userId, sportId),
       this.repository.listSports(),
@@ -613,6 +615,7 @@ export class PassportService {
     userAchievementId: string,
     displayNameFor: (userId: string) => Promise<{ displayName: string }>,
   ) {
+    if (!isUuid(userAchievementId)) throw AppException.notFound('Achievement not found.');
     const found = await this.repository.findPublicUserAchievement(userAchievementId);
     if (!found) throw AppException.notFound('Achievement not found.');
     const identity = await displayNameFor(found.userId);

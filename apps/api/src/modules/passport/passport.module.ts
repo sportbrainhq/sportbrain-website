@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AuthModule } from '../auth/auth.module';
 import { UsersModule } from '../users/users.module';
 import { AchievementEvaluationService } from './achievement-evaluation.service';
 import { PassportController } from './passport.controller';
@@ -15,7 +16,7 @@ import { SportBrainScoringService } from './sportbrain-scoring.service';
  * quiz-taking and Passport recalculation (Part 69).
  */
 @Module({
-  imports: [UsersModule],
+  imports: [AuthModule, UsersModule],
   controllers: [PassportController],
   providers: [
     PassportService,

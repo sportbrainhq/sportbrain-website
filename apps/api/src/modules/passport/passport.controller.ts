@@ -21,7 +21,7 @@ import {
   type SetAchievementActiveRequest,
   type UpdatePassportPrivacyRequest,
 } from '@sportbrain/contracts';
-import { AppException, CurrentUser, zodPipe } from '../../common';
+import { AppException, CurrentUser, isUuid, zodPipe } from '../../common';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -200,6 +200,7 @@ export class PassportController {
     @Param('achievementId') achievementId: string,
     @Body(zodPipe(setAchievementActiveRequestSchema)) body: SetAchievementActiveRequest,
   ): Promise<{ data: { updated: true } }> {
+    if (!isUuid(achievementId)) throw AppException.notFound('Achievement not found.');
     await this.service.setAchievementActive(achievementId, body.isActive);
     return { data: { updated: true } };
   }
@@ -209,6 +210,7 @@ export class PassportController {
   @Roles('admin')
   @ApiOperation({ summary: 'Force a synchronous Passport recalculation for one user (admin)' })
   async recalculateOne(@Param('userId') userId: string): Promise<{ data: { recalculated: true } }> {
+    if (!isUuid(userId)) throw AppException.notFound('User not found.');
     await this.service.recalculateUserScore(userId);
     return { data: { recalculated: true } };
   }
