@@ -1,7 +1,10 @@
+import { z } from 'zod';
 import { achievementsResponseSchema } from '@sportbrain/contracts';
 import { apiGetAuthed } from '@/lib/auth';
 
 export const metadata = { title: 'Achievements' };
+
+const achievementsEnvelope = z.object({ data: achievementsResponseSchema });
 
 /**
  * Earned / in-progress / locked (Part 30). Hidden achievements never appear
@@ -9,10 +12,8 @@ export const metadata = { title: 'Achievements' };
  * needs to special-case that.
  */
 export default async function PassportAchievementsPage() {
-  const achievements = await apiGetAuthed(
-    '/v1/me/passport/achievements',
-    achievementsResponseSchema,
-  );
+  const result = await apiGetAuthed('/v1/me/passport/achievements', achievementsEnvelope);
+  const achievements = result?.data ?? null;
 
   if (!achievements) {
     return (

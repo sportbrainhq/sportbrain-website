@@ -1,9 +1,12 @@
 import { notFound } from 'next/navigation';
+import { z } from 'zod';
 import { passportSportDetailSchema } from '@sportbrain/contracts';
 import { apiGetAuthed } from '@/lib/auth';
 import { KnowledgeLevelBadge } from '@/components/passport/knowledge-level-badge';
 
 export const metadata = { title: 'Sport Knowledge' };
+
+const sportDetailEnvelope = z.object({ data: passportSportDetailSchema });
 
 /**
  * One sport's knowledge detail (Part 16-18): score/level, then category
@@ -16,7 +19,8 @@ export default async function PassportSportDetailPage({
   params: Promise<{ sportId: string }>;
 }) {
   const { sportId } = await params;
-  const detail = await apiGetAuthed(`/v1/me/passport/sports/${sportId}`, passportSportDetailSchema);
+  const result = await apiGetAuthed(`/v1/me/passport/sports/${sportId}`, sportDetailEnvelope);
+  const detail = result?.data;
 
   if (!detail) notFound();
 

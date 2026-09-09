@@ -1,10 +1,15 @@
 import Link from 'next/link';
+import { z } from 'zod';
 import {
   passportActivitySchema,
   passportProgressSchema,
   passportSummarySchema,
 } from '@sportbrain/contracts';
 import { apiGetAuthed } from '@/lib/auth';
+
+const summaryEnvelope = z.object({ data: passportSummarySchema });
+const progressEnvelope = z.object({ data: passportProgressSchema });
+const activityEnvelope = z.object({ data: passportActivitySchema });
 import { ActivityCalendar } from '@/components/passport/activity-calendar';
 import { KnowledgeLevelBadge } from '@/components/passport/knowledge-level-badge';
 import { ProgressGraph } from '@/components/passport/progress-graph';
@@ -19,11 +24,14 @@ export const metadata = { title: 'SportBrain Passport' };
  * (Part 59-61) — that reads as a punishment, not an invitation.
  */
 export default async function PassportPage() {
-  const summary = await apiGetAuthed('/v1/me/passport', passportSummarySchema);
-  const [progress, activity] = await Promise.all([
-    apiGetAuthed('/v1/me/passport/progress?range=6m', passportProgressSchema),
-    apiGetAuthed('/v1/me/passport/activity?days=90', passportActivitySchema),
+  const summaryResult = await apiGetAuthed('/v1/me/passport', summaryEnvelope);
+  const summary = summaryResult?.data ?? null;
+  const [progressResult, activityResult] = await Promise.all([
+    apiGetAuthed('/v1/me/passport/progress?range=6m', progressEnvelope),
+    apiGetAuthed('/v1/me/passport/activity?days=90', activityEnvelope),
   ]);
+  const progress = progressResult?.data ?? null;
+  const activity = activityResult?.data ?? null;
 
   if (!summary) {
     return (

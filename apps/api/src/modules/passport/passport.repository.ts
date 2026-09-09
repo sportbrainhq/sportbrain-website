@@ -417,6 +417,16 @@ export class PassportRepository {
 
   // ---- Activity ----
 
+  /**
+   * True atomic upsert (Part 69/38): the quiz-completion queue worker and
+   * the synchronous quiz-result impact fetch can both race to record the
+   * same day's activity for the same user within milliseconds of each
+   * other. A check-then-insert here would let both see "no row yet" and
+   * both attempt an insert, colliding on the unique `(userId, date)` index
+   * — `onConflictDoUpdate` with SQL-expression increments instead makes
+   * the second writer's insert become an atomic update against whatever
+   * the first writer already committed, never a 500.
+   */
   async upsertActivityDaily(
     userId: string,
     date: string,
@@ -427,39 +437,33 @@ export class PassportRepository {
       sportsPlayed: string[];
     },
   ): Promise<void> {
-    const existing = await this.database.db
-      .select()
-      .from(userQuizActivityDaily)
-      .where(and(eq(userQuizActivityDaily.userId, userId), eq(userQuizActivityDaily.date, date)))
-      .limit(1);
-
-    if (existing.length === 0) {
-      await this.database.db.insert(userQuizActivityDaily).values({
+    const sportsPlayedJson = JSON.stringify(delta.sportsPlayed);
+    await this.database.db
+      .insert(userQuizActivityDaily)
+      .values({
         userId,
         date,
         quizzesCompleted: delta.quizzesCompleted,
         questionsAnswered: delta.questionsAnswered,
         correctAnswers: delta.correctAnswers,
         sportsPlayed: delta.sportsPlayed,
-      });
-      return;
-    }
-
-    const existingRow = existing[0];
-    if (!existingRow) return;
-    const mergedSports = Array.from(
-      new Set([...(existingRow.sportsPlayed as string[]), ...delta.sportsPlayed]),
-    );
-    await this.database.db
-      .update(userQuizActivityDaily)
-      .set({
-        quizzesCompleted: existingRow.quizzesCompleted + delta.quizzesCompleted,
-        questionsAnswered: existingRow.questionsAnswered + delta.questionsAnswered,
-        correctAnswers: existingRow.correctAnswers + delta.correctAnswers,
-        sportsPlayed: mergedSports,
-        updatedAt: sql`now()`,
       })
-      .where(eq(userQuizActivityDaily.id, existingRow.id));
+      .onConflictDoUpdate({
+        target: [userQuizActivityDaily.userId, userQuizActivityDaily.date],
+        set: {
+          quizzesCompleted: sql`${userQuizActivityDaily.quizzesCompleted} + ${delta.quizzesCompleted}`,
+          questionsAnswered: sql`${userQuizActivityDaily.questionsAnswered} + ${delta.questionsAnswered}`,
+          correctAnswers: sql`${userQuizActivityDaily.correctAnswers} + ${delta.correctAnswers}`,
+          // Distinct-sport union without a read-then-write round trip: cast
+          // both sides to jsonb arrays, concatenate, then de-duplicate via
+          // a jsonb_agg(DISTINCT ...) over the unnested elements.
+          sportsPlayed: sql`(
+            select coalesce(jsonb_agg(DISTINCT value), '[]'::jsonb)
+            from jsonb_array_elements(${userQuizActivityDaily.sportsPlayed}::jsonb || ${sportsPlayedJson}::jsonb) as value
+          )`,
+          updatedAt: sql`now()`,
+        },
+      });
   }
 
   async listActivity(userId: string, sinceDate: string): Promise<ActivityDailyRow[]> {

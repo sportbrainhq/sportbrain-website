@@ -1,7 +1,10 @@
+import { z } from 'zod';
 import { passportMethodologySchema } from '@sportbrain/contracts';
 import { apiGetAuthed } from '@/lib/auth';
 
 export const metadata = { title: 'How Your SportBrain Score Works' };
+
+const methodologyEnvelope = z.object({ data: passportMethodologySchema });
 
 const LEVEL_ORDER = [
   'UNRATED',
@@ -13,7 +16,8 @@ const LEVEL_ORDER = [
 ] as const;
 
 export default async function PassportMethodologyPage() {
-  const methodology = await apiGetAuthed('/v1/me/passport/methodology', passportMethodologySchema);
+  const result = await apiGetAuthed('/v1/me/passport/methodology', methodologyEnvelope);
+  const methodology = result?.data ?? null;
 
   if (!methodology) {
     return <p className="text-sm text-muted-foreground">Methodology is unavailable right now.</p>;

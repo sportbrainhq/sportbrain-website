@@ -1,7 +1,9 @@
 'use client';
 
-import { useId, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import type { NewsletterSubscriptionSource } from '@sportbrain/contracts';
+import { useAuth } from '@/components/auth/auth-provider';
+import { fetchMyNewsletterStatus } from '@/lib/newsletter-api';
 import { clientEnv } from '@/lib/env';
 
 interface NewsletterSubscribeProps {
@@ -11,7 +13,13 @@ interface NewsletterSubscribeProps {
 }
 
 type Status =
-  'idle' | 'submitting' | 'subscribed' | 'pending_confirmation' | 'already_subscribed' | 'error';
+  | 'checking'
+  | 'idle'
+  | 'submitting'
+  | 'subscribed'
+  | 'pending_confirmation'
+  | 'already_subscribed'
+  | 'error';
 
 /**
  * The Monday Brief sign-up form. Reused across the footer, the newsletter
@@ -19,23 +27,42 @@ type Status =
  * passes a different `source` so the subscription row remembers where it
  * came from.
  *
- * Posts directly to the public `POST /v1/newsletter/subscribe` endpoint from
- * the browser (like `PreferencesForm`'s save call), rather than through a
- * Server Action: this form has no server-only secret to protect and no
- * field-level validation worth a round trip before submit, unlike the
- * contact form's `whatIsIncorrect`/`sourceUrl` fields.
+ * Signed-in vs. anonymous behave differently, so the same "you already
+ * subscribed, why is this asking again" CTA doesn't chase a user around the
+ * site (a real bug found by manually testing the Passport work — the footer
+ * form and the account-linked status used to be entirely separate tracks):
  *
- * Always calls the anonymous endpoint, even for a signed-in visitor: linking
- * a subscription to an account happens explicitly on `/profile/preferences`
- * via `POST /me/newsletter/subscribe` instead (see
- * `apps/api/src/modules/newsletter/newsletter-me.controller.ts`'s reasoning
- * for why this codebase has no "optional auth" endpoint to detect a session
- * here without adding one).
+ *   - Signed out: posts to the public `POST /v1/newsletter/subscribe` with
+ *     a typed-in email, same as always.
+ *   - Signed in: skips the email field (the account's own verified address
+ *     is used server-side) and posts to `POST /v1/me/newsletter/subscribe`
+ *     instead, which links the subscription to the account. On mount it
+ *     also checks `GET /v1/me/newsletter` and renders nothing but the
+ *     confirmation state if the account is already subscribed — so once a
+ *     signed-in user subscribes anywhere, every mount of this form
+ *     everywhere else immediately reflects it.
  */
 export function NewsletterSubscribe({ source, className }: NewsletterSubscribeProps) {
+  const { user } = useAuth();
   const [email, setEmail] = useState('');
-  const [status, setStatus] = useState<Status>('idle');
+  const [status, setStatus] = useState<Status>(user ? 'checking' : 'idle');
   const inputId = useId();
+
+  useEffect(() => {
+    if (!user) {
+      setStatus('idle');
+      return;
+    }
+    let cancelled = false;
+    setStatus('checking');
+    fetchMyNewsletterStatus().then((summary) => {
+      if (cancelled) return;
+      setStatus(summary?.status === 'SUBSCRIBED' ? 'already_subscribed' : 'idle');
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -43,14 +70,17 @@ export function NewsletterSubscribe({ source, className }: NewsletterSubscribePr
 
     setStatus('submitting');
     try {
-      const response = await fetch(
-        new URL('/v1/newsletter/subscribe', clientEnv.NEXT_PUBLIC_API_URL),
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-          body: JSON.stringify({ email, source }),
-        },
-      );
+      const response = user
+        ? await fetch(new URL('/v1/me/newsletter/subscribe', clientEnv.NEXT_PUBLIC_API_URL), {
+            method: 'POST',
+            credentials: 'include',
+            headers: { Accept: 'application/json' },
+          })
+        : await fetch(new URL('/v1/newsletter/subscribe', clientEnv.NEXT_PUBLIC_API_URL), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify({ email, source }),
+          });
 
       if (!response.ok) {
         setStatus('error');
@@ -63,6 +93,8 @@ export function NewsletterSubscribe({ source, className }: NewsletterSubscribePr
       setStatus('error');
     }
   }
+
+  if (status === 'checking') return null;
 
   if (
     status === 'subscribed' ||
@@ -91,17 +123,19 @@ export function NewsletterSubscribe({ source, className }: NewsletterSubscribePr
         GET THE MONDAY BRIEF
       </label>
       <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-        <input
-          id={inputId}
-          type="email"
-          name="email"
-          required
-          placeholder="you@example.com"
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-          autoComplete="email"
-          className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-foreground/40 focus:ring-2 focus:ring-primary/20"
-        />
+        {!user && (
+          <input
+            id={inputId}
+            type="email"
+            name="email"
+            required
+            placeholder="you@example.com"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            autoComplete="email"
+            className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-foreground/40 focus:ring-2 focus:ring-primary/20"
+          />
+        )}
         <button
           type="submit"
           disabled={status === 'submitting'}

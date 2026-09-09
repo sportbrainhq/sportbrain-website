@@ -10,13 +10,13 @@ import { NewsletterSubscribe } from './newsletter-subscribe';
  * retention loop (org spec Part 52). Secondary to the result itself: mounted
  * below the question review, never above the score.
  *
- * Only checked for a signed-in reader — an anonymous visitor has no account
- * to look a subscription up against, so the CTA simply always shows for
- * them (same trade-off `NewsletterSubscribe` itself already makes: there is
- * no "optional auth" endpoint in this codebase to detect a session without
- * one existing, see `newsletter-me.controller.ts`). Renders nothing while
- * the check is in flight or once it comes back subscribed, so a subscriber
- * never sees a CTA for something they already get.
+ * The whole card (not just the form) hides once a signed-in reader is
+ * already subscribed — `NewsletterSubscribe` itself now also checks this on
+ * mount, but checking it here too means the surrounding "Think you can do
+ * it again next week?" copy disappears along with the form, rather than
+ * leaving an orphaned card around an empty confirmation message. An
+ * anonymous visitor has no account to check, so the card always shows for
+ * them.
  */
 export function QuizResultNewsletterCta() {
   const { user } = useAuth();

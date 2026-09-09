@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import {
   newsletterSubscriptionSummarySchema,
   passportPrivacySettingsSchema,
@@ -28,15 +29,18 @@ const PASSPORT_PRIVACY_DEFAULTS: PassportPrivacySettings = {
   publicId: null,
 };
 
+const passportPrivacyEnvelope = z.object({ data: passportPrivacySettingsSchema });
+
 export default async function PreferencesPage() {
-  const [preferences, newsletter, passportPrivacy] = await Promise.all([
+  const [preferences, newsletter, passportPrivacyResult] = await Promise.all([
     apiGetAuthed('/v1/users/me/preferences', userPreferencesSchema),
     // Null both when the account has never subscribed and when the request
     // fails — either way, the section below renders its own "not
     // subscribed yet" state rather than the page failing to render.
     apiGetAuthed('/v1/me/newsletter', newsletterSubscriptionSummarySchema),
-    apiGetAuthed('/v1/me/passport/privacy', passportPrivacySettingsSchema),
+    apiGetAuthed('/v1/me/passport/privacy', passportPrivacyEnvelope),
   ]);
+  const passportPrivacy = passportPrivacyResult?.data ?? null;
 
   return (
     <div className="space-y-10">
