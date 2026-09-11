@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { and, count, eq, like, ne, sql } from 'drizzle-orm';
+import { and, count, desc, eq, ilike, like, ne, sql } from 'drizzle-orm';
+import type { QuestionCategory, QuestionDifficulty, QuestionStatus } from '@sportbrain/contracts';
 import { DatabaseService } from '../../database/database.service';
 import { question, questionOption, sport } from '../../database/schema';
 
@@ -67,6 +68,55 @@ export class QuestionsRepository {
       .where(eq(sport.id, sportId))
       .limit(1);
     return row?.slug;
+  }
+
+  async findSportNameById(sportId: string): Promise<string | undefined> {
+    const [row] = await this.database.db
+      .select({ name: sport.name })
+      .from(sport)
+      .where(eq(sport.id, sportId))
+      .limit(1);
+    return row?.name;
+  }
+
+  /**
+   * List/search for the Question Bank search picker (used by the newsletter
+   * issue editor's "SportBrain Challenge" question search, and reusable by
+   * any future admin surface that needs the same filters) — status defaults
+   * to PUBLISHED by the caller, never assumed here, so this stays a general
+   * filtered list rather than a newsletter-specific query.
+   */
+  async list(
+    filters: {
+      status?: QuestionStatus;
+      sportId?: string;
+      category?: QuestionCategory;
+      difficulty?: QuestionDifficulty;
+      q?: string;
+    },
+    page: number,
+    limit: number,
+  ): Promise<{ rows: QuestionRow[]; total: number }> {
+    const conditions = [];
+    if (filters.status) conditions.push(eq(question.status, filters.status));
+    if (filters.sportId) conditions.push(eq(question.sportId, filters.sportId));
+    if (filters.category) conditions.push(eq(question.category, filters.category));
+    if (filters.difficulty) conditions.push(eq(question.difficulty, filters.difficulty));
+    if (filters.q) conditions.push(ilike(question.questionText, `%${filters.q}%`));
+    const where = conditions.length ? and(...conditions) : undefined;
+
+    const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
+      this.database.db
+        .select()
+        .from(question)
+        .where(where)
+        .orderBy(desc(question.createdAt))
+        .limit(limit)
+        .offset((page - 1) * limit),
+      this.database.db.select({ value: count() }).from(question).where(where),
+    ]);
+
+    return { rows, total };
   }
 
   async findById(id: string): Promise<QuestionWithOptions | undefined> {

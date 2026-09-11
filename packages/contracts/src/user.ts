@@ -135,7 +135,12 @@ export type SportKnowledge = z.infer<typeof sportKnowledgeSchema>;
 
 // --- Activity -----------------------------------------------------------------
 
-export const activityTypeSchema = z.enum(['quiz_completed', 'content_saved', 'entity_followed']);
+export const activityTypeSchema = z.enum([
+  'quiz_completed',
+  'content_saved',
+  'entity_followed',
+  'achievement_unlocked',
+]);
 export type ActivityType = z.infer<typeof activityTypeSchema>;
 
 export const userActivitySchema = z.object({

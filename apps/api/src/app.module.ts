@@ -21,6 +21,11 @@ import { MetricsModule } from './infrastructure/metrics/metrics.module';
 import { JobsModule } from './jobs/jobs.module';
 import { InternalNewsModule } from './modules/internal-news/internal-news.module';
 import { ContactModule } from './modules/contact/contact.module';
+import { NewsletterModule } from './modules/newsletter/newsletter.module';
+import { NewsletterIssueModule } from './modules/newsletter-issues/newsletter-issue.module';
+import { NewsletterDeliveryModule } from './modules/newsletter-delivery/newsletter-delivery.module';
+import { NewsletterWebhookModule } from './modules/newsletter-webhooks/newsletter-webhook.module';
+import { NewsletterArchiveModule } from './modules/newsletter-archive/newsletter-archive.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { SavedEntitiesModule } from './modules/saved-entities/saved-entities.module';
@@ -34,6 +39,7 @@ import { QuizAttemptsModule } from './modules/quiz-attempts/quiz-attempts.module
 import { QuizStatsModule } from './modules/quiz-stats/quiz-stats.module';
 import { QuestionReportsModule } from './modules/question-reports/question-reports.module';
 import { QueueModule } from './queue/queue.module';
+import { PassportModule } from './modules/passport/passport.module';
 
 /**
  * The application root.
@@ -103,6 +109,10 @@ import { QueueModule } from './queue/queue.module';
     QuizAttemptsModule,
     QuizStatsModule,
     QuestionReportsModule,
+    // Phase E: SportBrain Passport. Reads `QuizAttemptsModule`'s data via its
+    // own repository (never imports `QuizAttemptsModule` directly); the
+    // quiz-completion hook runs the other way, through `QueueModule`.
+    PassportModule,
     SportsModule,
     TeamsModule,
     PlayersModule,
@@ -113,6 +123,11 @@ import { QueueModule } from './queue/queue.module';
     NewsModule,
     InternalNewsModule,
     ContactModule,
+    NewsletterModule,
+    NewsletterIssueModule,
+    NewsletterDeliveryModule,
+    NewsletterWebhookModule,
+    NewsletterArchiveModule,
   ],
   providers: [
     // Registered globally so that every route gets the same error envelope,

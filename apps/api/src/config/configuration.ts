@@ -136,6 +136,26 @@ export interface AppConfig {
     statsMinCategorySample: number;
     reportFlagThreshold: number;
   };
+
+  newsletter: {
+    /** Whether a new subscription must confirm via email before `status` reaches SUBSCRIBED. */
+    doubleOptIn: boolean;
+    fromEmail: string;
+    rateLimit: {
+      ttlSeconds: number;
+      limit: number;
+    };
+    delivery: {
+      batchSize: number;
+      maxSendAttempts: number;
+      defaultSendTime: string;
+      defaultTimezone: string;
+    };
+    webhooks: {
+      /** Undefined when unconfigured, which is the signal `NewsletterWebhookGuard` uses to fail closed. See the env schema's own comment on `NEWSLETTER_WEBHOOK_SECRET`. */
+      secret: string | undefined;
+    };
+  };
 }
 
 /**
@@ -290,6 +310,24 @@ export function loadConfiguration(): AppConfig {
       attemptExpiryHours: env.QUIZ_ATTEMPT_EXPIRY_HOURS,
       statsMinCategorySample: env.QUIZ_STATS_MIN_CATEGORY_SAMPLE,
       reportFlagThreshold: env.QUESTION_REPORT_FLAG_THRESHOLD,
+    },
+
+    newsletter: {
+      doubleOptIn: env.NEWSLETTER_DOUBLE_OPT_IN,
+      fromEmail: env.NEWSLETTER_FROM_EMAIL,
+      rateLimit: {
+        ttlSeconds: env.NEWSLETTER_RATE_LIMIT_TTL_SECONDS,
+        limit: env.NEWSLETTER_RATE_LIMIT_MAX,
+      },
+      delivery: {
+        batchSize: env.NEWSLETTER_BATCH_SIZE,
+        maxSendAttempts: env.NEWSLETTER_MAX_SEND_ATTEMPTS,
+        defaultSendTime: env.NEWSLETTER_DEFAULT_SEND_TIME,
+        defaultTimezone: env.NEWSLETTER_DEFAULT_TIMEZONE,
+      },
+      webhooks: {
+        secret: env.NEWSLETTER_WEBHOOK_SECRET,
+      },
     },
   };
 }

@@ -15,9 +15,16 @@ const CONTENT_TYPES: { value: ContentPrefType; label: string }[] = [
 
 /**
  * Every toggle here is wired to a real, persisted field
- * (`userPreferences.contentTypes`/`newsletterWeekly`/`productUpdates`) —
- * per the task's explicit "no fake toggles" instruction, there is nothing
- * on this form that doesn't save.
+ * (`userPreferences.contentTypes`/`productUpdates`) — per the task's
+ * explicit "no fake toggles" instruction, there is nothing on this form
+ * that doesn't save.
+ *
+ * `newsletterWeekly` deliberately has no toggle here: it predates Phase D
+ * and nothing reads it to decide who receives The Monday Brief — that's
+ * `NewsletterSubscription.status`, controlled by the actual subscribe/
+ * unsubscribe flow in `MondayBriefSection` below this form. Two controls
+ * both claiming to be "the weekly email" toggle, one of them inert, was
+ * confusing on this exact page — see that component instead.
  */
 export function PreferencesForm({ initial }: { initial: UserPreferences }) {
   const [preferences, setPreferences] = useState(initial);
@@ -83,13 +90,6 @@ export function PreferencesForm({ initial }: { initial: UserPreferences }) {
           Email
         </h2>
         <div className="space-y-2">
-          <ToggleRow
-            label="Weekly newsletter"
-            checked={preferences.newsletterWeekly}
-            onChange={(checked) =>
-              setPreferences((current) => ({ ...current, newsletterWeekly: checked }))
-            }
-          />
           <ToggleRow
             label="Product updates"
             checked={preferences.productUpdates}

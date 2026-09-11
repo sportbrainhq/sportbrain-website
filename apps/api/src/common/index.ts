@@ -17,6 +17,7 @@ export {
 } from './security/url-guard';
 export { resolveSafeRedirect } from './security/safe-redirect';
 export { signCookieValue, verifySignedCookieValue } from './security/signed-cookie';
+export { isUuid } from './security/is-uuid';
 export type { AuthenticatedUser } from './auth/authenticated-user';
 export { CurrentUser } from './decorators/current-user.decorator';
 export { Roles, ROLES_KEY } from './decorators/roles.decorator';

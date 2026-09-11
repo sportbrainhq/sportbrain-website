@@ -20,6 +20,7 @@
     "db:studio": "drizzle-kit studio",
     "ingest": "tsx src/integrations/ingest.cli.ts",
     "seed": "tsx src/database/seed/seed.cli.ts",
+    "seed:achievements": "tsx src/database/seed/seed-achievements.cli.ts",
     "enrich": "tsx src/integrations/enrich.cli.ts",
     "wiki": "tsx src/integrations/wiki.cli.ts",
     "news": "tsx src/integrations/news.cli.ts",

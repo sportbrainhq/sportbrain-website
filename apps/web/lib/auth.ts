@@ -59,6 +59,32 @@ export async function requireUser(): Promise<SafeUser> {
 }
 
 /**
+ * For `/admin/*` pages (Phase D2 introduces the first ones): redirects home
+ * unless a signed-in reader has the `editor` or `admin` role. Deliberately a
+ * separate check from `requireUser` rather than a role parameter on it — a
+ * generic "requireUser(role?)" would make every future caller (most of which
+ * want no role check at all) read a signature implying one might be needed.
+ */
+export async function requireEditor(): Promise<SafeUser> {
+  const user = await requireUser();
+  if (user.role !== 'editor' && user.role !== 'admin') redirect('/');
+  return user;
+}
+
+/**
+ * For the subset of `/admin/*` pages/actions that are admin-only, not
+ * editor-accessible — Phase D5's schedule/cancel-schedule/retry-failed
+ * newsletter delivery actions, per the org spec's explicit "admin, not
+ * editor" call for anything that commits to an actual send. Mirrors
+ * `requireEditor`'s shape exactly, one role narrower.
+ */
+export async function requireAdmin(): Promise<SafeUser> {
+  const user = await requireUser();
+  if (user.role !== 'admin') redirect('/');
+  return user;
+}
+
+/**
  * Authenticated GET against the API from a Server Component, for the
  * `/profile/*` pages — same cookie-forwarding need as `getCurrentUser()`,
  * generalised. Not merged into `apiGet` in `lib/api.ts`: that helper is
@@ -85,6 +111,23 @@ export async function apiGetAuthed<T>(path: string, schema: ZodSchema<T>): Promi
 
   if (!response.ok) return null;
 
-  const parsed = schema.safeParse(await response.json());
+  // Nest sends an empty body for a handler that returns `null` (e.g.
+  // `GET /me/newsletter` when the account has never subscribed) —
+  // `response.json()` throws `SyntaxError: Unexpected end of JSON input` on
+  // an empty body rather than resolving to `null`, so an empty body must be
+  // handled before ever reaching the parser. `JSON.parse` itself is also
+  // guarded: this helper's contract is "never throws, null on anything
+  // unparsable", same as every other failure path above.
+  const text = await response.text();
+  if (!text) return null;
+
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    return null;
+  }
+
+  const parsed = schema.safeParse(body);
   return parsed.success ? parsed.data : null;
 }

@@ -1,5 +1,7 @@
 import Link from 'next/link';
 import type { QuizAttempt } from '@sportbrain/contracts';
+import { QuizResultNewsletterCta } from '@/components/newsletter/quiz-result-newsletter-cta';
+import { SportBrainImpact } from '@/components/passport/sportbrain-impact';
 import { QuestionReviewItem } from './question-review-item';
 
 const RESULT_LABEL_THRESHOLDS: [number, string][] = [
@@ -103,13 +105,27 @@ export function QuizResult({ attempt }: { attempt: QuizAttempt }) {
         </div>
       </section>
 
-      <div className="flex justify-center">
+      {attempt.status === 'COMPLETED' && <SportBrainImpact quizAttemptId={attempt.id} />}
+
+      <QuizResultNewsletterCta />
+
+      <div className="flex justify-center gap-3">
         <Link
           href={backToQuizHref(attempt)}
           className="inline-flex items-center justify-center rounded-sm bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
         >
           {attempt.quizType === 'MASTER' ? 'Back to Master Quiz' : 'Back to Quiz'}
         </Link>
+        {attempt.status === 'COMPLETED' && (
+          <Link
+            href={`/share/quiz/${attempt.publicCode}`}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center justify-center rounded-sm border border-border px-5 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-secondary"
+          >
+            Share Result
+          </Link>
+        )}
       </div>
     </div>
   );

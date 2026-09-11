@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type {
   ActiveQuizAttempt,
@@ -8,9 +8,11 @@ import type {
   QuizHistoryItem,
   StartQuizRequest,
   SubmitAnswerResponse,
+  QuizShare,
 } from '@sportbrain/contracts';
 import { AppException } from '../../common';
 import type { AppConfig } from '../../config';
+import { QueueService } from '../../queue/queue.service';
 import { QuestionsRepository } from '../questions/questions.repository';
 import { EligibleQuestionsRepository } from '../quiz-generation/eligible-questions.repository';
 import { QuestionExposureRepository } from '../quiz-generation/question-exposure.repository';
@@ -34,6 +36,8 @@ type OptionCode = 'A' | 'B' | 'C' | 'D';
  */
 @Injectable()
 export class QuizAttemptsService {
+  private readonly logger = new Logger(QuizAttemptsService.name);
+
   constructor(
     private readonly repository: QuizAttemptsRepository,
     private readonly generation: QuizGenerationService,
@@ -41,6 +45,7 @@ export class QuizAttemptsService {
     private readonly exposure: QuestionExposureRepository,
     private readonly config: ConfigService<AppConfig, true>,
     private readonly questions: QuestionsRepository,
+    private readonly queue: QueueService,
   ) {}
 
   async start(userId: string, request: StartQuizRequest): Promise<QuizAttemptDto> {
@@ -249,6 +254,27 @@ export class QuizAttemptsService {
       durationSeconds,
     });
 
+    // Phase E: enqueue a Passport recalculation. Deliberately fire-and-forget
+    // relative to this method's own success — the quiz result below is
+    // returned regardless of whether the enqueue succeeds (Part 69).
+    try {
+      await this.queue.enqueuePassportRecalc({
+        userId,
+        quizAttemptId: attempt.id,
+        justCompletedQuiz: {
+          quizType: attempt.quizType,
+          sportId: attempt.sportId,
+          questionCount: answeredCount,
+          correctCount,
+          percentage: scorePercentage,
+          completedAt: now.toISOString(),
+        },
+      });
+    } catch (error) {
+      // Never fail quiz completion because Passport recalculation could not be enqueued.
+      this.logger.error('Failed to enqueue passport-recalc job', error as Error);
+    }
+
     return await this.toAttemptDto(updated, questions);
   }
 
@@ -305,6 +331,44 @@ export class QuizAttemptsService {
     if (attempt.userId !== userId)
       throw AppException.forbidden('This quiz attempt belongs to someone else.');
     return attempt;
+  }
+
+  /**
+   * Public quiz-result share card data (Part 52, 54): score + per-sport
+   * breakdown only, addressed by `publicCode` (no ownership check needed —
+   * this is deliberately the same non-guessable identifier the result URL
+   * already exposes, and the card never includes question text/options).
+   * Returns `null` for an attempt that isn't COMPLETED yet.
+   */
+  async getShareData(publicCode: string): Promise<QuizShare | null> {
+    const attempt = await this.repository.findByPublicCode(publicCode);
+    if (!attempt || attempt.status !== 'COMPLETED') return null;
+
+    if (attempt.quizType === 'MASTER') {
+      const questions = await this.repository.findQuestionsForAttempt(attempt.id);
+      const breakdown = await this.repository.getSportBreakdownForAttempt(attempt.id);
+      return {
+        quizType: 'MASTER',
+        sportName: null,
+        correctCount: attempt.correctCount,
+        totalCount: questions.length,
+        scorePercentage: attempt.scorePercentage ? Number(attempt.scorePercentage) : null,
+        sportBreakdown: breakdown,
+      };
+    }
+
+    const sportName = attempt.sportId
+      ? await this.questions.findSportNameById(attempt.sportId)
+      : null;
+    const questions = await this.repository.findQuestionsForAttempt(attempt.id);
+    return {
+      quizType: 'SPORT',
+      sportName: sportName ?? null,
+      correctCount: attempt.correctCount,
+      totalCount: questions.length,
+      scorePercentage: attempt.scorePercentage ? Number(attempt.scorePercentage) : null,
+      sportBreakdown: null,
+    };
   }
 
   private generatePublicCode(): string {

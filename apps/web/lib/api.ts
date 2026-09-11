@@ -2,6 +2,7 @@ import {
   competitionDetailSchema,
   competitionSummarySchema,
   contactConfigSchema,
+  contactSubmissionResultSchema,
   contentDetailSchema,
   contentSummarySchema,
   explainerDetailSchema,
@@ -16,17 +17,23 @@ import {
   cursorPaginated,
   newsArticleDetailSchema,
   newsArticleSummarySchema,
+  newsletterTokenActionResponseSchema,
+  publicIssueDetailSchema,
+  publicIssueSummarySchema,
   paginated,
   playerDetailSchema,
   playerSummarySchema,
   searchResultSchema,
   sportDetailSchema,
   sportSchema,
+  subscribeResponseSchema,
   teamDetailSchema,
   teamSummarySchema,
   todayBucketSchema,
   type CompetitionDetail,
   type ContactConfig,
+  type ContactSubmissionResult,
+  type CreateContactRequest,
   type ContentDetail,
   type ContentSummary,
   type CursorPaginated,
@@ -39,6 +46,9 @@ import {
   type NewsArticleDetail,
   type NewsArticleSummary,
   type NewsListQuery,
+  type NewsletterTokenActionResponse,
+  type PublicIssueDetail,
+  type PublicIssueSummary,
   type QuizSummary,
   type SportOverview,
   type Paginated,
@@ -46,6 +56,8 @@ import {
   type SearchResult,
   type Sport,
   type SportDetail,
+  type SubscribeRequest,
+  type SubscribeResponse,
   type TeamDetail,
   type TodayBucket,
 } from '@sportbrain/contracts';
@@ -487,6 +499,56 @@ export function fetchContactConfig(): Promise<ContactConfig> {
   return apiGet('/v1/contact/config', contactConfigSchema, {
     revalidate: 3_600,
     tags: ['contact'],
+  });
+}
+
+/** Submits the contact form. Never cached: this is a write. */
+export function submitContact(body: CreateContactRequest): Promise<ContactSubmissionResult> {
+  return apiPost('/v1/contact', body, contactSubmissionResultSchema, { timeoutMs: 10_000 });
+}
+
+/**
+ * Subscribes an anonymous email address to The Monday Brief. Never cached:
+ * this is a write, and the response is deliberately idempotent-safe (see
+ * `SubscribeResponse`'s JSDoc in the contracts package) so a duplicate
+ * submit never surfaces as an error to the visitor.
+ */
+export function subscribeToNewsletter(body: SubscribeRequest): Promise<SubscribeResponse> {
+  return apiPost('/v1/newsletter/subscribe', body, subscribeResponseSchema, { timeoutMs: 10_000 });
+}
+
+/** Unsubscribes via the no-login token mailed with every send. Idempotent: an already-consumed token still returns 200. */
+export function unsubscribeFromNewsletter(token: string): Promise<NewsletterTokenActionResponse> {
+  return apiPost(
+    `/v1/newsletter/unsubscribe/${encodeURIComponent(token)}`,
+    {},
+    newsletterTokenActionResponseSchema,
+    { timeoutMs: 10_000 },
+  );
+}
+
+/**
+ * The public Monday Brief archive (Phase D7). Cached like other editorial
+ * content (`fetchExplainerLibrary`'s reasoning) rather than left uncached: a
+ * new issue is published at most once a week, so an hour-scale window is
+ * well inside how fresh this ever needs to be, and it is tagged so
+ * publishing a new issue can invalidate the archive on demand later if that
+ * hook is ever wired up.
+ */
+export function fetchNewsletterIssues(
+  params: { page?: number; limit?: number } = {},
+): Promise<Paginated<PublicIssueSummary>> {
+  return apiGet(`/v1/newsletter/issues${toQuery(params)}`, paginated(publicIssueSummarySchema), {
+    revalidate: 3_600,
+    tags: ['newsletter-issues'],
+  });
+}
+
+/** One published issue by slug, rendered for public display — the same `RenderedIssue` view model the admin preview and outgoing email use. */
+export function fetchNewsletterIssue(slug: string): Promise<PublicIssueDetail> {
+  return apiGet(`/v1/newsletter/issues/${encodeURIComponent(slug)}`, publicIssueDetailSchema, {
+    revalidate: 3_600,
+    tags: ['newsletter-issues'],
   });
 }
 
